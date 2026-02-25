@@ -94,14 +94,7 @@ impl Vehicle {
             connection,
             command_rx,
             writers_for_loop,
-            VehicleConfig {
-                gcs_system_id: config.gcs_system_id,
-                gcs_component_id: config.gcs_component_id,
-                retry_policy: config.retry_policy,
-                auto_request_home: config.auto_request_home,
-                command_buffer_size: config.command_buffer_size,
-                connect_timeout: config.connect_timeout,
-            },
+            config.clone(),
             loop_cancel,
         ));
 

@@ -2,6 +2,7 @@ use crate::mission::RetryPolicy;
 use std::time::Duration;
 
 /// Configuration for a [`Vehicle`](crate::Vehicle) connection.
+#[derive(Clone)]
 pub struct VehicleConfig {
     /// MAVLink system ID used by this GCS (default 255).
     pub gcs_system_id: u8,
