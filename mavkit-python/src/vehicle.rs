@@ -509,6 +509,28 @@ impl PyVehicle {
         })
     }
 
+    // --- Async context manager ---
+
+    fn __aenter__<'py>(slf: &Bound<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let obj = slf.clone().into_any().unbind();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move { Ok(obj) })
+    }
+
+    #[pyo3(signature = (_exc_type=None, _exc_val=None, _exc_tb=None))]
+    fn __aexit__<'py>(
+        &self,
+        py: Python<'py>,
+        _exc_type: Option<&Bound<'py, PyAny>>,
+        _exc_val: Option<&Bound<'py, PyAny>>,
+        _exc_tb: Option<&Bound<'py, PyAny>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let v = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            v.disconnect().await.map_err(to_py_err)?;
+            Ok(false)
+        })
+    }
+
     fn __repr__(&self) -> String {
         let state = self.inner.state().borrow().clone();
         format!("Vehicle(mode='{}', armed={})", state.mode_name, state.armed)

@@ -1,5 +1,6 @@
 from collections.abc import Coroutine
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 
 # --- Enums ---
 
@@ -492,6 +493,15 @@ class Vehicle:
     def write_params_batch(
         self, params: list[tuple[str, float]]
     ) -> Coroutine[Any, Any, list[ParamWriteResult]]: ...
+
+    # Async context manager
+    def __aenter__(self) -> Coroutine[Any, Any, Self]: ...
+    def __aexit__(
+        self,
+        exc_type: type[BaseException] | None = None,
+        exc_val: BaseException | None = None,
+        exc_tb: TracebackType | None = None,
+    ) -> Coroutine[Any, Any, bool]: ...
 
     # Sync methods
     def available_modes(self) -> list[FlightMode]: ...
