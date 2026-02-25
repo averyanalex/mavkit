@@ -89,6 +89,55 @@ impl PyVehicle {
     }
 
     #[getter]
+    fn position(&self) -> PyPosition {
+        PyPosition {
+            inner: self.inner.position().borrow().clone(),
+        }
+    }
+
+    #[getter]
+    fn attitude(&self) -> PyAttitude {
+        PyAttitude {
+            inner: self.inner.attitude().borrow().clone(),
+        }
+    }
+
+    #[getter]
+    fn battery(&self) -> PyBattery {
+        PyBattery {
+            inner: self.inner.battery().borrow().clone(),
+        }
+    }
+
+    #[getter]
+    fn gps(&self) -> PyGps {
+        PyGps {
+            inner: self.inner.gps().borrow().clone(),
+        }
+    }
+
+    #[getter]
+    fn navigation(&self) -> PyNavigation {
+        PyNavigation {
+            inner: self.inner.navigation().borrow().clone(),
+        }
+    }
+
+    #[getter]
+    fn terrain(&self) -> PyTerrain {
+        PyTerrain {
+            inner: self.inner.terrain().borrow().clone(),
+        }
+    }
+
+    #[getter]
+    fn rc_channels(&self) -> PyRcChannels {
+        PyRcChannels {
+            inner: self.inner.rc_channels().borrow().clone(),
+        }
+    }
+
+    #[getter]
     fn home_position(&self) -> Option<PyHomePosition> {
         self.inner
             .home_position()
@@ -166,6 +215,104 @@ impl PyVehicle {
                 .await
                 .map_err(|_| to_py_err(mavkit::VehicleError::Disconnected))?;
             Ok(PyTelemetry {
+                inner: rx.borrow().clone(),
+            })
+        })
+    }
+
+    fn wait_position<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut rx = vehicle.position();
+            rx.borrow_and_update();
+            rx.changed()
+                .await
+                .map_err(|_| to_py_err(mavkit::VehicleError::Disconnected))?;
+            Ok(PyPosition {
+                inner: rx.borrow().clone(),
+            })
+        })
+    }
+
+    fn wait_attitude<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut rx = vehicle.attitude();
+            rx.borrow_and_update();
+            rx.changed()
+                .await
+                .map_err(|_| to_py_err(mavkit::VehicleError::Disconnected))?;
+            Ok(PyAttitude {
+                inner: rx.borrow().clone(),
+            })
+        })
+    }
+
+    fn wait_battery<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut rx = vehicle.battery();
+            rx.borrow_and_update();
+            rx.changed()
+                .await
+                .map_err(|_| to_py_err(mavkit::VehicleError::Disconnected))?;
+            Ok(PyBattery {
+                inner: rx.borrow().clone(),
+            })
+        })
+    }
+
+    fn wait_gps<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut rx = vehicle.gps();
+            rx.borrow_and_update();
+            rx.changed()
+                .await
+                .map_err(|_| to_py_err(mavkit::VehicleError::Disconnected))?;
+            Ok(PyGps {
+                inner: rx.borrow().clone(),
+            })
+        })
+    }
+
+    fn wait_navigation<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut rx = vehicle.navigation();
+            rx.borrow_and_update();
+            rx.changed()
+                .await
+                .map_err(|_| to_py_err(mavkit::VehicleError::Disconnected))?;
+            Ok(PyNavigation {
+                inner: rx.borrow().clone(),
+            })
+        })
+    }
+
+    fn wait_terrain<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut rx = vehicle.terrain();
+            rx.borrow_and_update();
+            rx.changed()
+                .await
+                .map_err(|_| to_py_err(mavkit::VehicleError::Disconnected))?;
+            Ok(PyTerrain {
+                inner: rx.borrow().clone(),
+            })
+        })
+    }
+
+    fn wait_rc_channels<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut rx = vehicle.rc_channels();
+            rx.borrow_and_update();
+            rx.changed()
+                .await
+                .map_err(|_| to_py_err(mavkit::VehicleError::Disconnected))?;
+            Ok(PyRcChannels {
                 inner: rx.borrow().clone(),
             })
         })

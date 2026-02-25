@@ -5,8 +5,9 @@ use crate::event_loop::run_event_loop;
 use crate::mission::{HomePosition, MissionHandle, TransferProgress};
 use crate::params::{ParamProgress, ParamStore, ParamsHandle};
 use crate::state::{
-    FlightMode, LinkState, MissionState, StateChannels, StatusMessage, Telemetry, VehicleIdentity,
-    VehicleState, create_channels,
+    Attitude, Battery, FlightMode, Gps, LinkState, MissionState, Navigation, Position, RcChannels,
+    StateChannels, StatusMessage, Telemetry, Terrain, VehicleIdentity, VehicleState,
+    create_channels,
 };
 use mavlink::common::{self, MavCmd};
 use std::sync::Arc;
@@ -141,8 +142,47 @@ impl Vehicle {
     }
 
     /// Subscribe to telemetry updates (position, altitude, battery, etc.).
+    ///
+    /// Notifies on any telemetry field change. For fine-grained subscriptions
+    /// that only wake on specific domains, use [`position()`](Self::position),
+    /// [`attitude()`](Self::attitude), [`battery()`](Self::battery), etc.
     pub fn telemetry(&self) -> watch::Receiver<Telemetry> {
         self.inner.channels.telemetry.clone()
+    }
+
+    /// Subscribe to position & velocity updates only (lat, lon, alt, speed, heading, etc.).
+    pub fn position(&self) -> watch::Receiver<Position> {
+        self.inner.channels.position.clone()
+    }
+
+    /// Subscribe to attitude updates only (roll, pitch, yaw).
+    pub fn attitude(&self) -> watch::Receiver<Attitude> {
+        self.inner.channels.attitude.clone()
+    }
+
+    /// Subscribe to battery updates only (voltage, current, remaining, etc.).
+    pub fn battery(&self) -> watch::Receiver<Battery> {
+        self.inner.channels.battery.clone()
+    }
+
+    /// Subscribe to GPS quality updates only (fix type, satellites, HDOP).
+    pub fn gps(&self) -> watch::Receiver<Gps> {
+        self.inner.channels.gps.clone()
+    }
+
+    /// Subscribe to navigation controller updates only (waypoint distance, bearing, etc.).
+    pub fn navigation(&self) -> watch::Receiver<Navigation> {
+        self.inner.channels.navigation.clone()
+    }
+
+    /// Subscribe to terrain updates only (terrain height, clearance).
+    pub fn terrain(&self) -> watch::Receiver<Terrain> {
+        self.inner.channels.terrain.clone()
+    }
+
+    /// Subscribe to RC channel and servo output updates only.
+    pub fn rc_channels(&self) -> watch::Receiver<RcChannels> {
+        self.inner.channels.rc_channels.clone()
     }
 
     /// Subscribe to home position updates.

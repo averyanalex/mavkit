@@ -31,6 +31,13 @@ fn mavkit(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // State types
     m.add_class::<state::PyVehicleState>()?;
     m.add_class::<state::PyTelemetry>()?;
+    m.add_class::<state::PyPosition>()?;
+    m.add_class::<state::PyAttitude>()?;
+    m.add_class::<state::PyBattery>()?;
+    m.add_class::<state::PyGps>()?;
+    m.add_class::<state::PyNavigation>()?;
+    m.add_class::<state::PyTerrain>()?;
+    m.add_class::<state::PyRcChannels>()?;
     m.add_class::<state::PyMissionState>()?;
     m.add_class::<state::PyLinkState>()?;
     m.add_class::<state::PyVehicleIdentity>()?;

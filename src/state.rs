@@ -13,7 +13,93 @@ pub struct VehicleState {
     pub component_id: u8,
 }
 
+// ---------------------------------------------------------------------------
+// Telemetry sub-group types
+// ---------------------------------------------------------------------------
+
+/// Position and velocity data (from VFR_HUD + GLOBAL_POSITION_INT).
+///
+/// Subscribe via [`Vehicle::position()`] to receive only position-related updates.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Position {
+    pub latitude_deg: Option<f64>,
+    pub longitude_deg: Option<f64>,
+    pub altitude_m: Option<f64>,
+    pub speed_mps: Option<f64>,
+    pub airspeed_mps: Option<f64>,
+    pub climb_rate_mps: Option<f64>,
+    pub heading_deg: Option<f64>,
+    pub throttle_pct: Option<f64>,
+}
+
+/// Vehicle orientation (from ATTITUDE).
+///
+/// Subscribe via [`Vehicle::attitude()`] to receive only attitude updates.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Attitude {
+    pub roll_deg: Option<f64>,
+    pub pitch_deg: Option<f64>,
+    pub yaw_deg: Option<f64>,
+}
+
+/// Battery power status (from SYS_STATUS + BATTERY_STATUS).
+///
+/// Subscribe via [`Vehicle::battery()`] to receive only battery updates.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Battery {
+    pub remaining_pct: Option<f64>,
+    pub voltage_v: Option<f64>,
+    pub current_a: Option<f64>,
+    pub voltage_cells: Option<Vec<f64>>,
+    pub energy_consumed_wh: Option<f64>,
+    pub time_remaining_s: Option<i32>,
+}
+
+/// GPS quality information (from GPS_RAW_INT).
+///
+/// Subscribe via [`Vehicle::gps()`] to receive only GPS updates.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Gps {
+    pub fix_type: Option<GpsFixType>,
+    pub satellites: Option<u8>,
+    pub hdop: Option<f64>,
+}
+
+/// Navigation controller output (from NAV_CONTROLLER_OUTPUT).
+///
+/// Subscribe via [`Vehicle::navigation()`] to receive only navigation updates.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Navigation {
+    pub wp_dist_m: Option<f64>,
+    pub nav_bearing_deg: Option<f64>,
+    pub target_bearing_deg: Option<f64>,
+    pub xtrack_error_m: Option<f64>,
+}
+
+/// Terrain data (from TERRAIN_REPORT).
+///
+/// Subscribe via [`Vehicle::terrain()`] to receive only terrain updates.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Terrain {
+    pub terrain_height_m: Option<f64>,
+    pub height_above_terrain_m: Option<f64>,
+}
+
+/// RC channels and servo outputs (from RC_CHANNELS + SERVO_OUTPUT_RAW).
+///
+/// Subscribe via [`Vehicle::rc_channels()`] to receive only RC/servo updates.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct RcChannels {
+    pub channels: Option<Vec<u16>>,
+    pub rssi: Option<u8>,
+    pub servo_outputs: Option<Vec<u16>>,
+}
+
 /// Telemetry data aggregated from multiple MAVLink messages.
+///
+/// This flat struct contains all telemetry fields and notifies on any change.
+/// For fine-grained subscriptions, use the per-domain watch channels:
+/// [`Vehicle::position()`], [`Vehicle::attitude()`], [`Vehicle::battery()`], etc.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Telemetry {
     // Existing
@@ -281,6 +367,16 @@ impl GpsFixType {
     }
 }
 
+/// Set a field and return whether it changed. Used with `send_if_modified`.
+pub(crate) fn set_if_changed<T: PartialEq>(field: &mut T, value: T) -> bool {
+    if *field != value {
+        *field = value;
+        true
+    } else {
+        false
+    }
+}
+
 /// Internal state for watch channels (writer side).
 pub(crate) struct StateWriters {
     pub vehicle_state: tokio::sync::watch::Sender<VehicleState>,
@@ -292,6 +388,14 @@ pub(crate) struct StateWriters {
     pub param_store: tokio::sync::watch::Sender<crate::params::ParamStore>,
     pub param_progress: tokio::sync::watch::Sender<crate::params::ParamProgress>,
     pub statustext: tokio::sync::watch::Sender<Option<StatusMessage>>,
+    // Per-domain telemetry channels
+    pub position: tokio::sync::watch::Sender<Position>,
+    pub attitude: tokio::sync::watch::Sender<Attitude>,
+    pub battery: tokio::sync::watch::Sender<Battery>,
+    pub gps: tokio::sync::watch::Sender<Gps>,
+    pub navigation: tokio::sync::watch::Sender<Navigation>,
+    pub terrain: tokio::sync::watch::Sender<Terrain>,
+    pub rc_channels: tokio::sync::watch::Sender<RcChannels>,
 }
 
 /// Reader-side channels, cloneable via Arc.
@@ -305,6 +409,14 @@ pub(crate) struct StateChannels {
     pub param_store: tokio::sync::watch::Receiver<crate::params::ParamStore>,
     pub param_progress: tokio::sync::watch::Receiver<crate::params::ParamProgress>,
     pub statustext: tokio::sync::watch::Receiver<Option<StatusMessage>>,
+    // Per-domain telemetry channels
+    pub position: tokio::sync::watch::Receiver<Position>,
+    pub attitude: tokio::sync::watch::Receiver<Attitude>,
+    pub battery: tokio::sync::watch::Receiver<Battery>,
+    pub gps: tokio::sync::watch::Receiver<Gps>,
+    pub navigation: tokio::sync::watch::Receiver<Navigation>,
+    pub terrain: tokio::sync::watch::Receiver<Terrain>,
+    pub rc_channels: tokio::sync::watch::Receiver<RcChannels>,
 }
 
 pub(crate) fn create_channels() -> (StateWriters, StateChannels) {
@@ -317,6 +429,14 @@ pub(crate) fn create_channels() -> (StateWriters, StateChannels) {
     let (ps_tx, ps_rx) = tokio::sync::watch::channel(crate::params::ParamStore::default());
     let (pp_tx, pp_rx) = tokio::sync::watch::channel(crate::params::ParamProgress::default());
     let (st_tx, st_rx) = tokio::sync::watch::channel(None);
+    // Per-domain telemetry channels
+    let (pos_tx, pos_rx) = tokio::sync::watch::channel(Position::default());
+    let (att_tx, att_rx) = tokio::sync::watch::channel(Attitude::default());
+    let (bat_tx, bat_rx) = tokio::sync::watch::channel(Battery::default());
+    let (gps_tx, gps_rx) = tokio::sync::watch::channel(Gps::default());
+    let (nav_tx, nav_rx) = tokio::sync::watch::channel(Navigation::default());
+    let (ter_tx, ter_rx) = tokio::sync::watch::channel(Terrain::default());
+    let (rc_tx, rc_rx) = tokio::sync::watch::channel(RcChannels::default());
 
     let writers = StateWriters {
         vehicle_state: vs_tx,
@@ -328,6 +448,13 @@ pub(crate) fn create_channels() -> (StateWriters, StateChannels) {
         param_store: ps_tx,
         param_progress: pp_tx,
         statustext: st_tx,
+        position: pos_tx,
+        attitude: att_tx,
+        battery: bat_tx,
+        gps: gps_tx,
+        navigation: nav_tx,
+        terrain: ter_tx,
+        rc_channels: rc_tx,
     };
 
     let channels = StateChannels {
@@ -340,6 +467,13 @@ pub(crate) fn create_channels() -> (StateWriters, StateChannels) {
         param_store: ps_rx,
         param_progress: pp_rx,
         statustext: st_rx,
+        position: pos_rx,
+        attitude: att_rx,
+        battery: bat_rx,
+        gps: gps_rx,
+        navigation: nav_rx,
+        terrain: ter_rx,
+        rc_channels: rc_rx,
     };
 
     (writers, channels)

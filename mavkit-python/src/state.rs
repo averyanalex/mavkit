@@ -204,6 +204,254 @@ impl PyTelemetry {
     }
 }
 
+// --- Position ---
+
+#[pyclass(name = "Position", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyPosition {
+    pub(crate) inner: mavkit::Position,
+}
+
+#[pymethods]
+impl PyPosition {
+    #[getter]
+    fn latitude_deg(&self) -> Option<f64> {
+        self.inner.latitude_deg
+    }
+    #[getter]
+    fn longitude_deg(&self) -> Option<f64> {
+        self.inner.longitude_deg
+    }
+    #[getter]
+    fn altitude_m(&self) -> Option<f64> {
+        self.inner.altitude_m
+    }
+    #[getter]
+    fn speed_mps(&self) -> Option<f64> {
+        self.inner.speed_mps
+    }
+    #[getter]
+    fn airspeed_mps(&self) -> Option<f64> {
+        self.inner.airspeed_mps
+    }
+    #[getter]
+    fn climb_rate_mps(&self) -> Option<f64> {
+        self.inner.climb_rate_mps
+    }
+    #[getter]
+    fn heading_deg(&self) -> Option<f64> {
+        self.inner.heading_deg
+    }
+    #[getter]
+    fn throttle_pct(&self) -> Option<f64> {
+        self.inner.throttle_pct
+    }
+    fn __repr__(&self) -> String {
+        format!(
+            "Position(lat={:?}, lon={:?}, alt={:?}m)",
+            self.inner.latitude_deg, self.inner.longitude_deg, self.inner.altitude_m
+        )
+    }
+}
+
+// --- Attitude ---
+
+#[pyclass(name = "Attitude", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyAttitude {
+    pub(crate) inner: mavkit::Attitude,
+}
+
+#[pymethods]
+impl PyAttitude {
+    #[getter]
+    fn roll_deg(&self) -> Option<f64> {
+        self.inner.roll_deg
+    }
+    #[getter]
+    fn pitch_deg(&self) -> Option<f64> {
+        self.inner.pitch_deg
+    }
+    #[getter]
+    fn yaw_deg(&self) -> Option<f64> {
+        self.inner.yaw_deg
+    }
+    fn __repr__(&self) -> String {
+        format!(
+            "Attitude(roll={:?}, pitch={:?}, yaw={:?})",
+            self.inner.roll_deg, self.inner.pitch_deg, self.inner.yaw_deg
+        )
+    }
+}
+
+// --- Battery ---
+
+#[pyclass(name = "Battery", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyBattery {
+    pub(crate) inner: mavkit::Battery,
+}
+
+#[pymethods]
+impl PyBattery {
+    #[getter]
+    fn remaining_pct(&self) -> Option<f64> {
+        self.inner.remaining_pct
+    }
+    #[getter]
+    fn voltage_v(&self) -> Option<f64> {
+        self.inner.voltage_v
+    }
+    #[getter]
+    fn current_a(&self) -> Option<f64> {
+        self.inner.current_a
+    }
+    #[getter]
+    fn voltage_cells(&self) -> Option<Vec<f64>> {
+        self.inner.voltage_cells.clone()
+    }
+    #[getter]
+    fn energy_consumed_wh(&self) -> Option<f64> {
+        self.inner.energy_consumed_wh
+    }
+    #[getter]
+    fn time_remaining_s(&self) -> Option<i32> {
+        self.inner.time_remaining_s
+    }
+    fn __repr__(&self) -> String {
+        let pct = self
+            .inner
+            .remaining_pct
+            .map_or("None".into(), |v| format!("{v:.0}%"));
+        let volt = self
+            .inner
+            .voltage_v
+            .map_or("None".into(), |v| format!("{v:.2}V"));
+        format!("Battery(remaining={pct}, voltage={volt})")
+    }
+}
+
+// --- Gps ---
+
+#[pyclass(name = "Gps", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyGps {
+    pub(crate) inner: mavkit::Gps,
+}
+
+#[pymethods]
+impl PyGps {
+    #[getter]
+    fn fix_type(&self) -> Option<PyGpsFixType> {
+        self.inner.fix_type.map(Into::into)
+    }
+    #[getter]
+    fn satellites(&self) -> Option<u8> {
+        self.inner.satellites
+    }
+    #[getter]
+    fn hdop(&self) -> Option<f64> {
+        self.inner.hdop
+    }
+    fn __repr__(&self) -> String {
+        format!(
+            "Gps(fix={:?}, sats={:?}, hdop={:?})",
+            self.inner.fix_type, self.inner.satellites, self.inner.hdop
+        )
+    }
+}
+
+// --- Navigation ---
+
+#[pyclass(name = "Navigation", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyNavigation {
+    pub(crate) inner: mavkit::Navigation,
+}
+
+#[pymethods]
+impl PyNavigation {
+    #[getter]
+    fn wp_dist_m(&self) -> Option<f64> {
+        self.inner.wp_dist_m
+    }
+    #[getter]
+    fn nav_bearing_deg(&self) -> Option<f64> {
+        self.inner.nav_bearing_deg
+    }
+    #[getter]
+    fn target_bearing_deg(&self) -> Option<f64> {
+        self.inner.target_bearing_deg
+    }
+    #[getter]
+    fn xtrack_error_m(&self) -> Option<f64> {
+        self.inner.xtrack_error_m
+    }
+    fn __repr__(&self) -> String {
+        format!(
+            "Navigation(wp_dist={:?}m, bearing={:?})",
+            self.inner.wp_dist_m, self.inner.nav_bearing_deg
+        )
+    }
+}
+
+// --- Terrain ---
+
+#[pyclass(name = "Terrain", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyTerrain {
+    pub(crate) inner: mavkit::Terrain,
+}
+
+#[pymethods]
+impl PyTerrain {
+    #[getter]
+    fn terrain_height_m(&self) -> Option<f64> {
+        self.inner.terrain_height_m
+    }
+    #[getter]
+    fn height_above_terrain_m(&self) -> Option<f64> {
+        self.inner.height_above_terrain_m
+    }
+    fn __repr__(&self) -> String {
+        format!(
+            "Terrain(height={:?}m, clearance={:?}m)",
+            self.inner.terrain_height_m, self.inner.height_above_terrain_m
+        )
+    }
+}
+
+// --- RcChannels ---
+
+#[pyclass(name = "RcChannels", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyRcChannels {
+    pub(crate) inner: mavkit::RcChannels,
+}
+
+#[pymethods]
+impl PyRcChannels {
+    #[getter]
+    fn channels(&self) -> Option<Vec<u16>> {
+        self.inner.channels.clone()
+    }
+    #[getter]
+    fn rssi(&self) -> Option<u8> {
+        self.inner.rssi
+    }
+    #[getter]
+    fn servo_outputs(&self) -> Option<Vec<u16>> {
+        self.inner.servo_outputs.clone()
+    }
+    fn __repr__(&self) -> String {
+        let ch_count = self.inner.channels.as_ref().map_or(0, |c| c.len());
+        format!(
+            "RcChannels(channels={ch_count}, rssi={:?})",
+            self.inner.rssi
+        )
+    }
+}
+
 // --- MissionState ---
 
 #[pyclass(name = "MissionState", frozen, skip_from_py_object)]

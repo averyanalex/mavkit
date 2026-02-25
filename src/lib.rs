@@ -21,8 +21,9 @@ pub use error::VehicleError;
 pub use vehicle::Vehicle;
 
 pub use state::{
-    AutopilotType, FlightMode, GpsFixType, LinkState, MavSeverity, MissionState, StatusMessage,
-    SystemStatus, Telemetry, VehicleIdentity, VehicleState, VehicleType,
+    Attitude, AutopilotType, Battery, FlightMode, Gps, GpsFixType, LinkState, MavSeverity,
+    MissionState, Navigation, Position, RcChannels, StatusMessage, SystemStatus, Telemetry,
+    Terrain, VehicleIdentity, VehicleState, VehicleType,
 };
 
 pub use mission::{
