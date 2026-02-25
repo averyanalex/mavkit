@@ -22,6 +22,7 @@ use tracing::{debug, trace, warn};
 
 const MAGIC_FORCE_ARM_VALUE: f32 = 2989.0;
 const MAGIC_FORCE_DISARM_VALUE: f32 = 21196.0;
+const HOME_POSITION_MSG_ID: f32 = 242.0;
 
 /// Internal tracking of the remote vehicle identity (from heartbeats).
 #[derive(Debug, Clone, Copy)]
@@ -113,7 +114,7 @@ async fn request_home_position(
                 target_component: target.component_id,
                 command: MavCmd::MAV_CMD_REQUEST_MESSAGE,
                 confirmation: 0,
-                param1: 242.0, // HOME_POSITION message ID
+                param1: HOME_POSITION_MSG_ID,
                 param2: 0.0,
                 param3: 0.0,
                 param4: 0.0,
