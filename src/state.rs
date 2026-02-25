@@ -202,11 +202,57 @@ impl AutopilotType {
     }
 }
 
+/// MAVLink message severity level (MAV_SEVERITY).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MavSeverity {
+    Emergency,
+    Alert,
+    Critical,
+    Error,
+    Warning,
+    Notice,
+    Info,
+    Debug,
+}
+
+impl MavSeverity {
+    pub(crate) fn from_mav(severity: mavlink::common::MavSeverity) -> Self {
+        use mavlink::common::MavSeverity as MS;
+        match severity {
+            MS::MAV_SEVERITY_EMERGENCY => MavSeverity::Emergency,
+            MS::MAV_SEVERITY_ALERT => MavSeverity::Alert,
+            MS::MAV_SEVERITY_CRITICAL => MavSeverity::Critical,
+            MS::MAV_SEVERITY_ERROR => MavSeverity::Error,
+            MS::MAV_SEVERITY_WARNING => MavSeverity::Warning,
+            MS::MAV_SEVERITY_NOTICE => MavSeverity::Notice,
+            MS::MAV_SEVERITY_INFO => MavSeverity::Info,
+            MS::MAV_SEVERITY_DEBUG => MavSeverity::Debug,
+        }
+    }
+}
+
+impl std::fmt::Display for MavSeverity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let label = match self {
+            MavSeverity::Emergency => "EMERGENCY",
+            MavSeverity::Alert => "ALERT",
+            MavSeverity::Critical => "CRITICAL",
+            MavSeverity::Error => "ERROR",
+            MavSeverity::Warning => "WARNING",
+            MavSeverity::Notice => "NOTICE",
+            MavSeverity::Info => "INFO",
+            MavSeverity::Debug => "DEBUG",
+        };
+        f.write_str(label)
+    }
+}
+
 /// A STATUSTEXT message received from the autopilot.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StatusMessage {
     pub text: String,
-    pub severity: u8,
+    pub severity: MavSeverity,
 }
 
 /// GPS fix quality level.

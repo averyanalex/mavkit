@@ -19,6 +19,7 @@ fn mavkit(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<enums::PyVehicleType>()?;
     m.add_class::<enums::PyAutopilotType>()?;
     m.add_class::<enums::PyGpsFixType>()?;
+    m.add_class::<enums::PyMavSeverity>()?;
     m.add_class::<enums::PyMissionType>()?;
     m.add_class::<enums::PyMissionFrame>()?;
     m.add_class::<enums::PyIssueSeverity>()?;

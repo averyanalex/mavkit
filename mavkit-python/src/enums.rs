@@ -113,6 +113,27 @@ py_enum_convert!(
     [NoFix, Fix2d, Fix3d, Dgps, RtkFloat, RtkFixed,]
 );
 
+#[pyclass(name = "MavSeverity", eq, frozen, from_py_object)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PyMavSeverity {
+    Emergency,
+    Alert,
+    Critical,
+    Error,
+    Warning,
+    Notice,
+    Info,
+    Debug,
+}
+
+py_enum_convert!(
+    PyMavSeverity,
+    mavkit::MavSeverity,
+    [
+        Emergency, Alert, Critical, Error, Warning, Notice, Info, Debug,
+    ]
+);
+
 // --- Mission enums ---
 
 #[pyclass(name = "MissionType", eq, frozen, from_py_object)]

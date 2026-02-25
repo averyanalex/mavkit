@@ -335,7 +335,7 @@ fn update_state(
             if !text.is_empty() {
                 let _ = writers.statustext.send(Some(crate::state::StatusMessage {
                     text,
-                    severity: data.severity as u8,
+                    severity: crate::state::MavSeverity::from_mav(data.severity),
                 }));
             }
         }

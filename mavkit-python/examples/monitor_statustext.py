@@ -5,17 +5,6 @@ import os
 
 import mavkit
 
-SEVERITY_LABELS = {
-    0: "EMERGENCY",
-    1: "ALERT",
-    2: "CRITICAL",
-    3: "ERROR",
-    4: "WARNING",
-    5: "NOTICE",
-    6: "INFO",
-    7: "DEBUG",
-}
-
 
 async def main():
     bind_addr = os.environ.get("MAVKIT_EXAMPLE_UDP_BIND", "0.0.0.0:14550")
@@ -26,8 +15,7 @@ async def main():
     while True:
         msg = await vehicle.wait_statustext()
         if msg is not None:
-            label = SEVERITY_LABELS.get(msg.severity, "UNKNOWN")
-            print(f"[{label}] {msg.text}")
+            print(f"[{msg.severity.name}] {msg.text}")
 
 
 asyncio.run(main())

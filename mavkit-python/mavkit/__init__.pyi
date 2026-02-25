@@ -40,6 +40,16 @@ class GpsFixType:
     RtkFloat: GpsFixType
     RtkFixed: GpsFixType
 
+class MavSeverity:
+    Emergency: MavSeverity
+    Alert: MavSeverity
+    Critical: MavSeverity
+    Error: MavSeverity
+    Warning: MavSeverity
+    Notice: MavSeverity
+    Info: MavSeverity
+    Debug: MavSeverity
+
 class MissionType:
     Mission: MissionType
     Fence: MissionType
@@ -202,7 +212,7 @@ class StatusMessage:
     @property
     def text(self) -> str: ...
     @property
-    def severity(self) -> int: ...
+    def severity(self) -> MavSeverity: ...
 
 # --- Mission classes ---
 

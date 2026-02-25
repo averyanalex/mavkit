@@ -358,13 +358,13 @@ impl PyStatusMessage {
     }
 
     #[getter]
-    fn severity(&self) -> u8 {
-        self.inner.severity
+    fn severity(&self) -> crate::enums::PyMavSeverity {
+        self.inner.severity.into()
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "StatusMessage(severity={}, text='{}')",
+            "StatusMessage(severity={:?}, text='{}')",
             self.inner.severity, self.inner.text
         )
     }
