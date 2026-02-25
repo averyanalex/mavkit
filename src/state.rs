@@ -275,17 +275,6 @@ impl AutopilotType {
             _ => AutopilotType::Unknown,
         }
     }
-
-    #[allow(dead_code)]
-    pub(crate) fn to_mav(self) -> mavlink::common::MavAutopilot {
-        use mavlink::common::MavAutopilot;
-        match self {
-            AutopilotType::Generic => MavAutopilot::MAV_AUTOPILOT_GENERIC,
-            AutopilotType::ArduPilotMega => MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
-            AutopilotType::Px4 => MavAutopilot::MAV_AUTOPILOT_PX4,
-            AutopilotType::Unknown => MavAutopilot::MAV_AUTOPILOT_GENERIC,
-        }
-    }
 }
 
 /// MAVLink message severity level (MAV_SEVERITY).
