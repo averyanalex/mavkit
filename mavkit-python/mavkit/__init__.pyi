@@ -2,6 +2,8 @@ from collections.abc import Coroutine
 from types import TracebackType
 from typing import Any, Self
 
+__version__: str
+
 # --- Enums ---
 
 class SystemStatus:
