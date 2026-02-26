@@ -7,7 +7,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let vehicle = Vehicle::connect_tcp(&addr).await?;
 
-    let state = vehicle.state().borrow().clone();
+    let mut state_rx = vehicle.state();
+    state_rx.changed().await?;
+    let state = state_rx.borrow().clone();
+
     println!(
         "connected: mode={} armed={} autopilot={:?} vehicle_type={:?}",
         state.mode_name, state.armed, state.autopilot, state.vehicle_type

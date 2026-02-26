@@ -11,7 +11,7 @@ async def main():
 
     vehicle = await mavkit.Vehicle.connect_tcp(addr)
 
-    state = vehicle.state
+    state = await vehicle.wait_state()
     print(
         f"connected: mode={state.mode_name} armed={state.armed}"
         f" autopilot={state.autopilot} vehicle_type={state.vehicle_type}"
