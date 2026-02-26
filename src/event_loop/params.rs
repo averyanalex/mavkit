@@ -72,7 +72,7 @@ pub(super) async fn handle_param_download_all(
     let mut expected_count: u16 = 0;
     let mut count_known = false;
     let mut last_progress_update = 0u16;
-    let max_retries = 3u32;
+    let max_retries = u32::from(ctx.config.retry_policy.max_retries);
     let mut retries = 0u32;
 
     loop {
