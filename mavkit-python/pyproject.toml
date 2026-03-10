@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "mavkit"
 version = "0.3.0"
 description = "Python bindings for mavkit – Async MAVLink SDK"
-license = { text = "MIT" }
+license = { text = "MIT OR Apache-2.0" }
 requires-python = ">=3.9"
 readme = "README.md"
 classifiers = [

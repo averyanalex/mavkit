@@ -9,7 +9,7 @@ authors = [
 ]
 edition = "2024"
 description = "Async MAVLink SDK for vehicle control, missions, and parameters"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/averyanalex/mavkit"
 homepage = "https://github.com/averyanalex/mavkit"
