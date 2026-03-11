@@ -1,11 +1,11 @@
 use super::VehicleTarget;
 use crate::mission;
 use crate::state::{
-    set_if_changed, AutopilotType, GpsFixType, MagCalReport, MagCalStatus, MissionState,
-    SensorHealth, StateWriters, SystemStatus, VehicleState, VehicleType,
+    AutopilotType, GpsFixType, MagCalReport, MagCalStatus, MissionState, SensorHealth,
+    StateWriters, SystemStatus, VehicleState, VehicleType, set_if_changed,
 };
-use mavlink::common::{self, MavModeFlag};
 use mavlink::MavHeader;
+use mavlink::common::{self, MavModeFlag};
 use tracing::trace;
 
 /// Maximum number of RC channels in the RC_CHANNELS MAVLink message.

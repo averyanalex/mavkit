@@ -572,17 +572,14 @@ pub(super) async fn handle_mission_set_current(
                     update_state(&header, &msg, ctx.writers, ctx.vehicle_target);
 
                     match &msg {
-                        common::MavMessage::COMMAND_ACK(data) => {
+                        common::MavMessage::COMMAND_ACK(data)
                             if data.command == MavCmd::MAV_CMD_DO_SET_MISSION_CURRENT
-                                && data.result == common::MavResult::MAV_RESULT_ACCEPTED
-                            {
-                                return Ok(());
-                            }
+                                && data.result == common::MavResult::MAV_RESULT_ACCEPTED =>
+                        {
+                            return Ok(());
                         }
-                        common::MavMessage::MISSION_CURRENT(data) => {
-                            if data.seq == seq {
-                                return Ok(());
-                            }
+                        common::MavMessage::MISSION_CURRENT(data) if data.seq == seq => {
+                            return Ok(());
                         }
                         _ => {}
                     }
