@@ -663,8 +663,10 @@ mod tests {
         update_state(&header, &msg, &writers, &target);
 
         let ms = channels.mission_state.borrow();
-        assert_eq!(ms.current_seq, 3);
-        assert_eq!(ms.total_items, 10);
+        // Wire seq 3 → semantic seq 2 (Mission type subtracts 1 for home)
+        assert_eq!(ms.current_seq, Some(2));
+        // Wire total 10 → semantic 9 (excludes home)
+        assert_eq!(ms.total_items, 9);
     }
 
     #[test]
@@ -1880,6 +1882,151 @@ mod tests {
             .find(|(id, _)| *id == state::SensorId::Gps)
             .unwrap();
         assert_eq!(gps.1, state::SensorStatus::Unhealthy);
+    }
+
+    #[tokio::test]
+    async fn set_current_semantic_zero_sends_wire_seq_one() {
+        let (msg_tx, msg_rx) = mpsc::channel(64);
+        let (conn, sent) = MockConnection::new(msg_rx);
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let (writers, _channels) = create_channels();
+        let cancel = CancellationToken::new();
+
+        let handle = tokio::spawn(async move {
+            run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
+        });
+
+        // Establish vehicle target
+        msg_tx
+            .send((default_header(), heartbeat_msg(false, 0)))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Send semantic set_current(0) — first visible waypoint
+        let (reply_tx, reply_rx) = oneshot::channel();
+        cmd_tx
+            .send(Command::MissionSetCurrent {
+                seq: 0,
+                reply: reply_tx,
+            })
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Respond with COMMAND_ACK
+        msg_tx
+            .send((
+                default_header(),
+                ack_msg(
+                    MavCmd::MAV_CMD_DO_SET_MISSION_CURRENT,
+                    common::MavResult::MAV_RESULT_ACCEPTED,
+                ),
+            ))
+            .await
+            .unwrap();
+
+        let result = reply_rx.await.unwrap();
+        assert!(result.is_ok());
+
+        // Verify the sent COMMAND_LONG has wire seq 1 (not semantic 0)
+        {
+            let sent_msgs = sent.lock().unwrap();
+            let set_current_msgs: Vec<_> = sent_msgs
+                .iter()
+                .filter(|(_, msg)| {
+                    matches!(msg, common::MavMessage::COMMAND_LONG(d)
+                        if d.command == MavCmd::MAV_CMD_DO_SET_MISSION_CURRENT)
+                })
+                .collect();
+            assert!(
+                !set_current_msgs.is_empty(),
+                "expected COMMAND_LONG for DO_SET_MISSION_CURRENT"
+            );
+
+            if let common::MavMessage::COMMAND_LONG(data) = &set_current_msgs[0].1 {
+                assert_eq!(
+                    data.param1, 1.0,
+                    "semantic seq 0 must become wire seq 1 (param1)"
+                );
+            }
+        }
+
+        cmd_tx.send(Command::Shutdown).await.unwrap();
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn set_current_semantic_four_sends_wire_seq_five() {
+        let (msg_tx, msg_rx) = mpsc::channel(64);
+        let (conn, sent) = MockConnection::new(msg_rx);
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let (writers, _channels) = create_channels();
+        let cancel = CancellationToken::new();
+
+        let handle = tokio::spawn(async move {
+            run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
+        });
+
+        msg_tx
+            .send((default_header(), heartbeat_msg(false, 0)))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let (reply_tx, reply_rx) = oneshot::channel();
+        cmd_tx
+            .send(Command::MissionSetCurrent {
+                seq: 4,
+                reply: reply_tx,
+            })
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Respond with MISSION_CURRENT confirming wire seq 5
+        msg_tx
+            .send((
+                default_header(),
+                common::MavMessage::MISSION_CURRENT(common::MISSION_CURRENT_DATA {
+                    seq: 5,
+                    total: 10,
+                    mission_state: common::MissionState::MISSION_STATE_ACTIVE,
+                    mission_mode: 0,
+                    mission_id: 0,
+                    fence_id: 0,
+                    rally_points_id: 0,
+                }),
+            ))
+            .await
+            .unwrap();
+
+        let result = reply_rx.await.unwrap();
+        assert!(result.is_ok());
+
+        {
+            let sent_msgs = sent.lock().unwrap();
+            let set_current_msgs: Vec<_> = sent_msgs
+                .iter()
+                .filter(|(_, msg)| {
+                    matches!(msg, common::MavMessage::COMMAND_LONG(d)
+                        if d.command == MavCmd::MAV_CMD_DO_SET_MISSION_CURRENT)
+                })
+                .collect();
+            assert!(!set_current_msgs.is_empty());
+
+            if let common::MavMessage::COMMAND_LONG(data) = &set_current_msgs[0].1 {
+                assert_eq!(
+                    data.param1, 5.0,
+                    "semantic seq 4 must become wire seq 5 (param1)"
+                );
+            }
+        }
+
+        cmd_tx.send(Command::Shutdown).await.unwrap();
+        handle.await.unwrap();
     }
 
     #[test]
