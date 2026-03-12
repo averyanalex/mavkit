@@ -3,7 +3,7 @@ members = [".", "mavkit-python"]
 
 [package]
 name = "mavkit"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 description = "Async MAVLink SDK for vehicle control, missions, and parameters"
 license = "MIT OR Apache-2.0"
