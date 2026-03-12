@@ -336,6 +336,20 @@ impl Vehicle {
         .await
     }
 
+    /// Reboot the autopilot into bootloader mode
+    /// (MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN param1=3).
+    ///
+    /// A successful reboot may drop the MAVLink link immediately after the
+    /// command ACK. If this method returns `VehicleError::Timeout`, delivery was
+    /// not confirmed and the vehicle may still have rebooted.
+    pub async fn reboot_to_bootloader(&self) -> Result<(), VehicleError> {
+        self.command_long(
+            MavCmd::MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
+            [3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        )
+        .await
+    }
+
     /// Test a single motor. Instance is 1-based (1–12), throttle 0–100%, duration 0.1–30s.
     pub async fn motor_test(
         &self,
@@ -487,18 +501,56 @@ impl Vehicle {
 mod tests {
     use super::*;
 
-    fn dummy_vehicle() -> Vehicle {
+    fn test_vehicle_with_command_rx() -> (Vehicle, mpsc::Receiver<Command>) {
         let (_, channels) = create_channels();
         let cancel = CancellationToken::new();
-        let (command_tx, _command_rx) = mpsc::channel(1);
-        Vehicle {
-            inner: Arc::new(VehicleInner {
-                command_tx,
-                cancel,
-                channels,
-                _config: VehicleConfig::default(),
-            }),
-        }
+        let (command_tx, command_rx) = mpsc::channel(1);
+        (
+            Vehicle {
+                inner: Arc::new(VehicleInner {
+                    command_tx,
+                    cancel,
+                    channels,
+                    _config: VehicleConfig::default(),
+                }),
+            },
+            command_rx,
+        )
+    }
+
+    fn dummy_vehicle() -> Vehicle {
+        let (vehicle, _command_rx) = test_vehicle_with_command_rx();
+        vehicle
+    }
+
+    #[tokio::test]
+    async fn reboot_to_bootloader_enqueues_preflight_reboot_shutdown_command() {
+        let (vehicle, mut command_rx) = test_vehicle_with_command_rx();
+
+        let reboot_task = tokio::spawn(async move { vehicle.reboot_to_bootloader().await });
+
+        let command = command_rx
+            .recv()
+            .await
+            .expect("reboot_to_bootloader should send a command");
+
+        let Command::Long {
+            command,
+            params,
+            reply,
+        } = command
+        else {
+            panic!("expected Command::Long");
+        };
+
+        assert_eq!(command, MavCmd::MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN);
+        assert_eq!(params, [3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+
+        reply
+            .send(Ok(()))
+            .expect("reply receiver should still exist");
+
+        assert!(reboot_task.await.expect("task should complete").is_ok());
     }
 
     #[tokio::test]

@@ -1313,6 +1313,71 @@ mod tests {
         handle.await.unwrap();
     }
 
+    #[tokio::test]
+    async fn command_long_reboot_to_bootloader_sends_preflight_reboot_shutdown() {
+        let (msg_tx, msg_rx) = mpsc::channel(64);
+        let (conn, sent) = MockConnection::new(msg_rx);
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let (writers, _channels) = create_channels();
+        let cancel = CancellationToken::new();
+
+        let handle = tokio::spawn(async move {
+            run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
+        });
+
+        msg_tx
+            .send((default_header(), heartbeat_msg(false, 0)))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let (reply_tx, reply_rx) = oneshot::channel();
+        cmd_tx
+            .send(Command::Long {
+                command: MavCmd::MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
+                params: [3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                reply: reply_tx,
+            })
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        msg_tx
+            .send((
+                default_header(),
+                ack_msg(
+                    MavCmd::MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
+                    common::MavResult::MAV_RESULT_ACCEPTED,
+                ),
+            ))
+            .await
+            .unwrap();
+
+        let result = reply_rx.await.unwrap();
+        assert!(result.is_ok());
+
+        {
+            let sent_msgs = sent.lock().unwrap();
+            let reboot_msg = sent_msgs
+                .iter()
+                .find(|(_, msg)| matches!(msg, common::MavMessage::COMMAND_LONG(d) if d.command == MavCmd::MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN))
+                .unwrap();
+            if let common::MavMessage::COMMAND_LONG(data) = &reboot_msg.1 {
+                assert_eq!(data.param1, 3.0);
+                assert_eq!(data.param2, 0.0);
+                assert_eq!(data.param3, 0.0);
+                assert_eq!(data.param4, 0.0);
+                assert_eq!(data.param5, 0.0);
+                assert_eq!(data.param6, 0.0);
+                assert_eq!(data.param7, 0.0);
+            }
+        }
+
+        cmd_tx.send(Command::Shutdown).await.unwrap();
+        handle.await.unwrap();
+    }
+
     // -----------------------------------------------------------------------
     // Helper function tests
     // -----------------------------------------------------------------------
