@@ -86,7 +86,7 @@ async fn sitl_set_current_updates_mission_state() {
             .await
             .map_err(|e| e.to_string())?;
 
-        common::wait_for_mission_state(&vehicle, |s| s.current_seq == 1, Duration::from_secs(10))
+        common::wait_for_mission_state(&vehicle, |s| s.current_seq == Some(0), Duration::from_secs(10))
             .await;
         Ok(())
     }

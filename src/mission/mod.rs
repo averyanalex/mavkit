@@ -68,7 +68,11 @@ impl<'a> MissionHandle<'a> {
         Ok(plans_equivalent(&lhs, &rhs, CompareTolerance::default()))
     }
 
-    /// Set the current mission item sequence number on the vehicle.
+    /// Set the current mission item by **semantic** 0-indexed waypoint index.
+    ///
+    /// Semantic index 0 targets the first visible waypoint (wire seq 1 for
+    /// Mission type — the home placeholder at wire seq 0 is skipped
+    /// automatically).
     pub async fn set_current(&self, seq: u16) -> Result<(), VehicleError> {
         self.vehicle
             .send_command(|reply| crate::command::Command::MissionSetCurrent { seq, reply })

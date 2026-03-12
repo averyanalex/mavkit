@@ -529,10 +529,16 @@ pub(super) async fn handle_mission_clear(
 // Mission Set Current
 // ---------------------------------------------------------------------------
 
+/// Handle a set-current command. `seq` is a **semantic** 0-indexed waypoint
+/// index (home excluded). For the Mission wire protocol the first visible
+/// waypoint is wire seq 1, so we add 1 before sending.
 pub(super) async fn handle_mission_set_current(
     seq: u16,
     ctx: &mut CommandContext<'_>,
 ) -> Result<(), VehicleError> {
+    // Semantic → wire: home occupies wire seq 0 for Mission type.
+    let wire_seq = seq + 1;
+
     let target = get_target(ctx.vehicle_target)?;
     let retry_policy = &ctx.config.retry_policy;
 
@@ -545,7 +551,7 @@ pub(super) async fn handle_mission_set_current(
                 target_component: target.component_id,
                 command: MavCmd::MAV_CMD_DO_SET_MISSION_CURRENT,
                 confirmation: 0,
-                param1: seq as f32,
+                param1: wire_seq as f32,
                 param2: 0.0,
                 param3: 0.0,
                 param4: 0.0,
@@ -578,7 +584,7 @@ pub(super) async fn handle_mission_set_current(
                         {
                             return Ok(());
                         }
-                        common::MavMessage::MISSION_CURRENT(data) if data.seq == seq => {
+                        common::MavMessage::MISSION_CURRENT(data) if data.seq == wire_seq => {
                             return Ok(());
                         }
                         _ => {}
