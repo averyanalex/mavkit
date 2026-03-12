@@ -526,6 +526,14 @@ impl PyVehicle {
         })
     }
 
+    fn reboot_to_bootloader<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let v = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            v.reboot_to_bootloader().await.map_err(to_py_err)?;
+            Ok(())
+        })
+    }
+
     fn available_modes(&self) -> Vec<PyFlightMode> {
         self.inner
             .available_modes()
