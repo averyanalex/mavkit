@@ -106,3 +106,43 @@ class TestVehicleConfig:
         config = mavkit.VehicleConfig()
         with pytest.raises(AttributeError):
             config.gcs_system_id = 1  # type: ignore[misc]
+
+
+class TestParamsBindings:
+    def test_params_handle_exposes_state_and_operation_methods(self):
+        params_handle = getattr(mavkit, "ParamsHandle")
+        for name in (
+            "latest",
+            "wait",
+            "wait_timeout",
+            "subscribe",
+            "download_all",
+            "write",
+            "write_batch",
+        ):
+            assert hasattr(params_handle, name)
+            assert callable(getattr(params_handle, name))
+
+    def test_param_wrapper_classes_are_exported(self):
+        for name in (
+            "SyncState",
+            "ParamOperationKind",
+            "ParamState",
+            "ParamStateSubscription",
+            "ParamProgressSubscription",
+            "ParamDownloadOp",
+            "ParamWriteBatchOp",
+        ):
+            assert hasattr(mavkit, name)
+
+    def test_param_progress_exposes_download_and_write_fields(self):
+        for name in (
+            "phase",
+            "received",
+            "expected",
+            "expected_count",
+            "index",
+            "total",
+            "name",
+        ):
+            assert hasattr(mavkit.ParamProgress, name)

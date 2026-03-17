@@ -1,8 +1,55 @@
-use pyo3::exceptions::PyKeyError;
+use pyo3::exceptions::{PyKeyError, PyStopAsyncIteration, PyValueError};
 use pyo3::prelude::*;
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
 
 use crate::enums::*;
+use crate::error::to_py_err;
+use crate::vehicle::vehicle_label;
+
+fn duration_from_secs(timeout_secs: f64) -> PyResult<Duration> {
+    if !timeout_secs.is_finite() || timeout_secs < 0.0 {
+        return Err(PyValueError::new_err(
+            "timeout_secs must be a finite non-negative number",
+        ));
+    }
+    Ok(Duration::from_secs_f64(timeout_secs))
+}
+
+#[pyclass(name = "SyncState", eq, frozen, from_py_object)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PySyncState {
+    Unknown,
+    Current,
+    PossiblyStale,
+}
+
+impl From<mavkit::SyncState> for PySyncState {
+    fn from(value: mavkit::SyncState) -> Self {
+        match value {
+            mavkit::SyncState::Unknown => Self::Unknown,
+            mavkit::SyncState::Current => Self::Current,
+            mavkit::SyncState::PossiblyStale => Self::PossiblyStale,
+        }
+    }
+}
+
+#[pyclass(name = "ParamOperationKind", eq, frozen, from_py_object)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PyParamOperationKind {
+    DownloadAll,
+    WriteBatch,
+}
+
+impl From<mavkit::ParamOperationKind> for PyParamOperationKind {
+    fn from(value: mavkit::ParamOperationKind) -> Self {
+        match value {
+            mavkit::ParamOperationKind::DownloadAll => Self::DownloadAll,
+            mavkit::ParamOperationKind::WriteBatch => Self::WriteBatch,
+        }
+    }
+}
 
 // --- Param ---
 
@@ -106,29 +153,70 @@ impl PyParamStore {
 #[pyclass(name = "ParamProgress", frozen, skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyParamProgress {
-    pub(crate) inner: mavkit::ParamProgress,
+    pub(crate) inner: mavkit::ParamOperationProgress,
 }
 
 #[pymethods]
 impl PyParamProgress {
     #[getter]
     fn phase(&self) -> PyParamTransferPhase {
-        self.inner.phase.into()
+        match self.inner {
+            mavkit::ParamOperationProgress::Downloading { .. } => PyParamTransferPhase::Downloading,
+            mavkit::ParamOperationProgress::Writing { .. } => PyParamTransferPhase::Writing,
+            mavkit::ParamOperationProgress::Completed => PyParamTransferPhase::Completed,
+            mavkit::ParamOperationProgress::Failed => PyParamTransferPhase::Failed,
+            mavkit::ParamOperationProgress::Cancelled => PyParamTransferPhase::Cancelled,
+        }
     }
     #[getter]
     fn received(&self) -> u16 {
-        self.inner.received
+        match &self.inner {
+            mavkit::ParamOperationProgress::Downloading { received, .. } => *received,
+            _ => 0,
+        }
     }
     #[getter]
     fn expected(&self) -> u16 {
-        self.inner.expected
+        match &self.inner {
+            mavkit::ParamOperationProgress::Downloading { expected, .. } => expected.unwrap_or(0),
+            _ => 0,
+        }
+    }
+
+    #[getter]
+    fn expected_count(&self) -> Option<u16> {
+        match &self.inner {
+            mavkit::ParamOperationProgress::Downloading { expected, .. } => *expected,
+            _ => None,
+        }
+    }
+
+    #[getter]
+    fn index(&self) -> u16 {
+        match &self.inner {
+            mavkit::ParamOperationProgress::Writing { index, .. } => *index,
+            _ => 0,
+        }
+    }
+
+    #[getter]
+    fn total(&self) -> u16 {
+        match &self.inner {
+            mavkit::ParamOperationProgress::Writing { total, .. } => *total,
+            _ => 0,
+        }
+    }
+
+    #[getter]
+    fn name(&self) -> Option<String> {
+        match &self.inner {
+            mavkit::ParamOperationProgress::Writing { name, .. } => Some(name.clone()),
+            _ => None,
+        }
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "ParamProgress({:?}: {}/{})",
-            self.inner.phase, self.inner.received, self.inner.expected
-        )
+        format!("ParamProgress(phase={:?})", self.phase())
     }
 }
 
@@ -170,6 +258,260 @@ impl PyParamWriteResult {
     }
 }
 
+#[pyclass(name = "ParamState", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyParamState {
+    inner: mavkit::ParamState,
+}
+
+#[pymethods]
+impl PyParamState {
+    #[getter]
+    fn store(&self) -> Option<PyParamStore> {
+        self.inner.store.clone().map(|inner| PyParamStore { inner })
+    }
+
+    #[getter]
+    fn sync(&self) -> PySyncState {
+        self.inner.sync.into()
+    }
+
+    #[getter]
+    fn active_op(&self) -> Option<PyParamOperationKind> {
+        self.inner.active_op.map(Into::into)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ParamState(sync={:?}, active_op={:?}, has_store={})",
+            self.inner.sync,
+            self.inner.active_op,
+            self.inner.store.is_some()
+        )
+    }
+}
+
+#[pyclass(name = "ParamStateSubscription", frozen, skip_from_py_object)]
+pub struct PyParamStateSubscription {
+    inner: Arc<tokio::sync::Mutex<mavkit::ObservationSubscription<mavkit::ParamState>>>,
+}
+
+#[pymethods]
+impl PyParamStateSubscription {
+    fn recv<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let inner = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut guard = inner.lock().await;
+            match guard.recv().await {
+                Some(value) => Ok(PyParamState { inner: value }),
+                None => Err(PyStopAsyncIteration::new_err(
+                    "param-state subscription closed",
+                )),
+            }
+        })
+    }
+
+    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __anext__<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let inner = slf.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut guard = inner.lock().await;
+            match guard.recv().await {
+                Some(value) => Ok(PyParamState { inner: value }),
+                None => Err(PyStopAsyncIteration::new_err(
+                    "param-state subscription closed",
+                )),
+            }
+        })
+    }
+}
+
+#[pyclass(name = "ParamProgressSubscription", frozen, skip_from_py_object)]
+pub struct PyParamProgressSubscription {
+    inner: Arc<tokio::sync::Mutex<mavkit::ObservationSubscription<mavkit::ParamOperationProgress>>>,
+}
+
+#[pymethods]
+impl PyParamProgressSubscription {
+    fn recv<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let inner = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut guard = inner.lock().await;
+            match guard.recv().await {
+                Some(value) => Ok(PyParamProgress { inner: value }),
+                None => Err(PyStopAsyncIteration::new_err(
+                    "param-progress subscription closed",
+                )),
+            }
+        })
+    }
+
+    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __anext__<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let inner = slf.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut guard = inner.lock().await;
+            match guard.recv().await {
+                Some(value) => Ok(PyParamProgress { inner: value }),
+                None => Err(PyStopAsyncIteration::new_err(
+                    "param-progress subscription closed",
+                )),
+            }
+        })
+    }
+}
+
+#[pyclass(name = "ParamDownloadOp", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyParamDownloadOp {
+    inner: Arc<mavkit::ParamDownloadOp>,
+}
+
+#[pymethods]
+impl PyParamDownloadOp {
+    fn latest(&self) -> Option<PyParamProgress> {
+        self.inner.latest().map(|inner| PyParamProgress { inner })
+    }
+
+    fn subscribe(&self) -> PyParamProgressSubscription {
+        PyParamProgressSubscription {
+            inner: Arc::new(tokio::sync::Mutex::new(self.inner.subscribe())),
+        }
+    }
+
+    fn cancel(&self) {
+        self.inner.cancel();
+    }
+
+    fn wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let inner = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let store = inner.wait().await.map_err(to_py_err)?;
+            Ok(PyParamStore { inner: store })
+        })
+    }
+}
+
+#[pyclass(name = "ParamWriteBatchOp", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyParamWriteBatchOp {
+    inner: Arc<mavkit::ParamWriteBatchOp>,
+}
+
+#[pymethods]
+impl PyParamWriteBatchOp {
+    fn latest(&self) -> Option<PyParamProgress> {
+        self.inner.latest().map(|inner| PyParamProgress { inner })
+    }
+
+    fn subscribe(&self) -> PyParamProgressSubscription {
+        PyParamProgressSubscription {
+            inner: Arc::new(tokio::sync::Mutex::new(self.inner.subscribe())),
+        }
+    }
+
+    fn cancel(&self) {
+        self.inner.cancel();
+    }
+
+    fn wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let inner = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let results = inner.wait().await.map_err(to_py_err)?;
+            Ok(results
+                .into_iter()
+                .map(|inner| PyParamWriteResult { inner })
+                .collect::<Vec<_>>())
+        })
+    }
+}
+
+#[pyclass(name = "ParamsHandle", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyParamsHandle {
+    pub(crate) inner: mavkit::Vehicle,
+}
+
+impl PyParamsHandle {
+    pub(crate) fn new(inner: mavkit::Vehicle) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl PyParamsHandle {
+    fn latest(&self) -> Option<PyParamState> {
+        self.inner
+            .params()
+            .latest()
+            .map(|inner| PyParamState { inner })
+    }
+
+    fn wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let inner = vehicle.params().wait().await;
+            Ok(PyParamState { inner })
+        })
+    }
+
+    fn wait_timeout<'py>(&self, py: Python<'py>, timeout_secs: f64) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        let timeout = duration_from_secs(timeout_secs)?;
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let inner = vehicle
+                .params()
+                .wait_timeout(timeout)
+                .await
+                .map_err(to_py_err)?;
+            Ok(PyParamState { inner })
+        })
+    }
+
+    fn subscribe(&self) -> PyParamStateSubscription {
+        PyParamStateSubscription {
+            inner: Arc::new(tokio::sync::Mutex::new(self.inner.params().subscribe())),
+        }
+    }
+
+    fn download_all(&self) -> PyResult<PyParamDownloadOp> {
+        let op = self.inner.params().download_all().map_err(to_py_err)?;
+        Ok(PyParamDownloadOp {
+            inner: Arc::new(op),
+        })
+    }
+
+    fn write<'py>(&self, py: Python<'py>, name: &str, value: f32) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        let name = name.to_string();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let inner = vehicle
+                .params()
+                .write(&name, value)
+                .await
+                .map_err(to_py_err)?;
+            Ok(PyParamWriteResult { inner })
+        })
+    }
+
+    fn write_batch(&self, batch: Vec<(String, f32)>) -> PyResult<PyParamWriteBatchOp> {
+        let op = self.inner.params().write_batch(batch).map_err(to_py_err)?;
+        Ok(PyParamWriteBatchOp {
+            inner: Arc::new(op),
+        })
+    }
+
+    fn __repr__(&self) -> String {
+        format!("ParamsHandle({})", vehicle_label(&self.inner))
+    }
+}
+
 // --- Free functions ---
 
 #[pyfunction]
@@ -179,5 +521,7 @@ pub fn format_param_file(store: &PyParamStore) -> String {
 
 #[pyfunction]
 pub fn parse_param_file(contents: &str) -> PyResult<HashMap<String, f32>> {
-    mavkit::parse_param_file(contents).map_err(pyo3::exceptions::PyValueError::new_err)
+    mavkit::parse_param_file(contents)
+        .map(|items| items.into_iter().collect())
+        .map_err(|err| pyo3::exceptions::PyValueError::new_err(err.to_string()))
 }

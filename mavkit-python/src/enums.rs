@@ -34,26 +34,12 @@ pub enum PySystemStatus {
     Poweroff,
 }
 
-py_enum_convert!(
-    PySystemStatus,
-    mavkit::SystemStatus,
-    [
-        Unknown,
-        Boot,
-        Calibrating,
-        Standby,
-        Active,
-        Critical,
-        Emergency,
-        Poweroff,
-    ]
-);
-
 #[pyclass(name = "VehicleType", eq, frozen, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PyVehicleType {
     Unknown,
     FixedWing,
+    Vtol,
     Quadrotor,
     Hexarotor,
     Octorotor,
@@ -61,6 +47,7 @@ pub enum PyVehicleType {
     Helicopter,
     Coaxial,
     GroundRover,
+    Submarine,
     Generic,
 }
 
@@ -70,6 +57,7 @@ py_enum_convert!(
     [
         Unknown,
         FixedWing,
+        Vtol,
         Quadrotor,
         Hexarotor,
         Octorotor,
@@ -77,6 +65,7 @@ py_enum_convert!(
         Helicopter,
         Coaxial,
         GroundRover,
+        Submarine,
         Generic,
     ]
 );
@@ -107,12 +96,6 @@ pub enum PyGpsFixType {
     RtkFixed,
 }
 
-py_enum_convert!(
-    PyGpsFixType,
-    mavkit::GpsFixType,
-    [NoFix, Fix2d, Fix3d, Dgps, RtkFloat, RtkFixed,]
-);
-
 #[pyclass(name = "MavSeverity", eq, frozen, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PyMavSeverity {
@@ -125,14 +108,6 @@ pub enum PyMavSeverity {
     Info,
     Debug,
 }
-
-py_enum_convert!(
-    PyMavSeverity,
-    mavkit::MavSeverity,
-    [
-        Emergency, Alert, Critical, Error, Warning, Notice, Info, Debug,
-    ]
-);
 
 // --- Mission enums ---
 
@@ -147,7 +122,7 @@ pub enum PyMissionType {
 py_enum_convert!(PyMissionType, mavkit::MissionType, [Mission, Fence, Rally]);
 
 #[pyclass(name = "MissionFrame", eq, frozen, from_py_object)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyMissionFrame {
     Mission,
     GlobalInt,
@@ -223,20 +198,15 @@ py_enum_convert!(
 // --- Param enums ---
 
 #[pyclass(name = "ParamTransferPhase", eq, frozen, from_py_object)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PyParamTransferPhase {
     Idle,
     Downloading,
     Writing,
     Completed,
     Failed,
+    Cancelled,
 }
-
-py_enum_convert!(
-    PyParamTransferPhase,
-    mavkit::ParamTransferPhase,
-    [Idle, Downloading, Writing, Completed, Failed,]
-);
 
 #[pyclass(name = "ParamType", eq, frozen, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]

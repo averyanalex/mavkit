@@ -17,14 +17,14 @@ pub struct PyVehicleConfig {
 
 impl PyVehicleConfig {
     pub(crate) fn into_inner(self) -> mavkit::VehicleConfig {
-        mavkit::VehicleConfig {
-            gcs_system_id: self.gcs_system_id,
-            gcs_component_id: self.gcs_component_id,
-            retry_policy: self.retry,
-            auto_request_home: self.auto_request_home,
-            command_buffer_size: self.command_buffer_size,
-            connect_timeout: self.connect_timeout,
-        }
+        let mut config = mavkit::VehicleConfig::default();
+        config.gcs_system_id = self.gcs_system_id;
+        config.gcs_component_id = self.gcs_component_id;
+        config.retry_policy = self.retry;
+        config.auto_request_home = self.auto_request_home;
+        config.command_buffer_size = self.command_buffer_size;
+        config.connect_timeout = self.connect_timeout;
+        config
     }
 }
 

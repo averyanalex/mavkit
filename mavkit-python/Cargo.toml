@@ -15,5 +15,6 @@ serde_json = "1"
 pyo3 = "0.28"
 pyo3-async-runtimes = { version = "0.28", features = ["tokio-runtime"] }
 tokio = { version = "1", features = ["sync", "time", "rt", "rt-multi-thread"] }
-mavlink = { version = "0.17", features = ["emit-extensions"] }
+tokio-stream = "0.1"
+mavlink = { version = "0.17", default-features = false, features = ["all", "std", "serde", "format-generated-code", "emit-extensions"] }
 num-traits = "0.2"

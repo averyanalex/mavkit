@@ -1,22 +1,375 @@
 use pyo3::prelude::*;
+use pyo3::types::PyAny;
 
 use crate::enums::*;
 
-// --- MissionItem ---
+fn command_frame_from_py(frame: PyMissionFrame) -> mavkit::mission::commands::MissionFrame {
+    match frame {
+        PyMissionFrame::Mission => mavkit::mission::commands::MissionFrame::Mission,
+        PyMissionFrame::GlobalInt => mavkit::mission::commands::MissionFrame::Global,
+        PyMissionFrame::GlobalRelativeAltInt => {
+            mavkit::mission::commands::MissionFrame::GlobalRelativeAlt
+        }
+        PyMissionFrame::GlobalTerrainAltInt => {
+            mavkit::mission::commands::MissionFrame::GlobalTerrainAlt
+        }
+        PyMissionFrame::LocalNed | PyMissionFrame::Other => {
+            mavkit::mission::commands::MissionFrame::Other(0)
+        }
+    }
+}
 
-#[pyclass(name = "MissionItem", frozen, from_py_object)]
+fn py_frame_from_command(frame: mavkit::mission::commands::MissionFrame) -> PyMissionFrame {
+    match frame {
+        mavkit::mission::commands::MissionFrame::Mission => PyMissionFrame::Mission,
+        mavkit::mission::commands::MissionFrame::Global => PyMissionFrame::GlobalInt,
+        mavkit::mission::commands::MissionFrame::GlobalRelativeAlt => {
+            PyMissionFrame::GlobalRelativeAltInt
+        }
+        mavkit::mission::commands::MissionFrame::GlobalTerrainAlt => {
+            PyMissionFrame::GlobalTerrainAltInt
+        }
+        mavkit::mission::commands::MissionFrame::Other(_) => PyMissionFrame::Other,
+    }
+}
+
+fn wire_parts(item: &mavkit::MissionItem) -> (u16, PyMissionFrame, [f32; 4], i32, i32, f32) {
+    let (command, frame, params, x, y, z) = item.command.clone().into_wire();
+    (command, py_frame_from_command(frame), params, x, y, z)
+}
+
+fn position_from_components(
+    frame: PyMissionFrame,
+    latitude_deg: f64,
+    longitude_deg: f64,
+    altitude_m: f32,
+) -> mavkit::GeoPoint3d {
+    match frame {
+        PyMissionFrame::GlobalInt => mavkit::GeoPoint3d::Msl(mavkit::GeoPoint3dMsl {
+            latitude_deg,
+            longitude_deg,
+            altitude_msl_m: f64::from(altitude_m),
+        }),
+        PyMissionFrame::GlobalTerrainAltInt => {
+            mavkit::GeoPoint3d::Terrain(mavkit::GeoPoint3dTerrain {
+                latitude_deg,
+                longitude_deg,
+                altitude_terrain_m: f64::from(altitude_m),
+            })
+        }
+        PyMissionFrame::GlobalRelativeAltInt
+        | PyMissionFrame::Mission
+        | PyMissionFrame::LocalNed
+        | PyMissionFrame::Other => mavkit::GeoPoint3d::RelHome(mavkit::GeoPoint3dRelHome {
+            latitude_deg,
+            longitude_deg,
+            relative_alt_m: f64::from(altitude_m),
+        }),
+    }
+}
+
+fn position_components(position: &mavkit::GeoPoint3d) -> (PyMissionFrame, f64, f64, f32) {
+    match position {
+        mavkit::GeoPoint3d::Msl(point) => (
+            PyMissionFrame::GlobalInt,
+            point.latitude_deg,
+            point.longitude_deg,
+            point.altitude_msl_m as f32,
+        ),
+        mavkit::GeoPoint3d::RelHome(point) => (
+            PyMissionFrame::GlobalRelativeAltInt,
+            point.latitude_deg,
+            point.longitude_deg,
+            point.relative_alt_m as f32,
+        ),
+        mavkit::GeoPoint3d::Terrain(point) => (
+            PyMissionFrame::GlobalTerrainAltInt,
+            point.latitude_deg,
+            point.longitude_deg,
+            point.altitude_terrain_m as f32,
+        ),
+    }
+}
+
+fn speed_type_from_name(speed_type: &str) -> PyResult<mavkit::mission::commands::SpeedType> {
+    if speed_type.eq_ignore_ascii_case("airspeed") {
+        Ok(mavkit::mission::commands::SpeedType::Airspeed)
+    } else if speed_type.eq_ignore_ascii_case("groundspeed") {
+        Ok(mavkit::mission::commands::SpeedType::Groundspeed)
+    } else {
+        Err(pyo3::exceptions::PyValueError::new_err(
+            "speed_type must be 'airspeed' or 'groundspeed'",
+        ))
+    }
+}
+
+fn speed_type_name(speed_type: mavkit::mission::commands::SpeedType) -> &'static str {
+    match speed_type {
+        mavkit::mission::commands::SpeedType::Airspeed => "airspeed",
+        mavkit::mission::commands::SpeedType::Groundspeed => "groundspeed",
+    }
+}
+
+fn yaw_direction_from_name(direction: &str) -> PyResult<mavkit::mission::commands::YawDirection> {
+    if direction.eq_ignore_ascii_case("clockwise") {
+        Ok(mavkit::mission::commands::YawDirection::Clockwise)
+    } else if direction.eq_ignore_ascii_case("counter_clockwise")
+        || direction.eq_ignore_ascii_case("counterclockwise")
+    {
+        Ok(mavkit::mission::commands::YawDirection::CounterClockwise)
+    } else {
+        Err(pyo3::exceptions::PyValueError::new_err(
+            "direction must be 'clockwise' or 'counter_clockwise'",
+        ))
+    }
+}
+
+fn yaw_direction_name(direction: mavkit::mission::commands::YawDirection) -> &'static str {
+    match direction {
+        mavkit::mission::commands::YawDirection::Clockwise => "clockwise",
+        mavkit::mission::commands::YawDirection::CounterClockwise => "counter_clockwise",
+    }
+}
+
+fn loiter_direction_from_name(
+    direction: &str,
+) -> PyResult<mavkit::mission::commands::LoiterDirection> {
+    if direction.eq_ignore_ascii_case("clockwise") {
+        Ok(mavkit::mission::commands::LoiterDirection::Clockwise)
+    } else if direction.eq_ignore_ascii_case("counter_clockwise")
+        || direction.eq_ignore_ascii_case("counterclockwise")
+    {
+        Ok(mavkit::mission::commands::LoiterDirection::CounterClockwise)
+    } else {
+        Err(pyo3::exceptions::PyValueError::new_err(
+            "direction must be 'clockwise' or 'counter_clockwise'",
+        ))
+    }
+}
+
+fn loiter_direction_name(direction: mavkit::mission::commands::LoiterDirection) -> &'static str {
+    match direction {
+        mavkit::mission::commands::LoiterDirection::Clockwise => "clockwise",
+        mavkit::mission::commands::LoiterDirection::CounterClockwise => "counter_clockwise",
+    }
+}
+
+fn alt_change_action_from_name(
+    action: &str,
+) -> PyResult<mavkit::mission::commands::AltChangeAction> {
+    if action.eq_ignore_ascii_case("neutral") {
+        Ok(mavkit::mission::commands::AltChangeAction::Neutral)
+    } else if action.eq_ignore_ascii_case("climb") {
+        Ok(mavkit::mission::commands::AltChangeAction::Climb)
+    } else if action.eq_ignore_ascii_case("descend") {
+        Ok(mavkit::mission::commands::AltChangeAction::Descend)
+    } else {
+        Err(pyo3::exceptions::PyValueError::new_err(
+            "action must be 'neutral', 'climb', or 'descend'",
+        ))
+    }
+}
+
+fn alt_change_action_name(action: mavkit::mission::commands::AltChangeAction) -> &'static str {
+    match action {
+        mavkit::mission::commands::AltChangeAction::Neutral => "neutral",
+        mavkit::mission::commands::AltChangeAction::Climb => "climb",
+        mavkit::mission::commands::AltChangeAction::Descend => "descend",
+    }
+}
+
+fn fence_action_from_name(action: &str) -> PyResult<mavkit::mission::commands::FenceAction> {
+    if action.eq_ignore_ascii_case("disable") {
+        Ok(mavkit::mission::commands::FenceAction::Disable)
+    } else if action.eq_ignore_ascii_case("enable") {
+        Ok(mavkit::mission::commands::FenceAction::Enable)
+    } else if action.eq_ignore_ascii_case("disable_floor") {
+        Ok(mavkit::mission::commands::FenceAction::DisableFloor)
+    } else {
+        Err(pyo3::exceptions::PyValueError::new_err(
+            "action must be 'disable', 'enable', or 'disable_floor'",
+        ))
+    }
+}
+
+fn fence_action_name(action: mavkit::mission::commands::FenceAction) -> &'static str {
+    match action {
+        mavkit::mission::commands::FenceAction::Disable => "disable",
+        mavkit::mission::commands::FenceAction::Enable => "enable",
+        mavkit::mission::commands::FenceAction::DisableFloor => "disable_floor",
+    }
+}
+
+fn parachute_action_from_name(
+    action: &str,
+) -> PyResult<mavkit::mission::commands::ParachuteAction> {
+    if action.eq_ignore_ascii_case("disable") {
+        Ok(mavkit::mission::commands::ParachuteAction::Disable)
+    } else if action.eq_ignore_ascii_case("enable") {
+        Ok(mavkit::mission::commands::ParachuteAction::Enable)
+    } else if action.eq_ignore_ascii_case("release") {
+        Ok(mavkit::mission::commands::ParachuteAction::Release)
+    } else {
+        Err(pyo3::exceptions::PyValueError::new_err(
+            "action must be 'disable', 'enable', or 'release'",
+        ))
+    }
+}
+
+fn parachute_action_name(action: mavkit::mission::commands::ParachuteAction) -> &'static str {
+    match action {
+        mavkit::mission::commands::ParachuteAction::Disable => "disable",
+        mavkit::mission::commands::ParachuteAction::Enable => "enable",
+        mavkit::mission::commands::ParachuteAction::Release => "release",
+    }
+}
+
+fn gripper_action_from_name(action: &str) -> PyResult<mavkit::mission::commands::GripperAction> {
+    if action.eq_ignore_ascii_case("release") {
+        Ok(mavkit::mission::commands::GripperAction::Release)
+    } else if action.eq_ignore_ascii_case("grab") {
+        Ok(mavkit::mission::commands::GripperAction::Grab)
+    } else {
+        Err(pyo3::exceptions::PyValueError::new_err(
+            "action must be 'release' or 'grab'",
+        ))
+    }
+}
+
+fn gripper_action_name(action: mavkit::mission::commands::GripperAction) -> &'static str {
+    match action {
+        mavkit::mission::commands::GripperAction::Release => "release",
+        mavkit::mission::commands::GripperAction::Grab => "grab",
+    }
+}
+
+fn winch_action_from_name(action: &str) -> PyResult<mavkit::mission::commands::WinchAction> {
+    if action.eq_ignore_ascii_case("relax") {
+        Ok(mavkit::mission::commands::WinchAction::Relax)
+    } else if action.eq_ignore_ascii_case("length_control") {
+        Ok(mavkit::mission::commands::WinchAction::LengthControl)
+    } else if action.eq_ignore_ascii_case("rate_control") {
+        Ok(mavkit::mission::commands::WinchAction::RateControl)
+    } else {
+        Err(pyo3::exceptions::PyValueError::new_err(
+            "action must be 'relax', 'length_control', or 'rate_control'",
+        ))
+    }
+}
+
+fn winch_action_name(action: mavkit::mission::commands::WinchAction) -> &'static str {
+    match action {
+        mavkit::mission::commands::WinchAction::Relax => "relax",
+        mavkit::mission::commands::WinchAction::LengthControl => "length_control",
+        mavkit::mission::commands::WinchAction::RateControl => "rate_control",
+    }
+}
+
+macro_rules! define_scalar_command_pyclass {
+    ($py_struct:ident, $py_name:literal, $inner_ty:ty, $inner_ctor:expr, { $($field:ident : $ty:ty),+ $(,)? }) => {
+        #[pyclass(name = $py_name, frozen, from_py_object)]
+        #[derive(Clone)]
+        pub struct $py_struct {
+            pub(crate) inner: $inner_ty,
+        }
+
+        #[pymethods]
+        impl $py_struct {
+            #[new]
+            #[pyo3(signature = (*, $($field),+))]
+            fn new($($field: $ty),+) -> Self {
+                Self {
+                    inner: $inner_ctor,
+                }
+            }
+
+            $(
+                #[getter]
+                fn $field(&self) -> $ty {
+                    self.inner.$field
+                }
+            )+
+        }
+    };
+}
+
+#[pyclass(name = "GeoPoint3d", frozen, from_py_object)]
 #[derive(Clone)]
-pub struct PyMissionItem {
-    pub(crate) inner: mavkit::MissionItem,
+pub struct PyGeoPoint3d {
+    pub(crate) inner: mavkit::GeoPoint3d,
 }
 
 #[pymethods]
-impl PyMissionItem {
+impl PyGeoPoint3d {
+    #[staticmethod]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_msl_m))]
+    fn msl(latitude_deg: f64, longitude_deg: f64, altitude_msl_m: f64) -> Self {
+        Self {
+            inner: mavkit::GeoPoint3d::Msl(mavkit::GeoPoint3dMsl {
+                latitude_deg,
+                longitude_deg,
+                altitude_msl_m,
+            }),
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, relative_alt_m))]
+    fn rel_home(latitude_deg: f64, longitude_deg: f64, relative_alt_m: f64) -> Self {
+        Self {
+            inner: mavkit::GeoPoint3d::RelHome(mavkit::GeoPoint3dRelHome {
+                latitude_deg,
+                longitude_deg,
+                relative_alt_m,
+            }),
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_terrain_m))]
+    fn terrain(latitude_deg: f64, longitude_deg: f64, altitude_terrain_m: f64) -> Self {
+        Self {
+            inner: mavkit::GeoPoint3d::Terrain(mavkit::GeoPoint3dTerrain {
+                latitude_deg,
+                longitude_deg,
+                altitude_terrain_m,
+            }),
+        }
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner).3
+    }
+}
+
+#[pyclass(name = "RawMissionCommand", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyRawMissionCommand {
+    pub(crate) inner: mavkit::RawMissionCommand,
+}
+
+#[pymethods]
+impl PyRawMissionCommand {
     #[new]
-    #[pyo3(signature = (*, seq, command, frame, x=0, y=0, z=0.0, param1=0.0, param2=0.0, param3=0.0, param4=0.0, current=false, autocontinue=true))]
+    #[pyo3(signature = (*, command, frame, x=0, y=0, z=0.0, param1=0.0, param2=0.0, param3=0.0, param4=0.0))]
     #[allow(clippy::too_many_arguments)]
     fn new(
-        seq: u16,
         command: u16,
         frame: PyMissionFrame,
         x: i32,
@@ -26,16 +379,11 @@ impl PyMissionItem {
         param2: f32,
         param3: f32,
         param4: f32,
-        current: bool,
-        autocontinue: bool,
     ) -> Self {
         Self {
-            inner: mavkit::MissionItem {
-                seq,
+            inner: mavkit::RawMissionCommand {
                 command,
-                frame: frame.into(),
-                current,
-                autocontinue,
+                frame: command_frame_from_py(frame),
                 param1,
                 param2,
                 param3,
@@ -48,16 +396,2442 @@ impl PyMissionItem {
     }
 
     #[getter]
+    fn command(&self) -> u16 {
+        self.inner.command
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        py_frame_from_command(self.inner.frame)
+    }
+
+    #[getter]
+    fn x(&self) -> i32 {
+        self.inner.x
+    }
+
+    #[getter]
+    fn y(&self) -> i32 {
+        self.inner.y
+    }
+
+    #[getter]
+    fn z(&self) -> f32 {
+        self.inner.z
+    }
+
+    #[getter]
+    fn param1(&self) -> f32 {
+        self.inner.param1
+    }
+
+    #[getter]
+    fn param2(&self) -> f32 {
+        self.inner.param2
+    }
+
+    #[getter]
+    fn param3(&self) -> f32 {
+        self.inner.param3
+    }
+
+    #[getter]
+    fn param4(&self) -> f32 {
+        self.inner.param4
+    }
+}
+
+#[pyclass(name = "NavWaypoint", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyNavWaypoint {
+    pub(crate) inner: mavkit::mission::commands::NavWaypoint,
+}
+
+#[pymethods]
+impl PyNavWaypoint {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt, hold_time_s=0.0, acceptance_radius_m=0.0, pass_radius_m=0.0, yaw_deg=0.0))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        latitude_deg: f64,
+        longitude_deg: f64,
+        altitude_m: f32,
+        frame: PyMissionFrame,
+        hold_time_s: f32,
+        acceptance_radius_m: f32,
+        pass_radius_m: f32,
+        yaw_deg: f32,
+    ) -> Self {
+        Self {
+            inner: mavkit::mission::commands::NavWaypoint {
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+                hold_time_s,
+                acceptance_radius_m,
+                pass_radius_m,
+                yaw_deg,
+            },
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position, hold_time_s=0.0, acceptance_radius_m=0.0, pass_radius_m=0.0, yaw_deg=0.0))]
+    fn from_point(
+        position: &PyGeoPoint3d,
+        hold_time_s: f32,
+        acceptance_radius_m: f32,
+        pass_radius_m: f32,
+        yaw_deg: f32,
+    ) -> Self {
+        Self {
+            inner: mavkit::mission::commands::NavWaypoint {
+                position: position.inner.clone(),
+                hold_time_s,
+                acceptance_radius_m,
+                pass_radius_m,
+                yaw_deg,
+            },
+        }
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+
+    #[getter]
+    fn hold_time_s(&self) -> f32 {
+        self.inner.hold_time_s
+    }
+
+    #[getter]
+    fn acceptance_radius_m(&self) -> f32 {
+        self.inner.acceptance_radius_m
+    }
+
+    #[getter]
+    fn pass_radius_m(&self) -> f32 {
+        self.inner.pass_radius_m
+    }
+
+    #[getter]
+    fn yaw_deg(&self) -> f32 {
+        self.inner.yaw_deg
+    }
+}
+
+#[pyclass(name = "NavTakeoff", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyNavTakeoff {
+    pub(crate) inner: mavkit::mission::commands::NavTakeoff,
+}
+
+#[pymethods]
+impl PyNavTakeoff {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt, pitch_deg=0.0))]
+    fn new(
+        latitude_deg: f64,
+        longitude_deg: f64,
+        altitude_m: f32,
+        frame: PyMissionFrame,
+        pitch_deg: f32,
+    ) -> Self {
+        Self {
+            inner: mavkit::mission::commands::NavTakeoff {
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+                pitch_deg,
+            },
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position, pitch_deg=0.0))]
+    fn from_point(position: &PyGeoPoint3d, pitch_deg: f32) -> Self {
+        Self {
+            inner: mavkit::mission::commands::NavTakeoff {
+                position: position.inner.clone(),
+                pitch_deg,
+            },
+        }
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+
+    #[getter]
+    fn pitch_deg(&self) -> f32 {
+        self.inner.pitch_deg
+    }
+}
+
+#[pyclass(name = "NavLand", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyNavLand {
+    pub(crate) inner: mavkit::mission::commands::NavLand,
+}
+
+#[pymethods]
+impl PyNavLand {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt, abort_alt_m=0.0))]
+    fn new(
+        latitude_deg: f64,
+        longitude_deg: f64,
+        altitude_m: f32,
+        frame: PyMissionFrame,
+        abort_alt_m: f32,
+    ) -> Self {
+        Self {
+            inner: mavkit::mission::commands::NavLand {
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+                abort_alt_m,
+            },
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position, abort_alt_m=0.0))]
+    fn from_point(position: &PyGeoPoint3d, abort_alt_m: f32) -> Self {
+        Self {
+            inner: mavkit::mission::commands::NavLand {
+                position: position.inner.clone(),
+                abort_alt_m,
+            },
+        }
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+
+    #[getter]
+    fn abort_alt_m(&self) -> f32 {
+        self.inner.abort_alt_m
+    }
+}
+
+#[pyclass(name = "NavLoiterTime", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyNavLoiterTime {
+    pub(crate) inner: mavkit::mission::commands::NavLoiterTime,
+}
+
+#[pymethods]
+impl PyNavLoiterTime {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt, time_s=0.0, direction="clockwise", exit_xtrack=false))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        latitude_deg: f64,
+        longitude_deg: f64,
+        altitude_m: f32,
+        frame: PyMissionFrame,
+        time_s: f32,
+        direction: &str,
+        exit_xtrack: bool,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: mavkit::mission::commands::NavLoiterTime {
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+                time_s,
+                direction: loiter_direction_from_name(direction)?,
+                exit_xtrack,
+            },
+        })
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position, time_s=0.0, direction="clockwise", exit_xtrack=false))]
+    fn from_point(
+        position: &PyGeoPoint3d,
+        time_s: f32,
+        direction: &str,
+        exit_xtrack: bool,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: mavkit::mission::commands::NavLoiterTime {
+                position: position.inner.clone(),
+                time_s,
+                direction: loiter_direction_from_name(direction)?,
+                exit_xtrack,
+            },
+        })
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+
+    #[getter]
+    fn time_s(&self) -> f32 {
+        self.inner.time_s
+    }
+
+    #[getter]
+    fn direction(&self) -> &'static str {
+        loiter_direction_name(self.inner.direction)
+    }
+
+    #[getter]
+    fn exit_xtrack(&self) -> bool {
+        self.inner.exit_xtrack
+    }
+}
+
+#[pyclass(name = "NavGuidedEnable", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyNavGuidedEnable {
+    pub(crate) inner: mavkit::mission::commands::NavGuidedEnable,
+}
+
+#[pymethods]
+impl PyNavGuidedEnable {
+    #[new]
+    #[pyo3(signature = (*, enabled))]
+    fn new(enabled: bool) -> Self {
+        Self {
+            inner: mavkit::mission::commands::NavGuidedEnable { enabled },
+        }
+    }
+
+    #[getter]
+    fn enabled(&self) -> bool {
+        self.inner.enabled
+    }
+}
+
+#[pyclass(name = "NavReturnToLaunch", frozen, from_py_object)]
+#[derive(Clone, Default)]
+pub struct PyNavReturnToLaunch;
+
+#[pymethods]
+impl PyNavReturnToLaunch {
+    #[new]
+    fn new() -> Self {
+        Self
+    }
+}
+
+#[pyclass(name = "NavSplineWaypoint", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyNavSplineWaypoint {
+    pub(crate) inner: mavkit::mission::commands::NavSplineWaypoint,
+}
+
+#[pymethods]
+impl PyNavSplineWaypoint {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt, hold_time_s=0.0))]
+    fn new(
+        latitude_deg: f64,
+        longitude_deg: f64,
+        altitude_m: f32,
+        frame: PyMissionFrame,
+        hold_time_s: f32,
+    ) -> Self {
+        Self {
+            inner: mavkit::mission::commands::NavSplineWaypoint {
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+                hold_time_s,
+            },
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position, hold_time_s=0.0))]
+    fn from_point(position: &PyGeoPoint3d, hold_time_s: f32) -> Self {
+        Self {
+            inner: mavkit::mission::commands::NavSplineWaypoint {
+                position: position.inner.clone(),
+                hold_time_s,
+            },
+        }
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+
+    #[getter]
+    fn hold_time_s(&self) -> f32 {
+        self.inner.hold_time_s
+    }
+}
+
+#[pyclass(name = "NavArcWaypoint", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyNavArcWaypoint {
+    pub(crate) inner: mavkit::mission::commands::NavArcWaypoint,
+}
+
+#[pymethods]
+impl PyNavArcWaypoint {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt, arc_angle_deg, direction="clockwise"))]
+    fn new(
+        latitude_deg: f64,
+        longitude_deg: f64,
+        altitude_m: f32,
+        frame: PyMissionFrame,
+        arc_angle_deg: f32,
+        direction: &str,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: mavkit::mission::commands::NavArcWaypoint {
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+                arc_angle_deg,
+                direction: loiter_direction_from_name(direction)?,
+            },
+        })
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position, arc_angle_deg, direction="clockwise"))]
+    fn from_point(position: &PyGeoPoint3d, arc_angle_deg: f32, direction: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: mavkit::mission::commands::NavArcWaypoint {
+                position: position.inner.clone(),
+                arc_angle_deg,
+                direction: loiter_direction_from_name(direction)?,
+            },
+        })
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+
+    #[getter]
+    fn arc_angle_deg(&self) -> f32 {
+        self.inner.arc_angle_deg
+    }
+
+    #[getter]
+    fn direction(&self) -> &'static str {
+        loiter_direction_name(self.inner.direction)
+    }
+}
+
+#[pyclass(name = "NavLoiterUnlimited", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyNavLoiterUnlimited {
+    pub(crate) inner: mavkit::mission::commands::NavLoiterUnlimited,
+}
+
+#[pymethods]
+impl PyNavLoiterUnlimited {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt, radius_m=0.0, direction="clockwise"))]
+    fn new(
+        latitude_deg: f64,
+        longitude_deg: f64,
+        altitude_m: f32,
+        frame: PyMissionFrame,
+        radius_m: f32,
+        direction: &str,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: mavkit::mission::commands::NavLoiterUnlimited {
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+                radius_m,
+                direction: loiter_direction_from_name(direction)?,
+            },
+        })
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position, radius_m=0.0, direction="clockwise"))]
+    fn from_point(position: &PyGeoPoint3d, radius_m: f32, direction: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: mavkit::mission::commands::NavLoiterUnlimited {
+                position: position.inner.clone(),
+                radius_m,
+                direction: loiter_direction_from_name(direction)?,
+            },
+        })
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+
+    #[getter]
+    fn radius_m(&self) -> f32 {
+        self.inner.radius_m
+    }
+
+    #[getter]
+    fn direction(&self) -> &'static str {
+        loiter_direction_name(self.inner.direction)
+    }
+}
+
+#[pyclass(name = "NavLoiterTurns", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyNavLoiterTurns {
+    pub(crate) inner: mavkit::mission::commands::NavLoiterTurns,
+}
+
+#[pymethods]
+impl PyNavLoiterTurns {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt, turns, radius_m=0.0, direction="clockwise", exit_xtrack=false))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        latitude_deg: f64,
+        longitude_deg: f64,
+        altitude_m: f32,
+        frame: PyMissionFrame,
+        turns: f32,
+        radius_m: f32,
+        direction: &str,
+        exit_xtrack: bool,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: mavkit::mission::commands::NavLoiterTurns {
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+                turns,
+                radius_m,
+                direction: loiter_direction_from_name(direction)?,
+                exit_xtrack,
+            },
+        })
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position, turns, radius_m=0.0, direction="clockwise", exit_xtrack=false))]
+    fn from_point(
+        position: &PyGeoPoint3d,
+        turns: f32,
+        radius_m: f32,
+        direction: &str,
+        exit_xtrack: bool,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: mavkit::mission::commands::NavLoiterTurns {
+                position: position.inner.clone(),
+                turns,
+                radius_m,
+                direction: loiter_direction_from_name(direction)?,
+                exit_xtrack,
+            },
+        })
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+
+    #[getter]
+    fn turns(&self) -> f32 {
+        self.inner.turns
+    }
+
+    #[getter]
+    fn radius_m(&self) -> f32 {
+        self.inner.radius_m
+    }
+
+    #[getter]
+    fn direction(&self) -> &'static str {
+        loiter_direction_name(self.inner.direction)
+    }
+
+    #[getter]
+    fn exit_xtrack(&self) -> bool {
+        self.inner.exit_xtrack
+    }
+}
+
+#[pyclass(name = "NavLoiterToAlt", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyNavLoiterToAlt {
+    pub(crate) inner: mavkit::mission::commands::NavLoiterToAlt,
+}
+
+#[pymethods]
+impl PyNavLoiterToAlt {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt, radius_m=0.0, direction="clockwise", exit_xtrack=false))]
+    fn new(
+        latitude_deg: f64,
+        longitude_deg: f64,
+        altitude_m: f32,
+        frame: PyMissionFrame,
+        radius_m: f32,
+        direction: &str,
+        exit_xtrack: bool,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: mavkit::mission::commands::NavLoiterToAlt {
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+                radius_m,
+                direction: loiter_direction_from_name(direction)?,
+                exit_xtrack,
+            },
+        })
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position, radius_m=0.0, direction="clockwise", exit_xtrack=false))]
+    fn from_point(
+        position: &PyGeoPoint3d,
+        radius_m: f32,
+        direction: &str,
+        exit_xtrack: bool,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: mavkit::mission::commands::NavLoiterToAlt {
+                position: position.inner.clone(),
+                radius_m,
+                direction: loiter_direction_from_name(direction)?,
+                exit_xtrack,
+            },
+        })
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+
+    #[getter]
+    fn radius_m(&self) -> f32 {
+        self.inner.radius_m
+    }
+
+    #[getter]
+    fn direction(&self) -> &'static str {
+        loiter_direction_name(self.inner.direction)
+    }
+
+    #[getter]
+    fn exit_xtrack(&self) -> bool {
+        self.inner.exit_xtrack
+    }
+}
+
+#[pyclass(name = "NavContinueAndChangeAlt", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyNavContinueAndChangeAlt {
+    pub(crate) inner: mavkit::mission::commands::NavContinueAndChangeAlt,
+}
+
+#[pymethods]
+impl PyNavContinueAndChangeAlt {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt, action="neutral"))]
+    fn new(
+        latitude_deg: f64,
+        longitude_deg: f64,
+        altitude_m: f32,
+        frame: PyMissionFrame,
+        action: &str,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: mavkit::mission::commands::NavContinueAndChangeAlt {
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+                action: alt_change_action_from_name(action)?,
+            },
+        })
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position, action="neutral"))]
+    fn from_point(position: &PyGeoPoint3d, action: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: mavkit::mission::commands::NavContinueAndChangeAlt {
+                position: position.inner.clone(),
+                action: alt_change_action_from_name(action)?,
+            },
+        })
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+
+    #[getter]
+    fn action(&self) -> &'static str {
+        alt_change_action_name(self.inner.action)
+    }
+}
+
+define_scalar_command_pyclass!(
+    PyNavDelay,
+    "NavDelay",
+    mavkit::mission::commands::NavDelay,
+    mavkit::mission::commands::NavDelay {
+        seconds,
+        hour_utc,
+        min_utc,
+        sec_utc,
+    },
+    {
+        seconds: f32,
+        hour_utc: f32,
+        min_utc: f32,
+        sec_utc: f32
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyNavAltitudeWait,
+    "NavAltitudeWait",
+    mavkit::mission::commands::NavAltitudeWait,
+    mavkit::mission::commands::NavAltitudeWait {
+        altitude_m,
+        descent_rate_mps,
+        wiggle_time_s,
+    },
+    {
+        altitude_m: f32,
+        descent_rate_mps: f32,
+        wiggle_time_s: f32
+    }
+);
+
+#[pyclass(name = "NavVtolTakeoff", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyNavVtolTakeoff {
+    pub(crate) inner: mavkit::mission::commands::NavVtolTakeoff,
+}
+
+#[pymethods]
+impl PyNavVtolTakeoff {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt))]
+    fn new(latitude_deg: f64, longitude_deg: f64, altitude_m: f32, frame: PyMissionFrame) -> Self {
+        Self {
+            inner: mavkit::mission::commands::NavVtolTakeoff {
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+            },
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position))]
+    fn from_point(position: &PyGeoPoint3d) -> Self {
+        Self {
+            inner: mavkit::mission::commands::NavVtolTakeoff {
+                position: position.inner.clone(),
+            },
+        }
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+}
+
+#[pyclass(name = "NavVtolLand", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyNavVtolLand {
+    pub(crate) inner: mavkit::mission::commands::NavVtolLand,
+}
+
+#[pymethods]
+impl PyNavVtolLand {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt, options=0))]
+    fn new(
+        latitude_deg: f64,
+        longitude_deg: f64,
+        altitude_m: f32,
+        frame: PyMissionFrame,
+        options: u8,
+    ) -> Self {
+        Self {
+            inner: mavkit::mission::commands::NavVtolLand {
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+                options,
+            },
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position, options=0))]
+    fn from_point(position: &PyGeoPoint3d, options: u8) -> Self {
+        Self {
+            inner: mavkit::mission::commands::NavVtolLand {
+                position: position.inner.clone(),
+                options,
+            },
+        }
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+
+    #[getter]
+    fn options(&self) -> u8 {
+        self.inner.options
+    }
+}
+
+#[pyclass(name = "NavPayloadPlace", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyNavPayloadPlace {
+    pub(crate) inner: mavkit::mission::commands::NavPayloadPlace,
+}
+
+#[pymethods]
+impl PyNavPayloadPlace {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt, max_descent_m=0.0))]
+    fn new(
+        latitude_deg: f64,
+        longitude_deg: f64,
+        altitude_m: f32,
+        frame: PyMissionFrame,
+        max_descent_m: f32,
+    ) -> Self {
+        Self {
+            inner: mavkit::mission::commands::NavPayloadPlace {
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+                max_descent_m,
+            },
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position, max_descent_m=0.0))]
+    fn from_point(position: &PyGeoPoint3d, max_descent_m: f32) -> Self {
+        Self {
+            inner: mavkit::mission::commands::NavPayloadPlace {
+                position: position.inner.clone(),
+                max_descent_m,
+            },
+        }
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+
+    #[getter]
+    fn max_descent_m(&self) -> f32 {
+        self.inner.max_descent_m
+    }
+}
+
+define_scalar_command_pyclass!(
+    PyNavSetYawSpeed,
+    "NavSetYawSpeed",
+    mavkit::mission::commands::NavSetYawSpeed,
+    mavkit::mission::commands::NavSetYawSpeed {
+        angle_deg,
+        speed_mps,
+        relative,
+    },
+    {
+        angle_deg: f32,
+        speed_mps: f32,
+        relative: bool
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyNavScriptTime,
+    "NavScriptTime",
+    mavkit::mission::commands::NavScriptTime,
+    mavkit::mission::commands::NavScriptTime {
+        command,
+        timeout_s,
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+    },
+    {
+        command: u16,
+        timeout_s: f32,
+        arg1: f32,
+        arg2: f32,
+        arg3: i16,
+        arg4: i16
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyNavAttitudeTime,
+    "NavAttitudeTime",
+    mavkit::mission::commands::NavAttitudeTime,
+    mavkit::mission::commands::NavAttitudeTime {
+        time_s,
+        roll_deg,
+        pitch_deg,
+        yaw_deg,
+        climb_rate_mps,
+    },
+    {
+        time_s: f32,
+        roll_deg: f32,
+        pitch_deg: f32,
+        yaw_deg: f32,
+        climb_rate_mps: f32
+    }
+);
+
+#[pyclass(name = "DoChangeSpeed", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyDoChangeSpeed {
+    pub(crate) inner: mavkit::mission::commands::DoChangeSpeed,
+}
+
+#[pymethods]
+impl PyDoChangeSpeed {
+    #[new]
+    #[pyo3(signature = (*, speed_mps, throttle_pct=0.0, speed_type="groundspeed"))]
+    fn new(speed_mps: f32, throttle_pct: f32, speed_type: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: mavkit::mission::commands::DoChangeSpeed {
+                speed_type: speed_type_from_name(speed_type)?,
+                speed_mps,
+                throttle_pct,
+            },
+        })
+    }
+
+    #[getter]
+    fn speed_type(&self) -> &'static str {
+        speed_type_name(self.inner.speed_type)
+    }
+
+    #[getter]
+    fn speed_mps(&self) -> f32 {
+        self.inner.speed_mps
+    }
+
+    #[getter]
+    fn throttle_pct(&self) -> f32 {
+        self.inner.throttle_pct
+    }
+}
+
+#[pyclass(name = "DoSetHome", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyDoSetHome {
+    pub(crate) inner: mavkit::mission::commands::DoSetHome,
+}
+
+#[pymethods]
+impl PyDoSetHome {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt, use_current=false))]
+    fn new(
+        latitude_deg: f64,
+        longitude_deg: f64,
+        altitude_m: f32,
+        frame: PyMissionFrame,
+        use_current: bool,
+    ) -> Self {
+        Self {
+            inner: mavkit::mission::commands::DoSetHome {
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+                use_current,
+            },
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position, use_current=false))]
+    fn from_point(position: &PyGeoPoint3d, use_current: bool) -> Self {
+        Self {
+            inner: mavkit::mission::commands::DoSetHome {
+                position: position.inner.clone(),
+                use_current,
+            },
+        }
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+
+    #[getter]
+    fn use_current(&self) -> bool {
+        self.inner.use_current
+    }
+}
+
+#[pyclass(name = "DoSetRelay", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyDoSetRelay {
+    pub(crate) inner: mavkit::mission::commands::DoSetRelay,
+}
+
+#[pymethods]
+impl PyDoSetRelay {
+    #[new]
+    #[pyo3(signature = (*, number, state))]
+    fn new(number: u8, state: bool) -> Self {
+        Self {
+            inner: mavkit::mission::commands::DoSetRelay { number, state },
+        }
+    }
+
+    #[getter]
+    fn number(&self) -> u8 {
+        self.inner.number
+    }
+
+    #[getter]
+    fn state(&self) -> bool {
+        self.inner.state
+    }
+}
+
+#[pyclass(name = "DoSetRoiNone", frozen, from_py_object)]
+#[derive(Clone, Default)]
+pub struct PyDoSetRoiNone;
+
+#[pymethods]
+impl PyDoSetRoiNone {
+    #[new]
+    fn new() -> Self {
+        Self
+    }
+}
+
+define_scalar_command_pyclass!(
+    PyDoJump,
+    "DoJump",
+    mavkit::mission::commands::DoJump,
+    mavkit::mission::commands::DoJump {
+        target_index,
+        repeat_count,
+    },
+    {
+        target_index: u16,
+        repeat_count: u16
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyDoJumpTag,
+    "DoJumpTag",
+    mavkit::mission::commands::DoJumpTag,
+    mavkit::mission::commands::DoJumpTag { tag, repeat_count },
+    {
+        tag: u16,
+        repeat_count: u16
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyDoTag,
+    "DoTag",
+    mavkit::mission::commands::DoTag,
+    mavkit::mission::commands::DoTag { tag },
+    { tag: u16 }
+);
+
+define_scalar_command_pyclass!(
+    PyDoPauseContinue,
+    "DoPauseContinue",
+    mavkit::mission::commands::DoPauseContinue,
+    mavkit::mission::commands::DoPauseContinue { pause },
+    { pause: bool }
+);
+
+define_scalar_command_pyclass!(
+    PyDoSetReverse,
+    "DoSetReverse",
+    mavkit::mission::commands::DoSetReverse,
+    mavkit::mission::commands::DoSetReverse { reverse },
+    { reverse: bool }
+);
+
+#[pyclass(name = "DoLandStart", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyDoLandStart {
+    pub(crate) inner: mavkit::mission::commands::DoLandStart,
+}
+
+#[pymethods]
+impl PyDoLandStart {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt))]
+    fn new(latitude_deg: f64, longitude_deg: f64, altitude_m: f32, frame: PyMissionFrame) -> Self {
+        Self {
+            inner: mavkit::mission::commands::DoLandStart {
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+            },
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position))]
+    fn from_point(position: &PyGeoPoint3d) -> Self {
+        Self {
+            inner: mavkit::mission::commands::DoLandStart {
+                position: position.inner.clone(),
+            },
+        }
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+}
+
+#[pyclass(name = "DoReturnPathStart", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyDoReturnPathStart {
+    pub(crate) inner: mavkit::mission::commands::DoReturnPathStart,
+}
+
+#[pymethods]
+impl PyDoReturnPathStart {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt))]
+    fn new(latitude_deg: f64, longitude_deg: f64, altitude_m: f32, frame: PyMissionFrame) -> Self {
+        Self {
+            inner: mavkit::mission::commands::DoReturnPathStart {
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+            },
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position))]
+    fn from_point(position: &PyGeoPoint3d) -> Self {
+        Self {
+            inner: mavkit::mission::commands::DoReturnPathStart {
+                position: position.inner.clone(),
+            },
+        }
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+}
+
+#[pyclass(name = "DoGoAround", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyDoGoAround {
+    pub(crate) inner: mavkit::mission::commands::DoGoAround,
+}
+
+#[pymethods]
+impl PyDoGoAround {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt))]
+    fn new(latitude_deg: f64, longitude_deg: f64, altitude_m: f32, frame: PyMissionFrame) -> Self {
+        Self {
+            inner: mavkit::mission::commands::DoGoAround {
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+            },
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position))]
+    fn from_point(position: &PyGeoPoint3d) -> Self {
+        Self {
+            inner: mavkit::mission::commands::DoGoAround {
+                position: position.inner.clone(),
+            },
+        }
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+}
+
+#[pyclass(name = "DoSetRoiLocation", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyDoSetRoiLocation {
+    pub(crate) inner: mavkit::mission::commands::DoSetRoiLocation,
+}
+
+#[pymethods]
+impl PyDoSetRoiLocation {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt))]
+    fn new(latitude_deg: f64, longitude_deg: f64, altitude_m: f32, frame: PyMissionFrame) -> Self {
+        Self {
+            inner: mavkit::mission::commands::DoSetRoiLocation {
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+            },
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position))]
+    fn from_point(position: &PyGeoPoint3d) -> Self {
+        Self {
+            inner: mavkit::mission::commands::DoSetRoiLocation {
+                position: position.inner.clone(),
+            },
+        }
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+}
+
+#[pyclass(name = "DoSetRoi", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyDoSetRoi {
+    pub(crate) inner: mavkit::mission::commands::DoSetRoi,
+}
+
+#[pymethods]
+impl PyDoSetRoi {
+    #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_m, frame=PyMissionFrame::GlobalRelativeAltInt, mode=0))]
+    fn new(
+        latitude_deg: f64,
+        longitude_deg: f64,
+        altitude_m: f32,
+        frame: PyMissionFrame,
+        mode: u8,
+    ) -> Self {
+        Self {
+            inner: mavkit::mission::commands::DoSetRoi {
+                mode,
+                position: position_from_components(frame, latitude_deg, longitude_deg, altitude_m),
+            },
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (*, position, mode=0))]
+    fn from_point(position: &PyGeoPoint3d, mode: u8) -> Self {
+        Self {
+            inner: mavkit::mission::commands::DoSetRoi {
+                mode,
+                position: position.inner.clone(),
+            },
+        }
+    }
+
+    #[getter]
+    fn frame(&self) -> PyMissionFrame {
+        position_components(&self.inner.position).0
+    }
+
+    #[getter]
+    fn latitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).1
+    }
+
+    #[getter]
+    fn longitude_deg(&self) -> f64 {
+        position_components(&self.inner.position).2
+    }
+
+    #[getter]
+    fn altitude_m(&self) -> f32 {
+        position_components(&self.inner.position).3
+    }
+
+    #[getter]
+    fn mode(&self) -> u8 {
+        self.inner.mode
+    }
+}
+
+define_scalar_command_pyclass!(
+    PyDoMountControl,
+    "DoMountControl",
+    mavkit::mission::commands::DoMountControl,
+    mavkit::mission::commands::DoMountControl {
+        pitch_deg,
+        roll_deg,
+        yaw_deg,
+    },
+    {
+        pitch_deg: f32,
+        roll_deg: f32,
+        yaw_deg: f32
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyDoGimbalManagerPitchYaw,
+    "DoGimbalManagerPitchYaw",
+    mavkit::mission::commands::DoGimbalManagerPitchYaw,
+    mavkit::mission::commands::DoGimbalManagerPitchYaw {
+        pitch_deg,
+        yaw_deg,
+        pitch_rate_dps,
+        yaw_rate_dps,
+        flags,
+        gimbal_id,
+    },
+    {
+        pitch_deg: f32,
+        yaw_deg: f32,
+        pitch_rate_dps: f32,
+        yaw_rate_dps: f32,
+        flags: u32,
+        gimbal_id: u8
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyDoCamTriggerDistance,
+    "DoCamTriggerDistance",
+    mavkit::mission::commands::DoCamTriggerDistance,
+    mavkit::mission::commands::DoCamTriggerDistance {
+        meters,
+        trigger_now,
+    },
+    {
+        meters: f32,
+        trigger_now: bool
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyDoDigicamConfigure,
+    "DoDigicamConfigure",
+    mavkit::mission::commands::DoDigicamConfigure,
+    mavkit::mission::commands::DoDigicamConfigure {
+        shooting_mode,
+        shutter_speed,
+        aperture,
+        iso,
+        exposure_type,
+        cmd_id,
+        cutoff_time,
+    },
+    {
+        shooting_mode: u8,
+        shutter_speed: u16,
+        aperture: f32,
+        iso: u16,
+        exposure_type: u8,
+        cmd_id: u8,
+        cutoff_time: f32
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyDoDigicamControl,
+    "DoDigicamControl",
+    mavkit::mission::commands::DoDigicamControl,
+    mavkit::mission::commands::DoDigicamControl {
+        session,
+        zoom_pos,
+        zoom_step,
+        focus_lock,
+        shooting_cmd,
+        cmd_id,
+    },
+    {
+        session: u8,
+        zoom_pos: u8,
+        zoom_step: i8,
+        focus_lock: u8,
+        shooting_cmd: u8,
+        cmd_id: u8
+    }
+);
+
+#[pyclass(name = "DoFenceEnable", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyDoFenceEnable {
+    pub(crate) inner: mavkit::mission::commands::DoFenceEnable,
+}
+
+#[pymethods]
+impl PyDoFenceEnable {
+    #[new]
+    #[pyo3(signature = (*, action))]
+    fn new(action: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: mavkit::mission::commands::DoFenceEnable {
+                action: fence_action_from_name(action)?,
+            },
+        })
+    }
+
+    #[getter]
+    fn action(&self) -> &'static str {
+        fence_action_name(self.inner.action)
+    }
+}
+
+#[pyclass(name = "DoParachute", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyDoParachute {
+    pub(crate) inner: mavkit::mission::commands::DoParachute,
+}
+
+#[pymethods]
+impl PyDoParachute {
+    #[new]
+    #[pyo3(signature = (*, action))]
+    fn new(action: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: mavkit::mission::commands::DoParachute {
+                action: parachute_action_from_name(action)?,
+            },
+        })
+    }
+
+    #[getter]
+    fn action(&self) -> &'static str {
+        parachute_action_name(self.inner.action)
+    }
+}
+
+#[pyclass(name = "DoGripper", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyDoGripper {
+    pub(crate) inner: mavkit::mission::commands::DoGripper,
+}
+
+#[pymethods]
+impl PyDoGripper {
+    #[new]
+    #[pyo3(signature = (*, number, action))]
+    fn new(number: u8, action: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: mavkit::mission::commands::DoGripper {
+                number,
+                action: gripper_action_from_name(action)?,
+            },
+        })
+    }
+
+    #[getter]
+    fn number(&self) -> u8 {
+        self.inner.number
+    }
+
+    #[getter]
+    fn action(&self) -> &'static str {
+        gripper_action_name(self.inner.action)
+    }
+}
+
+define_scalar_command_pyclass!(
+    PyDoSprayer,
+    "DoSprayer",
+    mavkit::mission::commands::DoSprayer,
+    mavkit::mission::commands::DoSprayer { enabled },
+    { enabled: bool }
+);
+
+#[pyclass(name = "DoWinch", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyDoWinch {
+    pub(crate) inner: mavkit::mission::commands::DoWinch,
+}
+
+#[pymethods]
+impl PyDoWinch {
+    #[new]
+    #[pyo3(signature = (*, number, action, release_length_m, release_rate_mps))]
+    fn new(
+        number: u8,
+        action: &str,
+        release_length_m: f32,
+        release_rate_mps: f32,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: mavkit::mission::commands::DoWinch {
+                number,
+                action: winch_action_from_name(action)?,
+                release_length_m,
+                release_rate_mps,
+            },
+        })
+    }
+
+    #[getter]
+    fn number(&self) -> u8 {
+        self.inner.number
+    }
+
+    #[getter]
+    fn action(&self) -> &'static str {
+        winch_action_name(self.inner.action)
+    }
+
+    #[getter]
+    fn release_length_m(&self) -> f32 {
+        self.inner.release_length_m
+    }
+
+    #[getter]
+    fn release_rate_mps(&self) -> f32 {
+        self.inner.release_rate_mps
+    }
+}
+
+define_scalar_command_pyclass!(
+    PyDoEngineControl,
+    "DoEngineControl",
+    mavkit::mission::commands::DoEngineControl,
+    mavkit::mission::commands::DoEngineControl {
+        start,
+        cold_start,
+        height_delay_m,
+        allow_disarmed,
+    },
+    {
+        start: bool,
+        cold_start: bool,
+        height_delay_m: f32,
+        allow_disarmed: bool
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyDoInvertedFlight,
+    "DoInvertedFlight",
+    mavkit::mission::commands::DoInvertedFlight,
+    mavkit::mission::commands::DoInvertedFlight { inverted },
+    { inverted: bool }
+);
+
+define_scalar_command_pyclass!(
+    PyDoAutotuneEnable,
+    "DoAutotuneEnable",
+    mavkit::mission::commands::DoAutotuneEnable,
+    mavkit::mission::commands::DoAutotuneEnable { enabled },
+    { enabled: bool }
+);
+
+define_scalar_command_pyclass!(
+    PyDoSetServo,
+    "DoSetServo",
+    mavkit::mission::commands::DoSetServo,
+    mavkit::mission::commands::DoSetServo { channel, pwm },
+    {
+        channel: u16,
+        pwm: u16
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyDoRepeatServo,
+    "DoRepeatServo",
+    mavkit::mission::commands::DoRepeatServo,
+    mavkit::mission::commands::DoRepeatServo {
+        channel,
+        pwm,
+        count,
+        cycle_time_s,
+    },
+    {
+        channel: u16,
+        pwm: u16,
+        count: u16,
+        cycle_time_s: f32
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyDoRepeatRelay,
+    "DoRepeatRelay",
+    mavkit::mission::commands::DoRepeatRelay,
+    mavkit::mission::commands::DoRepeatRelay {
+        number,
+        count,
+        cycle_time_s,
+    },
+    {
+        number: u8,
+        count: u16,
+        cycle_time_s: f32
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyDoSetResumeRepeatDist,
+    "DoSetResumeRepeatDist",
+    mavkit::mission::commands::DoSetResumeRepeatDist,
+    mavkit::mission::commands::DoSetResumeRepeatDist { distance_m },
+    { distance_m: f32 }
+);
+
+define_scalar_command_pyclass!(
+    PyDoAuxFunction,
+    "DoAuxFunction",
+    mavkit::mission::commands::DoAuxFunction,
+    mavkit::mission::commands::DoAuxFunction {
+        function,
+        switch_pos,
+    },
+    {
+        function: u16,
+        switch_pos: u8
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyDoSendScriptMessage,
+    "DoSendScriptMessage",
+    mavkit::mission::commands::DoSendScriptMessage,
+    mavkit::mission::commands::DoSendScriptMessage { id, p1, p2, p3 },
+    {
+        id: u16,
+        p1: f32,
+        p2: f32,
+        p3: f32
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyDoImageStartCapture,
+    "DoImageStartCapture",
+    mavkit::mission::commands::DoImageStartCapture,
+    mavkit::mission::commands::DoImageStartCapture {
+        instance,
+        interval_s,
+        total_images,
+        start_number,
+    },
+    {
+        instance: u8,
+        interval_s: f32,
+        total_images: u32,
+        start_number: u32
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyDoImageStopCapture,
+    "DoImageStopCapture",
+    mavkit::mission::commands::DoImageStopCapture,
+    mavkit::mission::commands::DoImageStopCapture { instance },
+    { instance: u8 }
+);
+
+define_scalar_command_pyclass!(
+    PyDoVideoStartCapture,
+    "DoVideoStartCapture",
+    mavkit::mission::commands::DoVideoStartCapture,
+    mavkit::mission::commands::DoVideoStartCapture { stream_id },
+    { stream_id: u8 }
+);
+
+define_scalar_command_pyclass!(
+    PyDoVideoStopCapture,
+    "DoVideoStopCapture",
+    mavkit::mission::commands::DoVideoStopCapture,
+    mavkit::mission::commands::DoVideoStopCapture { stream_id },
+    { stream_id: u8 }
+);
+
+define_scalar_command_pyclass!(
+    PyDoSetCameraZoom,
+    "DoSetCameraZoom",
+    mavkit::mission::commands::DoSetCameraZoom,
+    mavkit::mission::commands::DoSetCameraZoom {
+        zoom_type,
+        zoom_value,
+    },
+    {
+        zoom_type: u8,
+        zoom_value: f32
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyDoSetCameraFocus,
+    "DoSetCameraFocus",
+    mavkit::mission::commands::DoSetCameraFocus,
+    mavkit::mission::commands::DoSetCameraFocus {
+        focus_type,
+        focus_value,
+    },
+    {
+        focus_type: u8,
+        focus_value: f32
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyDoSetCameraSource,
+    "DoSetCameraSource",
+    mavkit::mission::commands::DoSetCameraSource,
+    mavkit::mission::commands::DoSetCameraSource {
+        instance,
+        primary,
+        secondary,
+    },
+    {
+        instance: u8,
+        primary: u8,
+        secondary: u8
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyDoGuidedLimits,
+    "DoGuidedLimits",
+    mavkit::mission::commands::DoGuidedLimits,
+    mavkit::mission::commands::DoGuidedLimits {
+        max_time_s,
+        min_alt_m,
+        max_alt_m,
+        max_horiz_m,
+    },
+    {
+        max_time_s: f32,
+        min_alt_m: f32,
+        max_alt_m: f32,
+        max_horiz_m: f32
+    }
+);
+
+define_scalar_command_pyclass!(
+    PyDoVtolTransition,
+    "DoVtolTransition",
+    mavkit::mission::commands::DoVtolTransition,
+    mavkit::mission::commands::DoVtolTransition { target_state },
+    { target_state: u8 }
+);
+
+#[pyclass(name = "CondDelay", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyCondDelay {
+    pub(crate) inner: mavkit::mission::commands::CondDelay,
+}
+
+#[pymethods]
+impl PyCondDelay {
+    #[new]
+    #[pyo3(signature = (*, delay_s))]
+    fn new(delay_s: f32) -> Self {
+        Self {
+            inner: mavkit::mission::commands::CondDelay { delay_s },
+        }
+    }
+
+    #[getter]
+    fn delay_s(&self) -> f32 {
+        self.inner.delay_s
+    }
+}
+
+#[pyclass(name = "CondDistance", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyCondDistance {
+    pub(crate) inner: mavkit::mission::commands::CondDistance,
+}
+
+#[pymethods]
+impl PyCondDistance {
+    #[new]
+    #[pyo3(signature = (*, distance_m))]
+    fn new(distance_m: f32) -> Self {
+        Self {
+            inner: mavkit::mission::commands::CondDistance { distance_m },
+        }
+    }
+
+    #[getter]
+    fn distance_m(&self) -> f32 {
+        self.inner.distance_m
+    }
+}
+
+#[pyclass(name = "CondYaw", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyCondYaw {
+    pub(crate) inner: mavkit::mission::commands::CondYaw,
+}
+
+#[pymethods]
+impl PyCondYaw {
+    #[new]
+    #[pyo3(signature = (*, angle_deg, turn_rate_dps=0.0, direction="clockwise", relative=false))]
+    fn new(angle_deg: f32, turn_rate_dps: f32, direction: &str, relative: bool) -> PyResult<Self> {
+        Ok(Self {
+            inner: mavkit::mission::commands::CondYaw {
+                angle_deg,
+                turn_rate_dps,
+                direction: yaw_direction_from_name(direction)?,
+                relative,
+            },
+        })
+    }
+
+    #[getter]
+    fn angle_deg(&self) -> f32 {
+        self.inner.angle_deg
+    }
+
+    #[getter]
+    fn turn_rate_dps(&self) -> f32 {
+        self.inner.turn_rate_dps
+    }
+
+    #[getter]
+    fn direction(&self) -> &'static str {
+        yaw_direction_name(self.inner.direction)
+    }
+
+    #[getter]
+    fn relative(&self) -> bool {
+        self.inner.relative
+    }
+}
+
+fn typed_command_from_py(command: &Bound<'_, PyAny>) -> PyResult<Option<mavkit::MissionCommand>> {
+    if let Ok(nav_waypoint) = command.extract::<PyRef<'_, PyNavWaypoint>>() {
+        return Ok(Some(nav_waypoint.inner.clone().into()));
+    }
+
+    if let Ok(nav_takeoff) = command.extract::<PyRef<'_, PyNavTakeoff>>() {
+        return Ok(Some(nav_takeoff.inner.clone().into()));
+    }
+
+    if let Ok(nav_land) = command.extract::<PyRef<'_, PyNavLand>>() {
+        return Ok(Some(nav_land.inner.clone().into()));
+    }
+
+    if let Ok(nav_loiter_time) = command.extract::<PyRef<'_, PyNavLoiterTime>>() {
+        return Ok(Some(nav_loiter_time.inner.clone().into()));
+    }
+
+    if let Ok(nav_guided_enable) = command.extract::<PyRef<'_, PyNavGuidedEnable>>() {
+        return Ok(Some(nav_guided_enable.inner.clone().into()));
+    }
+
+    if let Ok(nav_spline_waypoint) = command.extract::<PyRef<'_, PyNavSplineWaypoint>>() {
+        return Ok(Some(nav_spline_waypoint.inner.clone().into()));
+    }
+
+    if let Ok(nav_arc_waypoint) = command.extract::<PyRef<'_, PyNavArcWaypoint>>() {
+        return Ok(Some(nav_arc_waypoint.inner.clone().into()));
+    }
+
+    if let Ok(nav_loiter_unlimited) = command.extract::<PyRef<'_, PyNavLoiterUnlimited>>() {
+        return Ok(Some(nav_loiter_unlimited.inner.clone().into()));
+    }
+
+    if let Ok(nav_loiter_turns) = command.extract::<PyRef<'_, PyNavLoiterTurns>>() {
+        return Ok(Some(nav_loiter_turns.inner.clone().into()));
+    }
+
+    if let Ok(nav_loiter_to_alt) = command.extract::<PyRef<'_, PyNavLoiterToAlt>>() {
+        return Ok(Some(nav_loiter_to_alt.inner.clone().into()));
+    }
+
+    if let Ok(nav_continue_and_change_alt) =
+        command.extract::<PyRef<'_, PyNavContinueAndChangeAlt>>()
+    {
+        return Ok(Some(nav_continue_and_change_alt.inner.clone().into()));
+    }
+
+    if let Ok(nav_delay) = command.extract::<PyRef<'_, PyNavDelay>>() {
+        return Ok(Some(nav_delay.inner.clone().into()));
+    }
+
+    if let Ok(nav_altitude_wait) = command.extract::<PyRef<'_, PyNavAltitudeWait>>() {
+        return Ok(Some(nav_altitude_wait.inner.clone().into()));
+    }
+
+    if let Ok(nav_vtol_takeoff) = command.extract::<PyRef<'_, PyNavVtolTakeoff>>() {
+        return Ok(Some(nav_vtol_takeoff.inner.clone().into()));
+    }
+
+    if let Ok(nav_vtol_land) = command.extract::<PyRef<'_, PyNavVtolLand>>() {
+        return Ok(Some(nav_vtol_land.inner.clone().into()));
+    }
+
+    if let Ok(nav_payload_place) = command.extract::<PyRef<'_, PyNavPayloadPlace>>() {
+        return Ok(Some(nav_payload_place.inner.clone().into()));
+    }
+
+    if let Ok(nav_set_yaw_speed) = command.extract::<PyRef<'_, PyNavSetYawSpeed>>() {
+        return Ok(Some(nav_set_yaw_speed.inner.clone().into()));
+    }
+
+    if let Ok(nav_script_time) = command.extract::<PyRef<'_, PyNavScriptTime>>() {
+        return Ok(Some(nav_script_time.inner.clone().into()));
+    }
+
+    if let Ok(nav_attitude_time) = command.extract::<PyRef<'_, PyNavAttitudeTime>>() {
+        return Ok(Some(nav_attitude_time.inner.clone().into()));
+    }
+
+    if command.extract::<PyRef<'_, PyNavReturnToLaunch>>().is_ok() {
+        return Ok(Some(
+            mavkit::mission::commands::NavCommand::ReturnToLaunch.into(),
+        ));
+    }
+
+    if let Ok(do_change_speed) = command.extract::<PyRef<'_, PyDoChangeSpeed>>() {
+        return Ok(Some(do_change_speed.inner.clone().into()));
+    }
+
+    if let Ok(do_set_home) = command.extract::<PyRef<'_, PyDoSetHome>>() {
+        return Ok(Some(do_set_home.inner.clone().into()));
+    }
+
+    if let Ok(do_set_relay) = command.extract::<PyRef<'_, PyDoSetRelay>>() {
+        return Ok(Some(do_set_relay.inner.clone().into()));
+    }
+
+    if command.extract::<PyRef<'_, PyDoSetRoiNone>>().is_ok() {
+        return Ok(Some(
+            mavkit::mission::commands::DoCommand::SetRoiNone.into(),
+        ));
+    }
+
+    if let Ok(do_jump) = command.extract::<PyRef<'_, PyDoJump>>() {
+        return Ok(Some(do_jump.inner.clone().into()));
+    }
+
+    if let Ok(do_jump_tag) = command.extract::<PyRef<'_, PyDoJumpTag>>() {
+        return Ok(Some(do_jump_tag.inner.clone().into()));
+    }
+
+    if let Ok(do_tag) = command.extract::<PyRef<'_, PyDoTag>>() {
+        return Ok(Some(do_tag.inner.clone().into()));
+    }
+
+    if let Ok(do_pause_continue) = command.extract::<PyRef<'_, PyDoPauseContinue>>() {
+        return Ok(Some(do_pause_continue.inner.clone().into()));
+    }
+
+    if let Ok(do_set_reverse) = command.extract::<PyRef<'_, PyDoSetReverse>>() {
+        return Ok(Some(do_set_reverse.inner.clone().into()));
+    }
+
+    if let Ok(do_land_start) = command.extract::<PyRef<'_, PyDoLandStart>>() {
+        return Ok(Some(do_land_start.inner.clone().into()));
+    }
+
+    if let Ok(do_return_path_start) = command.extract::<PyRef<'_, PyDoReturnPathStart>>() {
+        return Ok(Some(do_return_path_start.inner.clone().into()));
+    }
+
+    if let Ok(do_go_around) = command.extract::<PyRef<'_, PyDoGoAround>>() {
+        return Ok(Some(do_go_around.inner.clone().into()));
+    }
+
+    if let Ok(do_set_roi_location) = command.extract::<PyRef<'_, PyDoSetRoiLocation>>() {
+        return Ok(Some(do_set_roi_location.inner.clone().into()));
+    }
+
+    if let Ok(do_set_roi) = command.extract::<PyRef<'_, PyDoSetRoi>>() {
+        return Ok(Some(do_set_roi.inner.clone().into()));
+    }
+
+    if let Ok(do_mount_control) = command.extract::<PyRef<'_, PyDoMountControl>>() {
+        return Ok(Some(do_mount_control.inner.clone().into()));
+    }
+
+    if let Ok(do_gimbal_manager_pitch_yaw) =
+        command.extract::<PyRef<'_, PyDoGimbalManagerPitchYaw>>()
+    {
+        return Ok(Some(do_gimbal_manager_pitch_yaw.inner.clone().into()));
+    }
+
+    if let Ok(do_cam_trigger_distance) = command.extract::<PyRef<'_, PyDoCamTriggerDistance>>() {
+        return Ok(Some(do_cam_trigger_distance.inner.clone().into()));
+    }
+
+    if let Ok(do_digicam_configure) = command.extract::<PyRef<'_, PyDoDigicamConfigure>>() {
+        return Ok(Some(do_digicam_configure.inner.clone().into()));
+    }
+
+    if let Ok(do_digicam_control) = command.extract::<PyRef<'_, PyDoDigicamControl>>() {
+        return Ok(Some(do_digicam_control.inner.clone().into()));
+    }
+
+    if let Ok(do_fence_enable) = command.extract::<PyRef<'_, PyDoFenceEnable>>() {
+        return Ok(Some(do_fence_enable.inner.clone().into()));
+    }
+
+    if let Ok(do_parachute) = command.extract::<PyRef<'_, PyDoParachute>>() {
+        return Ok(Some(do_parachute.inner.clone().into()));
+    }
+
+    if let Ok(do_gripper) = command.extract::<PyRef<'_, PyDoGripper>>() {
+        return Ok(Some(do_gripper.inner.clone().into()));
+    }
+
+    if let Ok(do_sprayer) = command.extract::<PyRef<'_, PyDoSprayer>>() {
+        return Ok(Some(do_sprayer.inner.clone().into()));
+    }
+
+    if let Ok(do_winch) = command.extract::<PyRef<'_, PyDoWinch>>() {
+        return Ok(Some(do_winch.inner.clone().into()));
+    }
+
+    if let Ok(do_engine_control) = command.extract::<PyRef<'_, PyDoEngineControl>>() {
+        return Ok(Some(do_engine_control.inner.clone().into()));
+    }
+
+    if let Ok(do_inverted_flight) = command.extract::<PyRef<'_, PyDoInvertedFlight>>() {
+        return Ok(Some(do_inverted_flight.inner.clone().into()));
+    }
+
+    if let Ok(do_autotune_enable) = command.extract::<PyRef<'_, PyDoAutotuneEnable>>() {
+        return Ok(Some(do_autotune_enable.inner.clone().into()));
+    }
+
+    if let Ok(do_set_servo) = command.extract::<PyRef<'_, PyDoSetServo>>() {
+        return Ok(Some(do_set_servo.inner.clone().into()));
+    }
+
+    if let Ok(do_repeat_servo) = command.extract::<PyRef<'_, PyDoRepeatServo>>() {
+        return Ok(Some(do_repeat_servo.inner.clone().into()));
+    }
+
+    if let Ok(do_repeat_relay) = command.extract::<PyRef<'_, PyDoRepeatRelay>>() {
+        return Ok(Some(do_repeat_relay.inner.clone().into()));
+    }
+
+    if let Ok(do_set_resume_repeat_dist) = command.extract::<PyRef<'_, PyDoSetResumeRepeatDist>>() {
+        return Ok(Some(do_set_resume_repeat_dist.inner.clone().into()));
+    }
+
+    if let Ok(do_aux_function) = command.extract::<PyRef<'_, PyDoAuxFunction>>() {
+        return Ok(Some(do_aux_function.inner.clone().into()));
+    }
+
+    if let Ok(do_send_script_message) = command.extract::<PyRef<'_, PyDoSendScriptMessage>>() {
+        return Ok(Some(do_send_script_message.inner.clone().into()));
+    }
+
+    if let Ok(do_image_start_capture) = command.extract::<PyRef<'_, PyDoImageStartCapture>>() {
+        return Ok(Some(do_image_start_capture.inner.clone().into()));
+    }
+
+    if let Ok(do_image_stop_capture) = command.extract::<PyRef<'_, PyDoImageStopCapture>>() {
+        return Ok(Some(do_image_stop_capture.inner.clone().into()));
+    }
+
+    if let Ok(do_video_start_capture) = command.extract::<PyRef<'_, PyDoVideoStartCapture>>() {
+        return Ok(Some(do_video_start_capture.inner.clone().into()));
+    }
+
+    if let Ok(do_video_stop_capture) = command.extract::<PyRef<'_, PyDoVideoStopCapture>>() {
+        return Ok(Some(do_video_stop_capture.inner.clone().into()));
+    }
+
+    if let Ok(do_set_camera_zoom) = command.extract::<PyRef<'_, PyDoSetCameraZoom>>() {
+        return Ok(Some(do_set_camera_zoom.inner.clone().into()));
+    }
+
+    if let Ok(do_set_camera_focus) = command.extract::<PyRef<'_, PyDoSetCameraFocus>>() {
+        return Ok(Some(do_set_camera_focus.inner.clone().into()));
+    }
+
+    if let Ok(do_set_camera_source) = command.extract::<PyRef<'_, PyDoSetCameraSource>>() {
+        return Ok(Some(do_set_camera_source.inner.clone().into()));
+    }
+
+    if let Ok(do_guided_limits) = command.extract::<PyRef<'_, PyDoGuidedLimits>>() {
+        return Ok(Some(do_guided_limits.inner.clone().into()));
+    }
+
+    if let Ok(do_vtol_transition) = command.extract::<PyRef<'_, PyDoVtolTransition>>() {
+        return Ok(Some(do_vtol_transition.inner.clone().into()));
+    }
+
+    if let Ok(cond_delay) = command.extract::<PyRef<'_, PyCondDelay>>() {
+        return Ok(Some(cond_delay.inner.clone().into()));
+    }
+
+    if let Ok(cond_distance) = command.extract::<PyRef<'_, PyCondDistance>>() {
+        return Ok(Some(cond_distance.inner.clone().into()));
+    }
+
+    if let Ok(cond_yaw) = command.extract::<PyRef<'_, PyCondYaw>>() {
+        return Ok(Some(cond_yaw.inner.clone().into()));
+    }
+
+    if let Ok(raw) = command.extract::<PyRef<'_, PyRawMissionCommand>>() {
+        return Ok(Some(raw.inner.clone().into()));
+    }
+
+    Ok(None)
+}
+
+// --- MissionItem ---
+
+#[pyclass(name = "MissionItem", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyMissionItem {
+    pub(crate) inner: mavkit::MissionItem,
+}
+
+#[pymethods]
+impl PyMissionItem {
+    #[new]
+    #[pyo3(signature = (*, seq, command, frame=None, x=0, y=0, z=0.0, param1=0.0, param2=0.0, param3=0.0, param4=0.0, current=false, autocontinue=true))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        seq: u16,
+        command: &Bound<'_, PyAny>,
+        frame: Option<PyMissionFrame>,
+        x: i32,
+        y: i32,
+        z: f32,
+        param1: f32,
+        param2: f32,
+        param3: f32,
+        param4: f32,
+        current: bool,
+        autocontinue: bool,
+    ) -> PyResult<Self> {
+        let uses_legacy_wire_fields = frame.is_some()
+            || x != 0
+            || y != 0
+            || z != 0.0
+            || param1 != 0.0
+            || param2 != 0.0
+            || param3 != 0.0
+            || param4 != 0.0;
+
+        let mission_command = if let Some(typed_command) = typed_command_from_py(command)? {
+            if uses_legacy_wire_fields {
+                return Err(pyo3::exceptions::PyTypeError::new_err(
+                    "frame/x/y/z/param1..4 are only valid when command is an int",
+                ));
+            }
+            typed_command
+        } else {
+            let command_id = command.extract::<u16>().map_err(|_| {
+                pyo3::exceptions::PyTypeError::new_err(
+                    "command must be a supported typed mission command, RawMissionCommand, or int",
+                )
+            })?;
+
+            let frame = frame.ok_or_else(|| {
+                pyo3::exceptions::PyTypeError::new_err("frame is required when command is an int")
+            })?;
+
+            mavkit::MissionCommand::Other(mavkit::RawMissionCommand {
+                command: command_id,
+                frame: command_frame_from_py(frame),
+                param1,
+                param2,
+                param3,
+                param4,
+                x,
+                y,
+                z,
+            })
+        };
+
+        Ok(Self {
+            inner: mavkit::MissionItem {
+                seq,
+                command: mission_command,
+                current,
+                autocontinue,
+            },
+        })
+    }
+
+    #[getter]
     fn seq(&self) -> u16 {
         self.inner.seq
     }
     #[getter]
     fn command(&self) -> u16 {
-        self.inner.command
+        wire_parts(&self.inner).0
     }
     #[getter]
     fn frame(&self) -> PyMissionFrame {
-        self.inner.frame.into()
+        wire_parts(&self.inner).1
     }
     #[getter]
     fn current(&self) -> bool {
@@ -69,37 +2843,39 @@ impl PyMissionItem {
     }
     #[getter]
     fn param1(&self) -> f32 {
-        self.inner.param1
+        wire_parts(&self.inner).2[0]
     }
     #[getter]
     fn param2(&self) -> f32 {
-        self.inner.param2
+        wire_parts(&self.inner).2[1]
     }
     #[getter]
     fn param3(&self) -> f32 {
-        self.inner.param3
+        wire_parts(&self.inner).2[2]
     }
     #[getter]
     fn param4(&self) -> f32 {
-        self.inner.param4
+        wire_parts(&self.inner).2[3]
     }
     #[getter]
     fn x(&self) -> i32 {
-        self.inner.x
+        wire_parts(&self.inner).3
     }
     #[getter]
     fn y(&self) -> i32 {
-        self.inner.y
+        wire_parts(&self.inner).4
     }
     #[getter]
     fn z(&self) -> f32 {
-        self.inner.z
+        wire_parts(&self.inner).5
     }
 
     fn __repr__(&self) -> String {
         format!(
             "MissionItem(seq={}, cmd={}, frame={:?})",
-            self.inner.seq, self.inner.command, self.inner.frame
+            self.inner.seq,
+            self.command(),
+            self.frame()
         )
     }
 }
@@ -158,16 +2934,11 @@ pub struct PyMissionPlan {
 #[pymethods]
 impl PyMissionPlan {
     #[new]
-    #[pyo3(signature = (*, mission_type, items, home=None))]
-    fn new(
-        mission_type: PyMissionType,
-        items: Vec<PyMissionItem>,
-        home: Option<PyHomePosition>,
-    ) -> Self {
+    #[pyo3(signature = (*, mission_type, items))]
+    fn new(mission_type: PyMissionType, items: Vec<PyMissionItem>) -> Self {
         Self {
             inner: mavkit::MissionPlan {
                 mission_type: mission_type.into(),
-                home: home.map(|h| h.inner),
                 items: items.into_iter().map(|i| i.inner).collect(),
             },
         }
@@ -176,14 +2947,6 @@ impl PyMissionPlan {
     #[getter]
     fn mission_type(&self) -> PyMissionType {
         self.inner.mission_type.into()
-    }
-
-    #[getter]
-    fn home(&self) -> Option<PyHomePosition> {
-        self.inner
-            .home
-            .as_ref()
-            .map(|h| PyHomePosition { inner: h.clone() })
     }
 
     #[getter]
@@ -197,13 +2960,8 @@ impl PyMissionPlan {
 
     fn __repr__(&self) -> String {
         format!(
-            "MissionPlan(type={:?}, home={}, items={})",
+            "MissionPlan(type={:?}, items={})",
             self.inner.mission_type,
-            if self.inner.home.is_some() {
-                "set"
-            } else {
-                "None"
-            },
             self.inner.items.len()
         )
     }

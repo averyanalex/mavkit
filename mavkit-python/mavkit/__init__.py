@@ -1,6 +1,5 @@
 """Async Python SDK for MAVLink vehicle control."""
 
-__version__ = "0.3.1"
+from .mavkit import *  # noqa: F403
 
-from mavkit.mavkit import *  # noqa: F403
-from mavkit.mavkit import MavkitError  # noqa: F401
+__version__ = "0.3.1"
