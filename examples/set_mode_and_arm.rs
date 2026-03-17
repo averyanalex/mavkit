@@ -7,21 +7,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mode = std::env::var("MAVKIT_EXAMPLE_MODE").unwrap_or_else(|_| "GUIDED".to_string());
 
     let vehicle = Vehicle::connect_udp(&bind_addr).await?;
+    let current_mode = vehicle.available_modes().current();
+    let armed = vehicle.telemetry().armed();
 
-    let state = vehicle.state().borrow().clone();
-    println!("before: mode={} armed={}", state.mode_name, state.armed);
+    let before_mode = if let Some(mode_sample) = current_mode.latest() {
+        mode_sample.name
+    } else {
+        current_mode.wait().await?.name
+    };
+    let before_armed = if let Some(armed_sample) = armed.latest() {
+        armed_sample.value
+    } else {
+        armed.wait().await?.value
+    };
+    println!("before: mode={} armed={}", before_mode, before_armed);
 
     println!("setting mode to {mode}...");
-    vehicle.set_mode_by_name(&mode).await?;
+    vehicle.set_mode_by_name(&mode, true).await?;
 
     println!("arming...");
     vehicle.arm(false).await?;
 
-    // Wait for state to reflect the changes
-    let mut state_rx = vehicle.state();
-    state_rx.changed().await?;
-    let state = state_rx.borrow().clone();
-    println!("after:  mode={} armed={}", state.mode_name, state.armed);
+    let after_mode = current_mode.wait().await?;
+    let after_armed = armed.wait().await?.value;
+    println!("after:  mode={} armed={}", after_mode.name, after_armed);
 
     vehicle.disconnect().await?;
     Ok(())

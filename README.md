@@ -54,10 +54,9 @@ use mavkit::Vehicle;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let vehicle = Vehicle::connect_udp("0.0.0.0:14550").await?;
 
-    let mut state_rx = vehicle.state();
-    state_rx.changed().await?;
-    let state = state_rx.borrow().clone();
-    println!("mode={} armed={}", state.mode_name, state.armed);
+    let mode = vehicle.available_modes().current().wait().await?;
+    let armed = vehicle.telemetry().armed().wait().await?.value;
+    println!("mode={} armed={armed}", mode.name);
 
     vehicle.disconnect().await?;
     Ok(())

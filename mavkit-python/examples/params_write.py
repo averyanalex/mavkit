@@ -10,19 +10,24 @@ async def main():
     bind_addr = os.environ.get("MAVKIT_EXAMPLE_UDP_BIND", "0.0.0.0:14550")
 
     vehicle = await mavkit.Vehicle.connect_udp(bind_addr)
+    params = vehicle.params()
 
     # --- Single parameter write ---
-    param = await vehicle.write_param("WPNAV_SPEED", 500.0)
-    print(f"wrote {param.name}: value={param.value} type={param.param_type}")
+    result = await params.write("WPNAV_SPEED", 500.0)
+    print(
+        f"wrote {result.name}: requested={result.requested_value}"
+        f" confirmed={result.confirmed_value} success={result.success}"
+    )
 
     # --- Batch write ---
-    results = await vehicle.write_params_batch(
+    batch = params.write_batch(
         [
             ("WPNAV_SPEED", 500.0),
             ("WPNAV_SPEED_DN", 150.0),
             ("WPNAV_SPEED_UP", 250.0),
         ]
     )
+    results = await batch.wait()
 
     print("\nbatch results:")
     for r in results:

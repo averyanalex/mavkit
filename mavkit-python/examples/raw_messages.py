@@ -1,5 +1,3 @@
-"""Subscribe to raw MAVLink messages and print each one."""
-
 import asyncio
 import os
 
@@ -8,23 +6,26 @@ import mavkit
 
 async def main():
     bind_addr = os.environ.get("MAVKIT_EXAMPLE_UDP_BIND", "0.0.0.0:14550")
+    message_count = int(os.environ.get("MAVKIT_EXAMPLE_RAW_COUNT", "5"))
 
     vehicle = await mavkit.Vehicle.connect_udp(bind_addr)
-    stream = vehicle.subscribe_raw_messages()
+    try:
+        identity = vehicle.identity()
+        raw = vehicle.raw()
+        stream = raw.subscribe()
 
-    count = 0
-    while True:
-        msg = await stream.recv()
-        print(
-            f"[{msg.message_name}] sys={msg.system_id}"
-            f" comp={msg.component_id} id={msg.message_id}"
-        )
-        count += 1
-        if count >= 100:
-            break
+        print(f"connected: sys={identity.system_id} comp={identity.component_id}")
+        print(f"raw handle: {raw}")
+        print(f"listening for {message_count} raw MAVLink messages...")
 
-    await vehicle.disconnect()
-    print(f"{count} messages received")
+        for _ in range(message_count):
+            message = await stream.recv()
+            print(
+                f"message_id={message.message_id} name={message.message_name} "
+                f"sys={message.system_id} comp={message.component_id} payload_len={len(message.payload)}"
+            )
+    finally:
+        await vehicle.disconnect()
 
 
 asyncio.run(main())

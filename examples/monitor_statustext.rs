@@ -8,12 +8,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let vehicle = Vehicle::connect_udp(&bind_addr).await?;
     println!("listening for status messages (Ctrl+C to stop)...\n");
 
-    let mut st_rx = vehicle.statustext();
+    let status_text = vehicle.telemetry().messages().status_text();
+    let mut subscription = status_text.subscribe();
 
     loop {
-        st_rx.changed().await?;
-        if let Some(msg) = st_rx.borrow().clone() {
-            println!("[{}] {}", msg.severity, msg.text);
+        if let Some(sample) = subscription.recv().await {
+            let msg = sample.value;
+            println!("[{:?}] {}", msg.severity, msg.text);
         }
     }
 }

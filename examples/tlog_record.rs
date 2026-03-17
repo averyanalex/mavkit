@@ -1,7 +1,10 @@
 use mavkit::Vehicle;
+use mavkit::dialect;
 use mavkit::tlog::TlogWriter;
-use mavlink::MavlinkVersion;
+use mavlink::Message;
+use mavlink::{MavHeader, MavlinkVersion};
 use std::io::BufWriter;
+use tokio_stream::StreamExt;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -16,27 +19,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let vehicle = Vehicle::connect_udp(&bind_addr).await?;
     println!("connected, recording to {path}");
 
-    let mut rx = vehicle.raw_messages();
+    let mut stream = vehicle.raw().subscribe();
     let file = std::fs::File::create(&path)?;
     let mut writer = TlogWriter::new(BufWriter::new(file), MavlinkVersion::V2);
 
     let mut count = 0u64;
-    loop {
-        match rx.recv().await {
-            Ok((header, msg)) => {
-                writer.write_now(&header, &msg)?;
+    while let Some(raw) = stream.next().await {
+        match dialect::MavMessage::parse(MavlinkVersion::V2, raw.message_id, &raw.payload) {
+            Ok(message) => {
+                let header = MavHeader {
+                    sequence: 0,
+                    system_id: raw.system_id,
+                    component_id: raw.component_id,
+                };
+                writer.write_now(&header, &message)?;
                 count += 1;
                 if count.is_multiple_of(100) {
                     writer.flush()?;
                     println!("{count} messages recorded");
                 }
             }
-            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                eprintln!("warning: skipped {n} messages (receiver lagged)");
-            }
-            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                break;
-            }
+            Err(err) => eprintln!("warning: failed to parse message {}: {err}", raw.message_id),
         }
     }
 

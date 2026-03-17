@@ -6,14 +6,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::var("MAVKIT_EXAMPLE_TCP_ADDR").unwrap_or_else(|_| "127.0.0.1:5760".to_string());
 
     let vehicle = Vehicle::connect_tcp(&addr).await?;
-
-    let mut state_rx = vehicle.state();
-    state_rx.changed().await?;
-    let state = state_rx.borrow().clone();
+    let identity = vehicle.identity();
+    let current_mode = vehicle.available_modes().current().wait().await?;
+    let armed = vehicle.telemetry().armed().wait().await?.value;
 
     println!(
-        "connected: mode={} armed={} autopilot={:?} vehicle_type={:?}",
-        state.mode_name, state.armed, state.autopilot, state.vehicle_type
+        "connected: sys={} comp={} autopilot={:?} vehicle_type={:?} mode={} armed={}",
+        identity.system_id,
+        identity.component_id,
+        identity.autopilot,
+        identity.vehicle_type,
+        current_mode.name,
+        armed,
     );
 
     vehicle.disconnect().await?;

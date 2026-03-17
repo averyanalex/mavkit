@@ -1,22 +1,25 @@
 use mavkit::{
-    CompareTolerance, HomePosition, MissionFrame, MissionItem, MissionPlan, MissionType, Vehicle,
-    normalize_for_compare, plans_equivalent,
+    CompareTolerance, GeoPoint3d, GeoPoint3dRelHome, MissionItem, MissionPlan, MissionType,
+    NavWaypoint, Vehicle, normalize_for_compare, plans_equivalent,
 };
 
 fn waypoint(seq: u16, lat: f64, lon: f64, alt: f32) -> MissionItem {
     MissionItem {
         seq,
-        command: 16,
-        frame: MissionFrame::GlobalRelativeAltInt,
+        command: NavWaypoint {
+            position: GeoPoint3d::RelHome(GeoPoint3dRelHome {
+                latitude_deg: lat,
+                longitude_deg: lon,
+                relative_alt_m: f64::from(alt),
+            }),
+            hold_time_s: 0.0,
+            acceptance_radius_m: 0.0,
+            pass_radius_m: 0.0,
+            yaw_deg: 0.0,
+        }
+        .into(),
         current: seq == 0,
         autocontinue: true,
-        param1: 0.0,
-        param2: 0.0,
-        param3: 0.0,
-        param4: 0.0,
-        x: (lat * 1e7) as i32,
-        y: (lon * 1e7) as i32,
-        z: alt,
     }
 }
 
@@ -26,27 +29,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::var("MAVKIT_EXAMPLE_UDP_BIND").unwrap_or_else(|_| "0.0.0.0:14550".to_string());
 
     let vehicle = Vehicle::connect_udp(&bind_addr).await?;
+    let mission = vehicle.mission();
 
     let plan = MissionPlan {
         mission_type: MissionType::Mission,
-        home: Some(HomePosition {
-            latitude_deg: 47.397742,
-            longitude_deg: 8.545594,
-            altitude_m: 0.0,
-        }),
         items: vec![
             waypoint(0, 47.397742, 8.545594, 25.0),
             waypoint(1, 47.398100, 8.546100, 30.0),
         ],
     };
 
-    vehicle.mission().upload(plan.clone()).await?;
-    let downloaded = vehicle.mission().download(MissionType::Mission).await?;
+    mission.upload(plan.clone())?.wait().await?;
+    let downloaded = mission.download()?.wait().await?;
 
-    let mut expected = normalize_for_compare(&plan);
-    let mut got = normalize_for_compare(&downloaded);
-    expected.home = None;
-    got.home = None;
+    let expected = normalize_for_compare(&plan);
+    let got = normalize_for_compare(&downloaded);
 
     println!(
         "roundtrip equivalent: {}",

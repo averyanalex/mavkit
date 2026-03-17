@@ -6,20 +6,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::var("MAVKIT_EXAMPLE_UDP_BIND").unwrap_or_else(|_| "0.0.0.0:14550".to_string());
 
     let vehicle = Vehicle::connect_udp(&bind_addr).await?;
+    let modes = vehicle.available_modes();
+    let current_handle = modes.current();
+    let catalog_handle = modes.catalog();
+    let identity = vehicle.identity();
 
-    let state = vehicle.state().borrow().clone();
+    let current = if let Some(current) = current_handle.latest() {
+        current
+    } else {
+        current_handle.wait().await?
+    };
+
     println!(
         "current mode: {} (id={})\n",
-        state.mode_name, state.custom_mode
+        current.name, current.custom_mode
     );
 
-    let modes = vehicle.available_modes();
-    if modes.is_empty() {
-        println!("no mode list available for autopilot {:?}", state.autopilot);
+    let catalog = if let Some(catalog) = catalog_handle.latest() {
+        catalog
+    } else {
+        catalog_handle.wait().await?
+    };
+
+    if catalog.is_empty() {
+        println!(
+            "no mode list available for autopilot {:?}",
+            identity.autopilot
+        );
     } else {
         println!("available flight modes:");
-        for mode in &modes {
-            let marker = if mode.custom_mode == state.custom_mode {
+        for mode in catalog {
+            let marker = if mode.custom_mode == current.custom_mode {
                 " <-- active"
             } else {
                 ""

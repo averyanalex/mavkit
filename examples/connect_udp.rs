@@ -6,22 +6,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::var("MAVKIT_EXAMPLE_UDP_BIND").unwrap_or_else(|_| "0.0.0.0:14550".to_string());
 
     let vehicle = Vehicle::connect_udp(&bind_addr).await?;
-
-    let mut state_rx = vehicle.state();
-    state_rx.changed().await?;
-    let state = state_rx.borrow().clone();
+    let identity = vehicle.identity();
+    let current_mode = vehicle.available_modes().current().wait().await?;
+    let armed = vehicle.telemetry().armed().wait().await?.value;
+    let position = vehicle.telemetry().position().global().wait().await?.value;
 
     println!(
-        "connected: mode={} armed={} autopilot={:?} vehicle_type={:?}",
-        state.mode_name, state.armed, state.autopilot, state.vehicle_type
+        "connected: sys={} comp={} autopilot={:?} vehicle_type={:?} mode={} armed={}",
+        identity.system_id,
+        identity.component_id,
+        identity.autopilot,
+        identity.vehicle_type,
+        current_mode.name,
+        armed,
     );
-
-    let mut telemetry_rx = vehicle.telemetry();
-    telemetry_rx.changed().await?;
-    let telemetry = telemetry_rx.borrow().clone();
     println!(
-        "telemetry: lat={:?} lon={:?} alt={:?}",
-        telemetry.latitude_deg, telemetry.longitude_deg, telemetry.altitude_m
+        "telemetry: lat={:.7} lon={:.7} alt_msl={:.1} rel_alt={:.1}",
+        position.latitude_deg,
+        position.longitude_deg,
+        position.altitude_msl_m,
+        position.relative_alt_m
     );
 
     vehicle.disconnect().await?;
