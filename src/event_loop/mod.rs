@@ -1,9 +1,14 @@
 mod commands;
+mod dispatcher;
+mod init;
 mod mission;
 mod params;
 mod state_update;
 
-use commands::{handle_arm_disarm, handle_command_long, handle_guided_goto, handle_set_mode};
+use commands::{
+    handle_arm_disarm, handle_command_int, handle_command_long, handle_command_long_raw,
+    handle_guided_goto, handle_raw_send, handle_set_mode, handle_set_origin,
+};
 use mission::{
     handle_mission_clear, handle_mission_download, handle_mission_set_current,
     handle_mission_upload,
@@ -15,53 +20,105 @@ use crate::command::Command;
 use crate::config::VehicleConfig;
 use crate::error::VehicleError;
 use crate::state::{LinkState, StateWriters};
+use dispatcher::{AckCommandDispatcher, WireCommandAck};
+#[cfg(test)]
+pub(crate) use init::InitUnavailableReason;
+pub(crate) use init::{InitManager, InitSnapshot, InitState};
 
 // Re-imports used only by tests
+use crate::dialect;
+#[cfg(test)]
+use crate::dialect::MavCmd;
 #[cfg(test)]
 use crate::mission::{MissionFrame, MissionType};
-use mavlink::common::{self, MavCmd};
-use mavlink::{AsyncMavConnection, MavHeader};
+use mavlink::{AsyncMavConnection, MavHeader, Message};
 #[cfg(test)]
 use mission::{
     from_mav_frame, from_mission_item_int, mission_type_matches, to_mav_frame, to_mav_mission_type,
 };
 #[cfg(test)]
 use params::{from_mav_param_type, param_id_to_string, string_to_param_id, to_mav_param_type};
-use tokio::sync::mpsc;
+use std::sync::Arc;
+use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
 const MAGIC_FORCE_ARM_VALUE: f32 = 2989.0;
 const MAGIC_FORCE_DISARM_VALUE: f32 = 21196.0;
-const HOME_POSITION_MSG_ID: f32 = 242.0;
+const ROUTER_CHANNEL_CAPACITY: usize = 256;
+const COMMAND_ACK_MESSAGE_ID: u32 = 77;
+
+type RouterMessage = (MavHeader, dialect::MavMessage);
+type SharedConnection = Arc<dyn AsyncMavConnection<dialect::MavMessage> + Sync + Send>;
 
 /// Internal tracking of the remote vehicle identity (from heartbeats).
 #[derive(Debug, Clone, Copy)]
 struct VehicleTarget {
     system_id: u8,
     component_id: u8,
-    autopilot: common::MavAutopilot,
-    vehicle_type: common::MavType,
+    autopilot: dialect::MavAutopilot,
+    vehicle_type: dialect::MavType,
 }
 
 /// Bundles the common parameters passed to every command handler.
-struct CommandContext<'a> {
-    pub(crate) connection: &'a (dyn AsyncMavConnection<common::MavMessage> + Sync + Send),
-    pub(crate) writers: &'a StateWriters,
-    pub(crate) vehicle_target: &'a mut Option<VehicleTarget>,
-    pub(crate) config: &'a VehicleConfig,
-    pub(crate) cancel: &'a CancellationToken,
+struct CommandContext {
+    pub(crate) connection: SharedConnection,
+    pub(crate) writers: Arc<StateWriters>,
+    pub(crate) vehicle_target: Option<VehicleTarget>,
+    pub(crate) config: VehicleConfig,
+    pub(crate) cancel: CancellationToken,
+    pub(crate) inbound_rx: broadcast::Receiver<RouterMessage>,
+    pub(crate) ack_dispatcher: Arc<AckCommandDispatcher>,
 }
 
+struct MessageRouterContext<'a> {
+    connection: SharedConnection,
+    state_writers: &'a StateWriters,
+    router_tx: &'a broadcast::Sender<RouterMessage>,
+    ack_dispatcher: &'a AckCommandDispatcher,
+    init_manager: &'a InitManager,
+    vehicle_target: &'a mut Option<VehicleTarget>,
+    cancel: CancellationToken,
+}
+
+#[cfg(test)]
 pub(crate) async fn run_event_loop(
-    connection: Box<dyn AsyncMavConnection<common::MavMessage> + Sync + Send>,
-    mut command_rx: mpsc::Receiver<Command>,
+    connection: Box<dyn AsyncMavConnection<dialect::MavMessage> + Sync + Send>,
+    command_rx: mpsc::Receiver<Command>,
     state_writers: StateWriters,
     config: VehicleConfig,
     cancel: CancellationToken,
 ) {
+    let init_manager = InitManager::new(config.clone());
+    run_event_loop_with_init(
+        connection,
+        command_rx,
+        state_writers,
+        config,
+        init_manager,
+        cancel,
+    )
+    .await;
+}
+
+pub(crate) async fn run_event_loop_with_init(
+    connection: Box<dyn AsyncMavConnection<dialect::MavMessage> + Sync + Send>,
+    mut command_rx: mpsc::Receiver<Command>,
+    state_writers: StateWriters,
+    config: VehicleConfig,
+    init_manager: InitManager,
+    cancel: CancellationToken,
+) {
+    let connection: SharedConnection = Arc::from(connection);
+    let state_writers = Arc::new(state_writers);
+    let (router_tx, _) = broadcast::channel::<RouterMessage>(ROUTER_CHANNEL_CAPACITY);
+    let ack_dispatcher = Arc::new(AckCommandDispatcher::new(
+        config.gcs_system_id,
+        config.gcs_component_id,
+    ));
+    let mut command_tasks = tokio::task::JoinSet::new();
+
     let mut vehicle_target: Option<VehicleTarget> = None;
-    let mut home_requested = false;
 
     let _ = state_writers.link_state.send(LinkState::Connected);
 
@@ -78,34 +135,57 @@ pub(crate) async fn run_event_loop(
                 match cmd {
                     Command::Shutdown => {
                         debug!("event loop shutdown requested");
+                        cancel.cancel();
                         let _ = state_writers.link_state.send(LinkState::Disconnected);
                         break;
                     }
                     cmd => {
                         let mut ctx = CommandContext {
-                            connection: &*connection,
-                            writers: &state_writers,
-                            vehicle_target: &mut vehicle_target,
-                            config: &config,
-                            cancel: &cancel,
+                            connection: connection.clone(),
+                            writers: state_writers.clone(),
+                            vehicle_target,
+                            config: config.clone(),
+                            cancel: cancel.clone(),
+                            inbound_rx: router_tx.subscribe(),
+                            ack_dispatcher: ack_dispatcher.clone(),
                         };
-                        handle_command(cmd, &mut ctx).await;
+                        command_tasks.spawn(async move {
+                            handle_command(cmd, &mut ctx).await;
+                        });
                     }
                 }
             }
-            result = connection.recv() => {
+            result = connection.recv_raw() => {
                 match result {
-                    Ok((header, msg)) => {
-                        let _ = state_writers.raw_message_tx.send((header, msg.clone()));
-                        update_vehicle_target(&mut vehicle_target, &header, &msg);
-                        if !home_requested
-                            && config.auto_request_home
-                            && let Some(ref target) = vehicle_target
-                        {
-                            request_home_position(&*connection, target, &config).await;
-                            home_requested = true;
+                    Ok(raw) => {
+                        let header = MavHeader {
+                            sequence: raw.sequence(),
+                            system_id: raw.system_id(),
+                            component_id: raw.component_id(),
+                        };
+                        let mut router_ctx = MessageRouterContext {
+                            connection: connection.clone(),
+                            state_writers: state_writers.as_ref(),
+                            router_tx: &router_tx,
+                            ack_dispatcher: ack_dispatcher.as_ref(),
+                            init_manager: &init_manager,
+                            vehicle_target: &mut vehicle_target,
+                            cancel: cancel.clone(),
+                        };
+                        match dialect::MavMessage::parse(raw.version(), raw.message_id(), raw.payload()) {
+                            Ok(msg) => {
+                                route_incoming_message(&mut router_ctx, header, msg).await;
+                            }
+                            Err(err) => {
+                                if raw.message_id() == COMMAND_ACK_MESSAGE_ID
+                                    && let Some(ack) = parse_command_ack_payload(raw.payload())
+                                {
+                                    router_ctx.ack_dispatcher.route_command_ack_raw(header, ack);
+                                    continue;
+                                }
+                                warn!("MAVLink parse error: {err}");
+                            }
                         }
-                        update_state(&header, &msg, &state_writers, &vehicle_target);
                     }
                     Err(err) => {
                         warn!("MAVLink recv error: {err}");
@@ -114,49 +194,93 @@ pub(crate) async fn run_event_loop(
                     }
                 }
             }
+            Some(join_result) = command_tasks.join_next(), if !command_tasks.is_empty() => {
+                if let Err(err) = join_result {
+                    warn!("command task join error: {err}");
+                }
+            }
         }
     }
+
+    command_tasks.abort_all();
+    while command_tasks.join_next().await.is_some() {}
 }
 
-async fn request_home_position(
-    connection: &(dyn AsyncMavConnection<common::MavMessage> + Sync + Send),
-    target: &VehicleTarget,
-    config: &VehicleConfig,
+async fn route_incoming_message(
+    ctx: &mut MessageRouterContext<'_>,
+    header: MavHeader,
+    msg: dialect::MavMessage,
 ) {
-    let _ = connection
-        .send(
-            &MavHeader {
-                system_id: config.gcs_system_id,
-                component_id: config.gcs_component_id,
-                sequence: 0,
-            },
-            &common::MavMessage::COMMAND_LONG(common::COMMAND_LONG_DATA {
-                target_system: target.system_id,
-                target_component: target.component_id,
-                command: MavCmd::MAV_CMD_REQUEST_MESSAGE,
-                confirmation: 0,
-                param1: HOME_POSITION_MSG_ID,
-                param2: 0.0,
-                param3: 0.0,
-                param4: 0.0,
-                param5: 0.0,
-                param6: 0.0,
-                param7: 0.0,
-            }),
-        )
-        .await;
+    let _ = ctx.state_writers.raw_message_tx.send((header, msg.clone()));
+    let _ = ctx.router_tx.send((header, msg.clone()));
+
+    if let dialect::MavMessage::COMMAND_ACK(ack) = &msg {
+        ctx.ack_dispatcher.route_command_ack(header, ack);
+    }
+
+    ctx.init_manager.handle_message(&msg);
+
+    update_vehicle_target(ctx.vehicle_target, &header, &msg);
+    if matches!(msg, dialect::MavMessage::HEARTBEAT(_))
+        && let Some(target) = ctx.vehicle_target
+    {
+        ctx.init_manager
+            .start(ctx.connection.clone(), *target, ctx.cancel.clone());
+    }
+
+    update_state(&header, &msg, ctx.state_writers, ctx.vehicle_target);
+}
+
+fn parse_command_ack_payload(payload: &[u8]) -> Option<WireCommandAck> {
+    if payload.len() < 3 {
+        return None;
+    }
+
+    let command_id = u16::from_le_bytes([payload[0], payload[1]]);
+    let result = payload[2];
+    if payload.len() < 10 {
+        return Some(WireCommandAck {
+            command_id,
+            result,
+            progress: 0,
+            result_param2: 0,
+            target_system: 0,
+            target_component: 0,
+        });
+    }
+
+    Some(WireCommandAck {
+        command_id,
+        result,
+        progress: payload[3],
+        result_param2: i32::from_le_bytes([payload[4], payload[5], payload[6], payload[7]]),
+        target_system: payload[8],
+        target_component: payload[9],
+    })
+}
+
+async fn recv_routed(
+    inbound_rx: &mut broadcast::Receiver<RouterMessage>,
+) -> Result<RouterMessage, VehicleError> {
+    loop {
+        match inbound_rx.recv().await {
+            Ok(message) => return Ok(message),
+            Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            Err(broadcast::error::RecvError::Closed) => return Err(VehicleError::Disconnected),
+        }
+    }
 }
 
 fn update_vehicle_target(
     vehicle_target: &mut Option<VehicleTarget>,
     header: &MavHeader,
-    message: &common::MavMessage,
+    message: &dialect::MavMessage,
 ) {
     if header.system_id == 0 {
         return;
     }
 
-    if let common::MavMessage::HEARTBEAT(hb) = message {
+    if let dialect::MavMessage::HEARTBEAT(hb) = message {
         *vehicle_target = Some(VehicleTarget {
             system_id: header.system_id,
             component_id: header.component_id,
@@ -167,8 +291,8 @@ fn update_vehicle_target(
         *vehicle_target = Some(VehicleTarget {
             system_id: header.system_id,
             component_id: header.component_id,
-            autopilot: common::MavAutopilot::MAV_AUTOPILOT_GENERIC,
-            vehicle_type: common::MavType::MAV_TYPE_GENERIC,
+            autopilot: dialect::MavAutopilot::MAV_AUTOPILOT_GENERIC,
+            vehicle_type: dialect::MavType::MAV_TYPE_GENERIC,
         });
     }
 }
@@ -177,10 +301,10 @@ fn update_vehicle_target(
 // Helpers: send message, wait for response
 // ---------------------------------------------------------------------------
 
-async fn send_message(
-    connection: &(dyn AsyncMavConnection<common::MavMessage> + Sync + Send),
+pub(super) async fn send_message(
+    connection: &(dyn AsyncMavConnection<dialect::MavMessage> + Sync + Send),
     config: &VehicleConfig,
-    message: common::MavMessage,
+    message: dialect::MavMessage,
 ) -> Result<(), VehicleError> {
     connection
         .send(
@@ -204,7 +328,7 @@ fn get_target(vehicle_target: &Option<VehicleTarget>) -> Result<VehicleTarget, V
 // Command dispatch
 // ---------------------------------------------------------------------------
 
-async fn handle_command(cmd: Command, ctx: &mut CommandContext<'_>) {
+async fn handle_command(cmd: Command, ctx: &mut CommandContext) {
     match cmd {
         Command::Arm { force, reply } => {
             let result = handle_arm_disarm(true, force, ctx).await;
@@ -223,7 +347,41 @@ async fn handle_command(cmd: Command, ctx: &mut CommandContext<'_>) {
             params,
             reply,
         } => {
+            let result = handle_command_long(command, params, ctx).await.map(|_| ());
+            let _ = reply.send(result);
+        }
+        Command::LongRaw {
+            command_id,
+            params,
+            reply,
+        } => {
+            let result = handle_command_long_raw(command_id, params, ctx)
+                .await
+                .map(|_| ());
+            let _ = reply.send(result);
+        }
+        Command::RawCommandLong {
+            command,
+            params,
+            reply,
+        } => {
+            let result = handle_command_long(command, params, ctx).await.map(|_| ());
+            let _ = reply.send(result);
+        }
+        Command::RawCommandLongAck {
+            command,
+            params,
+            reply,
+        } => {
             let result = handle_command_long(command, params, ctx).await;
+            let _ = reply.send(result);
+        }
+        Command::RawCommandInt { payload, reply } => {
+            let result = handle_command_int(payload, ctx).await;
+            let _ = reply.send(result);
+        }
+        Command::RawSend { message, reply } => {
+            let result = handle_raw_send(*message, ctx).await;
             let _ = reply.send(result);
         }
         Command::GuidedGoto {
@@ -233,6 +391,15 @@ async fn handle_command(cmd: Command, ctx: &mut CommandContext<'_>) {
             reply,
         } => {
             let result = handle_guided_goto(lat_e7, lon_e7, alt_m, ctx).await;
+            let _ = reply.send(result);
+        }
+        Command::SetOrigin {
+            latitude,
+            longitude,
+            altitude,
+            reply,
+        } => {
+            let result = handle_set_origin(latitude, longitude, altitude, ctx).await;
             let _ = reply.send(result);
         }
         Command::MissionUpload { plan, reply } => {
@@ -285,9 +452,9 @@ async fn handle_command(cmd: Command, ctx: &mut CommandContext<'_>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dialect::{self, MavModeFlag, MavState};
     use crate::state::{self, LinkState, create_channels};
-    use mavlink::common::{self, MavModeFlag, MavState};
-    use mavlink::{MavHeader, MavlinkVersion};
+    use mavlink::{MAVLinkMessageRaw, MAVLinkV2MessageRaw, MavHeader, MavlinkVersion};
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use tokio::sync::{mpsc, oneshot};
@@ -296,17 +463,17 @@ mod tests {
     // Mock AsyncMavConnection
     // -----------------------------------------------------------------------
 
-    type SentMessages = Arc<Mutex<Vec<(MavHeader, common::MavMessage)>>>;
+    type SentMessages = Arc<Mutex<Vec<(MavHeader, dialect::MavMessage)>>>;
 
     /// Messages the mock should yield from `recv()`.  When the queue is empty
     /// the mock blocks forever (the test drives progress via commands/cancel).
     struct MockConnection {
-        recv_rx: tokio::sync::Mutex<mpsc::Receiver<(MavHeader, common::MavMessage)>>,
+        recv_rx: tokio::sync::Mutex<mpsc::Receiver<(MavHeader, dialect::MavMessage)>>,
         sent: SentMessages,
     }
 
     impl MockConnection {
-        fn new(rx: mpsc::Receiver<(MavHeader, common::MavMessage)>) -> (Self, SentMessages) {
+        fn new(rx: mpsc::Receiver<(MavHeader, dialect::MavMessage)>) -> (Self, SentMessages) {
             let sent = Arc::new(Mutex::new(Vec::new()));
             (
                 Self {
@@ -319,10 +486,10 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl AsyncMavConnection<common::MavMessage> for MockConnection {
+    impl AsyncMavConnection<dialect::MavMessage> for MockConnection {
         async fn recv(
             &self,
-        ) -> Result<(MavHeader, common::MavMessage), mavlink::error::MessageReadError> {
+        ) -> Result<(MavHeader, dialect::MavMessage), mavlink::error::MessageReadError> {
             let mut rx = self.recv_rx.lock().await;
             match rx.recv().await {
                 Some(msg) => Ok(msg),
@@ -333,16 +500,17 @@ mod tests {
             }
         }
 
-        async fn recv_raw(
-            &self,
-        ) -> Result<mavlink::MAVLinkMessageRaw, mavlink::error::MessageReadError> {
-            unimplemented!("recv_raw not used in event_loop tests")
+        async fn recv_raw(&self) -> Result<MAVLinkMessageRaw, mavlink::error::MessageReadError> {
+            let (header, message) = self.recv().await?;
+            let mut raw = MAVLinkV2MessageRaw::new();
+            raw.serialize_message(header, &message);
+            Ok(MAVLinkMessageRaw::V2(raw))
         }
 
         async fn send(
             &self,
             header: &MavHeader,
-            data: &common::MavMessage,
+            data: &dialect::MavMessage,
         ) -> Result<usize, mavlink::error::MessageWriteError> {
             self.sent.lock().unwrap().push((*header, data.clone()));
             Ok(0)
@@ -370,15 +538,15 @@ mod tests {
         }
     }
 
-    fn heartbeat_msg(armed: bool, custom_mode: u32) -> common::MavMessage {
+    fn heartbeat_msg(armed: bool, custom_mode: u32) -> dialect::MavMessage {
         let mut base_mode = MavModeFlag::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED;
         if armed {
             base_mode |= MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED;
         }
-        common::MavMessage::HEARTBEAT(common::HEARTBEAT_DATA {
+        dialect::MavMessage::HEARTBEAT(dialect::HEARTBEAT_DATA {
             custom_mode,
-            mavtype: common::MavType::MAV_TYPE_QUADROTOR,
-            autopilot: common::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
+            mavtype: dialect::MavType::MAV_TYPE_QUADROTOR,
+            autopilot: dialect::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
             base_mode,
             system_status: MavState::MAV_STATE_STANDBY,
             mavlink_version: 3,
@@ -387,18 +555,20 @@ mod tests {
 
     fn fast_config() -> VehicleConfig {
         VehicleConfig {
+            command_timeout: Duration::from_millis(50),
+            command_completion_timeout: Duration::from_millis(250),
             retry_policy: crate::mission::RetryPolicy {
                 request_timeout_ms: 50,
                 item_timeout_ms: 50,
-                max_retries: 1,
+                max_retries: 2,
             },
             auto_request_home: false,
             ..VehicleConfig::default()
         }
     }
 
-    fn ack_msg(command: MavCmd, result: common::MavResult) -> common::MavMessage {
-        common::MavMessage::COMMAND_ACK(common::COMMAND_ACK_DATA {
+    fn ack_msg(command: MavCmd, result: dialect::MavResult) -> dialect::MavMessage {
+        dialect::MavMessage::COMMAND_ACK(dialect::COMMAND_ACK_DATA {
             command,
             result,
             progress: 0,
@@ -423,9 +593,9 @@ mod tests {
         assert_eq!(t.component_id, 1);
         assert_eq!(
             t.autopilot,
-            common::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA
+            dialect::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA
         );
-        assert_eq!(t.vehicle_type, common::MavType::MAV_TYPE_QUADROTOR);
+        assert_eq!(t.vehicle_type, dialect::MavType::MAV_TYPE_QUADROTOR);
     }
 
     #[test]
@@ -436,7 +606,7 @@ mod tests {
             component_id: 10,
             sequence: 0,
         };
-        let msg = common::MavMessage::VFR_HUD(common::VFR_HUD_DATA {
+        let msg = dialect::MavMessage::VFR_HUD(dialect::VFR_HUD_DATA {
             airspeed: 0.0,
             groundspeed: 0.0,
             heading: 0,
@@ -448,7 +618,7 @@ mod tests {
         let t = target.unwrap();
         assert_eq!(t.system_id, 5);
         assert_eq!(t.component_id, 10);
-        assert_eq!(t.autopilot, common::MavAutopilot::MAV_AUTOPILOT_GENERIC);
+        assert_eq!(t.autopilot, dialect::MavAutopilot::MAV_AUTOPILOT_GENERIC);
     }
 
     #[test]
@@ -469,8 +639,8 @@ mod tests {
         let mut target = Some(VehicleTarget {
             system_id: 1,
             component_id: 1,
-            autopilot: common::MavAutopilot::MAV_AUTOPILOT_GENERIC,
-            vehicle_type: common::MavType::MAV_TYPE_GENERIC,
+            autopilot: dialect::MavAutopilot::MAV_AUTOPILOT_GENERIC,
+            vehicle_type: dialect::MavType::MAV_TYPE_GENERIC,
         });
         let header = MavHeader {
             system_id: 2,
@@ -482,7 +652,7 @@ mod tests {
         let t = target.unwrap();
         assert_eq!(t.system_id, 2);
         assert_eq!(t.component_id, 3);
-        assert_eq!(t.vehicle_type, common::MavType::MAV_TYPE_QUADROTOR);
+        assert_eq!(t.vehicle_type, dialect::MavType::MAV_TYPE_QUADROTOR);
     }
 
     #[test]
@@ -490,8 +660,8 @@ mod tests {
         let original = VehicleTarget {
             system_id: 1,
             component_id: 1,
-            autopilot: common::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
-            vehicle_type: common::MavType::MAV_TYPE_QUADROTOR,
+            autopilot: dialect::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
+            vehicle_type: dialect::MavType::MAV_TYPE_QUADROTOR,
         };
         let mut target = Some(original);
         let header = MavHeader {
@@ -499,7 +669,7 @@ mod tests {
             component_id: 99,
             sequence: 0,
         };
-        let msg = common::MavMessage::VFR_HUD(common::VFR_HUD_DATA {
+        let msg = dialect::MavMessage::VFR_HUD(dialect::VFR_HUD_DATA {
             airspeed: 0.0,
             groundspeed: 10.0,
             heading: 90,
@@ -522,8 +692,8 @@ mod tests {
         let target = Some(VehicleTarget {
             system_id: 1,
             component_id: 1,
-            autopilot: common::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
-            vehicle_type: common::MavType::MAV_TYPE_QUADROTOR,
+            autopilot: dialect::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
+            vehicle_type: dialect::MavType::MAV_TYPE_QUADROTOR,
         });
         let header = default_header();
         let msg = heartbeat_msg(true, 4);
@@ -540,7 +710,7 @@ mod tests {
         let (writers, channels) = create_channels();
         let target: Option<VehicleTarget> = None;
         let header = default_header();
-        let msg = common::MavMessage::VFR_HUD(common::VFR_HUD_DATA {
+        let msg = dialect::MavMessage::VFR_HUD(dialect::VFR_HUD_DATA {
             airspeed: 12.5,
             groundspeed: 10.0,
             heading: 180,
@@ -564,7 +734,7 @@ mod tests {
         let (writers, channels) = create_channels();
         let target: Option<VehicleTarget> = None;
         let header = default_header();
-        let msg = common::MavMessage::GLOBAL_POSITION_INT(common::GLOBAL_POSITION_INT_DATA {
+        let msg = dialect::MavMessage::GLOBAL_POSITION_INT(dialect::GLOBAL_POSITION_INT_DATA {
             time_boot_ms: 0,
             lat: 473_977_420, // ~47.3977420
             lon: 85_455_940,  // ~8.5455940
@@ -589,10 +759,10 @@ mod tests {
         let (writers, channels) = create_channels();
         let target: Option<VehicleTarget> = None;
         let header = default_header();
-        let msg = common::MavMessage::SYS_STATUS(common::SYS_STATUS_DATA {
-            onboard_control_sensors_present: common::MavSysStatusSensor::empty(),
-            onboard_control_sensors_enabled: common::MavSysStatusSensor::empty(),
-            onboard_control_sensors_health: common::MavSysStatusSensor::empty(),
+        let msg = dialect::MavMessage::SYS_STATUS(dialect::SYS_STATUS_DATA {
+            onboard_control_sensors_present: dialect::MavSysStatusSensor::empty(),
+            onboard_control_sensors_enabled: dialect::MavSysStatusSensor::empty(),
+            onboard_control_sensors_health: dialect::MavSysStatusSensor::empty(),
             load: 0,
             voltage_battery: 12600, // 12.6V
             current_battery: 500,   // 5.0A
@@ -603,9 +773,9 @@ mod tests {
             errors_count2: 0,
             errors_count3: 0,
             errors_count4: 0,
-            onboard_control_sensors_present_extended: common::MavSysStatusSensorExtended::empty(),
-            onboard_control_sensors_enabled_extended: common::MavSysStatusSensorExtended::empty(),
-            onboard_control_sensors_health_extended: common::MavSysStatusSensorExtended::empty(),
+            onboard_control_sensors_present_extended: dialect::MavSysStatusSensorExtended::empty(),
+            onboard_control_sensors_enabled_extended: dialect::MavSysStatusSensorExtended::empty(),
+            onboard_control_sensors_health_extended: dialect::MavSysStatusSensorExtended::empty(),
         });
         update_state(&header, &msg, &writers, &target);
 
@@ -620,9 +790,9 @@ mod tests {
         let (writers, channels) = create_channels();
         let target: Option<VehicleTarget> = None;
         let header = default_header();
-        let msg = common::MavMessage::GPS_RAW_INT(common::GPS_RAW_INT_DATA {
+        let msg = dialect::MavMessage::GPS_RAW_INT(dialect::GPS_RAW_INT_DATA {
             time_usec: 0,
-            fix_type: common::GpsFixType::GPS_FIX_TYPE_3D_FIX,
+            fix_type: dialect::GpsFixType::GPS_FIX_TYPE_3D_FIX,
             lat: 0,
             lon: 0,
             alt: 0,
@@ -651,10 +821,10 @@ mod tests {
         let (writers, channels) = create_channels();
         let target: Option<VehicleTarget> = None;
         let header = default_header();
-        let msg = common::MavMessage::MISSION_CURRENT(common::MISSION_CURRENT_DATA {
+        let msg = dialect::MavMessage::MISSION_CURRENT(dialect::MISSION_CURRENT_DATA {
             seq: 3,
             total: 10,
-            mission_state: common::MissionState::MISSION_STATE_ACTIVE,
+            mission_state: dialect::MissionState::MISSION_STATE_ACTIVE,
             mission_mode: 0,
             mission_id: 0,
             fence_id: 0,
@@ -674,7 +844,7 @@ mod tests {
         let (writers, channels) = create_channels();
         let target: Option<VehicleTarget> = None;
         let header = default_header();
-        let msg = common::MavMessage::HOME_POSITION(common::HOME_POSITION_DATA {
+        let msg = dialect::MavMessage::HOME_POSITION(dialect::HOME_POSITION_DATA {
             latitude: 473_977_420,
             longitude: 85_455_940,
             altitude: 500_000, // 500m
@@ -701,7 +871,7 @@ mod tests {
         let (writers, channels) = create_channels();
         let target: Option<VehicleTarget> = None;
         let header = default_header();
-        let msg = common::MavMessage::ATTITUDE(common::ATTITUDE_DATA {
+        let msg = dialect::MavMessage::ATTITUDE(dialect::ATTITUDE_DATA {
             time_boot_ms: 0,
             roll: std::f32::consts::FRAC_PI_6,   // 30 degrees
             pitch: -std::f32::consts::FRAC_PI_4, // -45 degrees
@@ -723,8 +893,8 @@ mod tests {
         let (writers, channels) = create_channels();
         let target: Option<VehicleTarget> = None;
         let header = default_header();
-        let msg = common::MavMessage::STATUSTEXT(common::STATUSTEXT_DATA {
-            severity: common::MavSeverity::MAV_SEVERITY_WARNING,
+        let msg = dialect::MavMessage::STATUSTEXT(dialect::STATUSTEXT_DATA {
+            severity: dialect::MavSeverity::MAV_SEVERITY_WARNING,
             text: "PreArm: Check fence".into(),
             id: 0,
             chunk_seq: 0,
@@ -742,7 +912,7 @@ mod tests {
         let (writers, channels) = create_channels();
         let target: Option<VehicleTarget> = None;
         let header = default_header();
-        let msg = common::MavMessage::NAV_CONTROLLER_OUTPUT(common::NAV_CONTROLLER_OUTPUT_DATA {
+        let msg = dialect::MavMessage::NAV_CONTROLLER_OUTPUT(dialect::NAV_CONTROLLER_OUTPUT_DATA {
             nav_roll: 0.0,
             nav_pitch: 0.0,
             nav_bearing: 90,
@@ -766,7 +936,7 @@ mod tests {
         let (writers, channels) = create_channels();
         let target: Option<VehicleTarget> = None;
         let header = default_header();
-        let msg = common::MavMessage::TERRAIN_REPORT(common::TERRAIN_REPORT_DATA {
+        let msg = dialect::MavMessage::TERRAIN_REPORT(dialect::TERRAIN_REPORT_DATA {
             lat: 0,
             lon: 0,
             spacing: 0,
@@ -785,6 +955,161 @@ mod tests {
     // -----------------------------------------------------------------------
     // run_event_loop tests
     // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn heartbeat_processing() {
+        let (msg_tx, msg_rx) = mpsc::channel(16);
+        let (conn, _sent) = MockConnection::new(msg_rx);
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let (writers, channels) = create_channels();
+        let cancel = CancellationToken::new();
+
+        let handle = tokio::spawn(async move {
+            run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
+        });
+
+        msg_tx
+            .send((default_header(), heartbeat_msg(true, 5)))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+
+        cmd_tx.send(Command::Shutdown).await.unwrap();
+        handle.await.unwrap();
+
+        let vs = channels.vehicle_state.borrow();
+        assert!(vs.armed);
+        assert_eq!(vs.custom_mode, 5);
+    }
+
+    #[tokio::test]
+    async fn mock_outbound_capture() {
+        let (msg_tx, msg_rx) = mpsc::channel(64);
+        let (conn, sent) = MockConnection::new(msg_rx);
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let (writers, _channels) = create_channels();
+        let cancel = CancellationToken::new();
+
+        let handle = tokio::spawn(async move {
+            run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
+        });
+
+        msg_tx
+            .send((default_header(), heartbeat_msg(false, 0)))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let (reply_tx, reply_rx) = oneshot::channel();
+        cmd_tx
+            .send(Command::Arm {
+                force: false,
+                reply: reply_tx,
+            })
+            .await
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        msg_tx
+            .send((
+                default_header(),
+                ack_msg(
+                    MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+                    dialect::MavResult::MAV_RESULT_ACCEPTED,
+                ),
+            ))
+            .await
+            .unwrap();
+
+        let result = reply_rx.await.unwrap();
+        assert!(result.is_ok());
+
+        let has_arm_command = {
+            let sent_msgs = sent.lock().unwrap();
+            sent_msgs.iter().any(|(_, msg)| {
+                matches!(
+                            msg,
+                dialect::MavMessage::COMMAND_LONG(d)
+                                if d.command == MavCmd::MAV_CMD_COMPONENT_ARM_DISARM
+                        )
+            })
+        };
+        assert!(
+            has_arm_command,
+            "MockConnection must capture outbound arm COMMAND_LONG"
+        );
+
+        cmd_tx.send(Command::Shutdown).await.unwrap();
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn router_forwards_ack_to_raw_subscribers_during_command_wait() {
+        let (msg_tx, msg_rx) = mpsc::channel(64);
+        let (conn, _sent) = MockConnection::new(msg_rx);
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let (writers, channels) = create_channels();
+        let cancel = CancellationToken::new();
+        let mut raw_rx = channels.raw_message_tx.subscribe();
+
+        let handle = tokio::spawn(async move {
+            run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
+        });
+
+        msg_tx
+            .send((default_header(), heartbeat_msg(false, 0)))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let (reply_tx, reply_rx) = oneshot::channel();
+        cmd_tx
+            .send(Command::Arm {
+                force: false,
+                reply: reply_tx,
+            })
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        msg_tx
+            .send((
+                default_header(),
+                ack_msg(
+                    MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+                    dialect::MavResult::MAV_RESULT_ACCEPTED,
+                ),
+            ))
+            .await
+            .unwrap();
+
+        let ack_seen = tokio::time::timeout(Duration::from_millis(250), async {
+            loop {
+                let (_, msg) = raw_rx
+                    .recv()
+                    .await
+                    .expect("raw message channel should stay open while loop runs");
+                if matches!(msg, dialect::MavMessage::COMMAND_ACK(_)) {
+                    return true;
+                }
+            }
+        })
+        .await
+        .unwrap_or(false);
+
+        let result = reply_rx.await.unwrap();
+        assert!(result.is_ok());
+        assert!(
+            ack_seen,
+            "single-ingress router should broadcast ACKs to raw subscribers"
+        );
+
+        cmd_tx.send(Command::Shutdown).await.unwrap();
+        handle.await.unwrap();
+    }
 
     #[tokio::test]
     async fn shutdown_command_stops_loop() {
@@ -934,7 +1259,7 @@ mod tests {
                 default_header(),
                 ack_msg(
                     MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
-                    common::MavResult::MAV_RESULT_ACCEPTED,
+                    dialect::MavResult::MAV_RESULT_ACCEPTED,
                 ),
             ))
             .await
@@ -948,12 +1273,12 @@ mod tests {
             let sent_msgs = sent.lock().unwrap();
             let arm_msgs: Vec<_> = sent_msgs
                 .iter()
-                .filter(|(_, msg)| matches!(msg, common::MavMessage::COMMAND_LONG(d) if d.command == MavCmd::MAV_CMD_COMPONENT_ARM_DISARM))
+            .filter(|(_, msg)| matches!(msg, dialect::MavMessage::COMMAND_LONG(d) if d.command == MavCmd::MAV_CMD_COMPONENT_ARM_DISARM))
                 .collect();
             assert!(!arm_msgs.is_empty());
 
             // Verify param1 = 1.0 (arm) and param2 = 0.0 (not forced)
-            if let common::MavMessage::COMMAND_LONG(data) = &arm_msgs[0].1 {
+            if let dialect::MavMessage::COMMAND_LONG(data) = &arm_msgs[0].1 {
                 assert_eq!(data.param1, 1.0);
                 assert_eq!(data.param2, 0.0);
             }
@@ -999,7 +1324,7 @@ mod tests {
                 default_header(),
                 ack_msg(
                     MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
-                    common::MavResult::MAV_RESULT_ACCEPTED,
+                    dialect::MavResult::MAV_RESULT_ACCEPTED,
                 ),
             ))
             .await
@@ -1012,9 +1337,9 @@ mod tests {
             let sent_msgs = sent.lock().unwrap();
             let arm_msg = sent_msgs
                 .iter()
-                .find(|(_, msg)| matches!(msg, common::MavMessage::COMMAND_LONG(d) if d.command == MavCmd::MAV_CMD_COMPONENT_ARM_DISARM))
+            .find(|(_, msg)| matches!(msg, dialect::MavMessage::COMMAND_LONG(d) if d.command == MavCmd::MAV_CMD_COMPONENT_ARM_DISARM))
                 .unwrap();
-            if let common::MavMessage::COMMAND_LONG(data) = &arm_msg.1 {
+            if let dialect::MavMessage::COMMAND_LONG(data) = &arm_msg.1 {
                 assert_eq!(data.param2, MAGIC_FORCE_ARM_VALUE);
             }
         }
@@ -1089,14 +1414,20 @@ mod tests {
                 default_header(),
                 ack_msg(
                     MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
-                    common::MavResult::MAV_RESULT_DENIED,
+                    dialect::MavResult::MAV_RESULT_DENIED,
                 ),
             ))
             .await
             .unwrap();
 
         let result = reply_rx.await.unwrap();
-        assert!(matches!(result, Err(VehicleError::CommandRejected { .. })));
+        assert!(matches!(
+            result,
+            Err(VehicleError::CommandRejected {
+                command,
+                result: crate::error::CommandResult::Denied,
+            }) if command == MavCmd::MAV_CMD_COMPONENT_ARM_DISARM as u16
+        ));
 
         cmd_tx.send(Command::Shutdown).await.unwrap();
         handle.await.unwrap();
@@ -1138,7 +1469,7 @@ mod tests {
                 default_header(),
                 ack_msg(
                     MavCmd::MAV_CMD_DO_SET_MODE,
-                    common::MavResult::MAV_RESULT_ACCEPTED,
+                    dialect::MavResult::MAV_RESULT_ACCEPTED,
                 ),
             ))
             .await
@@ -1152,9 +1483,9 @@ mod tests {
             let sent_msgs = sent.lock().unwrap();
             let mode_msg = sent_msgs
                 .iter()
-                .find(|(_, msg)| matches!(msg, common::MavMessage::COMMAND_LONG(d) if d.command == MavCmd::MAV_CMD_DO_SET_MODE))
+            .find(|(_, msg)| matches!(msg, dialect::MavMessage::COMMAND_LONG(d) if d.command == MavCmd::MAV_CMD_DO_SET_MODE))
                 .unwrap();
-            if let common::MavMessage::COMMAND_LONG(data) = &mode_msg.1 {
+            if let dialect::MavMessage::COMMAND_LONG(data) = &mode_msg.1 {
                 assert_eq!(data.param2 as u32, 4);
             }
         }
@@ -1202,10 +1533,10 @@ mod tests {
             let goto_msg = sent_msgs
                 .iter()
                 .find(|(_, msg)| {
-                    matches!(msg, common::MavMessage::SET_POSITION_TARGET_GLOBAL_INT(_))
+                    matches!(msg, dialect::MavMessage::SET_POSITION_TARGET_GLOBAL_INT(_))
                 })
                 .unwrap();
-            if let common::MavMessage::SET_POSITION_TARGET_GLOBAL_INT(data) = &goto_msg.1 {
+            if let dialect::MavMessage::SET_POSITION_TARGET_GLOBAL_INT(data) = &goto_msg.1 {
                 assert_eq!(data.lat_int, 473_977_420);
                 assert_eq!(data.lon_int, 85_455_940);
                 assert_eq!(data.alt, 100.0);
@@ -1257,6 +1588,284 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn parallel_different_keys_commands_can_complete() {
+        let (msg_tx, msg_rx) = mpsc::channel(64);
+        let (conn, _sent) = MockConnection::new(msg_rx);
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let (writers, _channels) = create_channels();
+        let cancel = CancellationToken::new();
+
+        let handle = tokio::spawn(async move {
+            run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
+        });
+
+        msg_tx
+            .send((default_header(), heartbeat_msg(false, 0)))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let (arm_reply_tx, arm_reply_rx) = oneshot::channel();
+        cmd_tx
+            .send(Command::Arm {
+                force: false,
+                reply: arm_reply_tx,
+            })
+            .await
+            .unwrap();
+
+        let (mode_reply_tx, mode_reply_rx) = oneshot::channel();
+        cmd_tx
+            .send(Command::SetMode {
+                custom_mode: 4,
+                reply: mode_reply_tx,
+            })
+            .await
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        msg_tx
+            .send((
+                default_header(),
+                ack_msg(
+                    MavCmd::MAV_CMD_DO_SET_MODE,
+                    dialect::MavResult::MAV_RESULT_ACCEPTED,
+                ),
+            ))
+            .await
+            .unwrap();
+        msg_tx
+            .send((
+                default_header(),
+                ack_msg(
+                    MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+                    dialect::MavResult::MAV_RESULT_ACCEPTED,
+                ),
+            ))
+            .await
+            .unwrap();
+
+        assert!(arm_reply_rx.await.unwrap().is_ok());
+        assert!(mode_reply_rx.await.unwrap().is_ok());
+
+        cmd_tx.send(Command::Shutdown).await.unwrap();
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn same_key_conflict_returns_operation_conflict() {
+        let (msg_tx, msg_rx) = mpsc::channel(64);
+        let (conn, _sent) = MockConnection::new(msg_rx);
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let (writers, _channels) = create_channels();
+        let cancel = CancellationToken::new();
+
+        let handle = tokio::spawn(async move {
+            run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
+        });
+
+        msg_tx
+            .send((default_header(), heartbeat_msg(false, 0)))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let (reply1_tx, reply1_rx) = oneshot::channel();
+        cmd_tx
+            .send(Command::Arm {
+                force: false,
+                reply: reply1_tx,
+            })
+            .await
+            .unwrap();
+
+        let (reply2_tx, reply2_rx) = oneshot::channel();
+        cmd_tx
+            .send(Command::Arm {
+                force: false,
+                reply: reply2_tx,
+            })
+            .await
+            .unwrap();
+
+        let second_result = tokio::time::timeout(Duration::from_millis(200), reply2_rx)
+            .await
+            .expect("second same-key command should fail fast")
+            .unwrap();
+        assert!(matches!(
+            second_result,
+            Err(VehicleError::OperationConflict { .. })
+        ));
+
+        msg_tx
+            .send((
+                default_header(),
+                ack_msg(
+                    MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+                    dialect::MavResult::MAV_RESULT_ACCEPTED,
+                ),
+            ))
+            .await
+            .unwrap();
+
+        assert!(reply1_rx.await.unwrap().is_ok());
+
+        cmd_tx.send(Command::Shutdown).await.unwrap();
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn in_progress_ack_stops_retries_and_waits_terminal_ack() {
+        let (msg_tx, msg_rx) = mpsc::channel(64);
+        let (conn, sent) = MockConnection::new(msg_rx);
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let (writers, _channels) = create_channels();
+        let cancel = CancellationToken::new();
+
+        let handle = tokio::spawn(async move {
+            run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
+        });
+
+        msg_tx
+            .send((default_header(), heartbeat_msg(false, 0)))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let (reply_tx, reply_rx) = oneshot::channel();
+        cmd_tx
+            .send(Command::Arm {
+                force: false,
+                reply: reply_tx,
+            })
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        msg_tx
+            .send((
+                default_header(),
+                ack_msg(
+                    MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+                    dialect::MavResult::MAV_RESULT_IN_PROGRESS,
+                ),
+            ))
+            .await
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(90)).await;
+        let arm_sends_after_in_progress = {
+            let sent_msgs = sent.lock().unwrap();
+            sent_msgs
+                .iter()
+                .filter(|(_, msg)| {
+                    matches!(
+                                    msg,
+                    dialect::MavMessage::COMMAND_LONG(data)
+                                        if data.command == MavCmd::MAV_CMD_COMPONENT_ARM_DISARM
+                                )
+                })
+                .count()
+        };
+        assert_eq!(arm_sends_after_in_progress, 1);
+
+        msg_tx
+            .send((
+                default_header(),
+                ack_msg(
+                    MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+                    dialect::MavResult::MAV_RESULT_ACCEPTED,
+                ),
+            ))
+            .await
+            .unwrap();
+
+        assert!(reply_rx.await.unwrap().is_ok());
+
+        cmd_tx.send(Command::Shutdown).await.unwrap();
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn command_long_retries_increment_confirmation_field() {
+        let (msg_tx, msg_rx) = mpsc::channel(64);
+        let (conn, sent) = MockConnection::new(msg_rx);
+
+        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+        let (writers, _channels) = create_channels();
+        let cancel = CancellationToken::new();
+
+        let handle = tokio::spawn(async move {
+            run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
+        });
+
+        msg_tx
+            .send((default_header(), heartbeat_msg(false, 0)))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let (reply_tx, reply_rx) = oneshot::channel();
+        cmd_tx
+            .send(Command::Long {
+                command: MavCmd::MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
+                params: [3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                reply: reply_tx,
+            })
+            .await
+            .unwrap();
+
+        let confirmations = tokio::time::timeout(Duration::from_millis(250), async {
+            loop {
+                let values = {
+                    let sent_msgs = sent.lock().unwrap();
+                    sent_msgs
+                        .iter()
+                        .filter_map(|(_, msg)| match msg {
+                            dialect::MavMessage::COMMAND_LONG(data)
+                                if data.command == MavCmd::MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN =>
+                            {
+                                Some(data.confirmation)
+                            }
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                };
+
+                if values.len() >= 2 {
+                    break values;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("expected at least one retry send");
+
+        assert_eq!(confirmations[0], 0);
+        assert_eq!(confirmations[1], 1);
+
+        msg_tx
+            .send((
+                default_header(),
+                ack_msg(
+                    MavCmd::MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
+                    dialect::MavResult::MAV_RESULT_ACCEPTED,
+                ),
+            ))
+            .await
+            .unwrap();
+
+        assert!(reply_rx.await.unwrap().is_ok());
+
+        cmd_tx.send(Command::Shutdown).await.unwrap();
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
     async fn disarm_force_uses_magic_disarm_value() {
         let (msg_tx, msg_rx) = mpsc::channel(64);
         let (conn, sent) = MockConnection::new(msg_rx);
@@ -1290,7 +1899,7 @@ mod tests {
                 default_header(),
                 ack_msg(
                     MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
-                    common::MavResult::MAV_RESULT_ACCEPTED,
+                    dialect::MavResult::MAV_RESULT_ACCEPTED,
                 ),
             ))
             .await
@@ -1303,9 +1912,9 @@ mod tests {
             let sent_msgs = sent.lock().unwrap();
             let disarm_msg = sent_msgs
                 .iter()
-                .find(|(_, msg)| matches!(msg, common::MavMessage::COMMAND_LONG(d) if d.command == MavCmd::MAV_CMD_COMPONENT_ARM_DISARM))
+            .find(|(_, msg)| matches!(msg, dialect::MavMessage::COMMAND_LONG(d) if d.command == MavCmd::MAV_CMD_COMPONENT_ARM_DISARM))
                 .unwrap();
-            if let common::MavMessage::COMMAND_LONG(data) = &disarm_msg.1 {
+            if let dialect::MavMessage::COMMAND_LONG(data) = &disarm_msg.1 {
                 assert_eq!(data.param1, 0.0); // disarm
                 assert_eq!(data.param2, MAGIC_FORCE_DISARM_VALUE);
             }
@@ -1350,7 +1959,7 @@ mod tests {
                 default_header(),
                 ack_msg(
                     MavCmd::MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
-                    common::MavResult::MAV_RESULT_ACCEPTED,
+                    dialect::MavResult::MAV_RESULT_ACCEPTED,
                 ),
             ))
             .await
@@ -1363,9 +1972,9 @@ mod tests {
             let sent_msgs = sent.lock().unwrap();
             let reboot_msg = sent_msgs
                 .iter()
-                .find(|(_, msg)| matches!(msg, common::MavMessage::COMMAND_LONG(d) if d.command == MavCmd::MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN))
+            .find(|(_, msg)| matches!(msg, dialect::MavMessage::COMMAND_LONG(d) if d.command == MavCmd::MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN))
                 .unwrap();
-            if let common::MavMessage::COMMAND_LONG(data) = &reboot_msg.1 {
+            if let dialect::MavMessage::COMMAND_LONG(data) = &reboot_msg.1 {
                 assert_eq!(data.param1, 3.0);
                 assert_eq!(data.param2, 0.0);
                 assert_eq!(data.param3, 0.0);
@@ -1398,8 +2007,8 @@ mod tests {
         let target = Some(VehicleTarget {
             system_id: 1,
             component_id: 1,
-            autopilot: common::MavAutopilot::MAV_AUTOPILOT_GENERIC,
-            vehicle_type: common::MavType::MAV_TYPE_GENERIC,
+            autopilot: dialect::MavAutopilot::MAV_AUTOPILOT_GENERIC,
+            vehicle_type: dialect::MavType::MAV_TYPE_GENERIC,
         });
         let t = get_target(&target).unwrap();
         assert_eq!(t.system_id, 1);
@@ -1409,34 +2018,34 @@ mod tests {
     fn to_mav_mission_type_roundtrip() {
         assert_eq!(
             to_mav_mission_type(MissionType::Mission),
-            common::MavMissionType::MAV_MISSION_TYPE_MISSION
+            dialect::MavMissionType::MAV_MISSION_TYPE_MISSION
         );
         assert_eq!(
             to_mav_mission_type(MissionType::Fence),
-            common::MavMissionType::MAV_MISSION_TYPE_FENCE
+            dialect::MavMissionType::MAV_MISSION_TYPE_FENCE
         );
         assert_eq!(
             to_mav_mission_type(MissionType::Rally),
-            common::MavMissionType::MAV_MISSION_TYPE_RALLY
+            dialect::MavMissionType::MAV_MISSION_TYPE_RALLY
         );
     }
 
     #[test]
     fn frame_conversion_roundtrip() {
         let frames = [
-            (MissionFrame::Mission, common::MavFrame::MAV_FRAME_MISSION),
-            (MissionFrame::GlobalInt, common::MavFrame::MAV_FRAME_GLOBAL),
+            (MissionFrame::Mission, dialect::MavFrame::MAV_FRAME_MISSION),
+            (MissionFrame::GlobalInt, dialect::MavFrame::MAV_FRAME_GLOBAL),
             (
                 MissionFrame::GlobalRelativeAltInt,
-                common::MavFrame::MAV_FRAME_GLOBAL_RELATIVE_ALT,
+                dialect::MavFrame::MAV_FRAME_GLOBAL_RELATIVE_ALT,
             ),
             (
                 MissionFrame::GlobalTerrainAltInt,
-                common::MavFrame::MAV_FRAME_GLOBAL_TERRAIN_ALT,
+                dialect::MavFrame::MAV_FRAME_GLOBAL_TERRAIN_ALT,
             ),
             (
                 MissionFrame::LocalNed,
-                common::MavFrame::MAV_FRAME_LOCAL_NED,
+                dialect::MavFrame::MAV_FRAME_LOCAL_NED,
             ),
         ];
         for (kit_frame, mav_frame) in frames {
@@ -1447,7 +2056,7 @@ mod tests {
 
     #[test]
     fn from_mission_item_int_converts_correctly() {
-        let data = common::MISSION_ITEM_INT_DATA {
+        let data = dialect::MISSION_ITEM_INT_DATA {
             param1: 1.0,
             param2: 2.0,
             param3: 3.0,
@@ -1456,27 +2065,31 @@ mod tests {
             y: 85_455_940,
             z: 100.0,
             seq: 0,
-            command: common::MavCmd::MAV_CMD_NAV_WAYPOINT,
+            command: dialect::MavCmd::MAV_CMD_NAV_WAYPOINT,
             target_system: 1,
             target_component: 1,
-            frame: common::MavFrame::MAV_FRAME_GLOBAL_RELATIVE_ALT,
+            frame: dialect::MavFrame::MAV_FRAME_GLOBAL_RELATIVE_ALT,
             current: 1,
             autocontinue: 1,
-            mission_type: common::MavMissionType::MAV_MISSION_TYPE_MISSION,
+            mission_type: dialect::MavMissionType::MAV_MISSION_TYPE_MISSION,
         };
         let item = from_mission_item_int(&data);
+        let (_, frame, _params, x, y, z) = item.command.clone().into_wire();
         assert_eq!(item.seq, 0);
-        assert_eq!(item.x, 473_977_420);
-        assert_eq!(item.y, 85_455_940);
-        assert_eq!(item.z, 100.0);
+        assert_eq!(x, 473_977_420);
+        assert_eq!(y, 85_455_940);
+        assert_eq!(z, 100.0);
         assert!(item.current);
         assert!(item.autocontinue);
-        assert_eq!(item.frame, MissionFrame::GlobalRelativeAltInt);
+        assert_eq!(
+            frame,
+            crate::mission::commands::MissionFrame::GlobalRelativeAlt
+        );
     }
 
     #[test]
     fn param_type_conversions() {
-        use mavlink::common::MavParamType;
+        use crate::dialect::MavParamType;
         let types = [
             (
                 MavParamType::MAV_PARAM_TYPE_UINT8,
@@ -1525,29 +2138,30 @@ mod tests {
     fn mission_type_matches_works() {
         // Mission type matches itself and the generic MISSION type
         assert!(mission_type_matches(
-            common::MavMissionType::MAV_MISSION_TYPE_MISSION,
+            dialect::MavMissionType::MAV_MISSION_TYPE_MISSION,
             MissionType::Mission
         ));
         assert!(!mission_type_matches(
-            common::MavMissionType::MAV_MISSION_TYPE_FENCE,
+            dialect::MavMissionType::MAV_MISSION_TYPE_FENCE,
             MissionType::Mission
         ));
         assert!(mission_type_matches(
-            common::MavMissionType::MAV_MISSION_TYPE_FENCE,
+            dialect::MavMissionType::MAV_MISSION_TYPE_FENCE,
             MissionType::Fence
         ));
         assert!(mission_type_matches(
-            common::MavMissionType::MAV_MISSION_TYPE_RALLY,
+            dialect::MavMissionType::MAV_MISSION_TYPE_RALLY,
             MissionType::Rally
         ));
         assert!(!mission_type_matches(
-            common::MavMissionType::MAV_MISSION_TYPE_RALLY,
+            dialect::MavMissionType::MAV_MISSION_TYPE_RALLY,
             MissionType::Fence
         ));
     }
 
+    #[allow(deprecated)]
     #[tokio::test]
-    async fn auto_request_home_sends_request_message() {
+    async fn auto_request_home_sends_get_home_position_command() {
         let (msg_tx, msg_rx) = mpsc::channel(64);
         let (conn, sent) = MockConnection::new(msg_rx);
 
@@ -1569,13 +2183,12 @@ mod tests {
             .unwrap();
         tokio::time::sleep(Duration::from_millis(20)).await;
 
-        // Verify REQUEST_MESSAGE was sent for HOME_POSITION (msg id 242)
         {
             let sent_msgs = sent.lock().unwrap();
             let home_req = sent_msgs.iter().find(|(_, msg)| {
                 matches!(
                     msg,
-                    common::MavMessage::COMMAND_LONG(d) if d.command == MavCmd::MAV_CMD_REQUEST_MESSAGE && d.param1 == 242.0
+        dialect::MavMessage::COMMAND_LONG(d) if d.command == MavCmd::MAV_CMD_GET_HOME_POSITION
                 )
             });
             assert!(home_req.is_some(), "should have requested home position");
@@ -1585,6 +2198,7 @@ mod tests {
         handle.await.unwrap();
     }
 
+    #[allow(deprecated)]
     #[tokio::test]
     async fn auto_request_home_only_sent_once() {
         let (msg_tx, msg_rx) = mpsc::channel(64);
@@ -1620,7 +2234,7 @@ mod tests {
                 .filter(|(_, msg)| {
                     matches!(
                         msg,
-                        common::MavMessage::COMMAND_LONG(d) if d.command == MavCmd::MAV_CMD_REQUEST_MESSAGE && d.param1 == 242.0
+        dialect::MavMessage::COMMAND_LONG(d) if d.command == MavCmd::MAV_CMD_GET_HOME_POSITION
                     )
                 })
                 .collect();
@@ -1642,21 +2256,21 @@ mod tests {
         voltages[1] = 4150; // 4.15V
         voltages[2] = 4100; // 4.1V
 
-        let msg = common::MavMessage::BATTERY_STATUS(common::BATTERY_STATUS_DATA {
+        let msg = dialect::MavMessage::BATTERY_STATUS(dialect::BATTERY_STATUS_DATA {
             current_consumed: 0,
             energy_consumed: 7200, // 200 Wh
             temperature: 0,
             voltages,
             current_battery: 0,
             id: 0,
-            battery_function: common::MavBatteryFunction::MAV_BATTERY_FUNCTION_UNKNOWN,
-            mavtype: common::MavBatteryType::MAV_BATTERY_TYPE_UNKNOWN,
+            battery_function: dialect::MavBatteryFunction::MAV_BATTERY_FUNCTION_UNKNOWN,
+            mavtype: dialect::MavBatteryType::MAV_BATTERY_TYPE_UNKNOWN,
             battery_remaining: 0,
             time_remaining: 1800, // 30 minutes
-            charge_state: common::MavBatteryChargeState::MAV_BATTERY_CHARGE_STATE_OK,
+            charge_state: dialect::MavBatteryChargeState::MAV_BATTERY_CHARGE_STATE_OK,
             voltages_ext: [0; 4],
-            mode: common::MavBatteryMode::MAV_BATTERY_MODE_UNKNOWN,
-            fault_bitmask: common::MavBatteryFault::empty(),
+            mode: dialect::MavBatteryMode::MAV_BATTERY_MODE_UNKNOWN,
+            fault_bitmask: dialect::MavBatteryFault::empty(),
         });
         update_state(&header, &msg, &writers, &target);
 
@@ -1675,7 +2289,7 @@ mod tests {
         let (writers, channels) = create_channels();
         let target: Option<VehicleTarget> = None;
         let header = default_header();
-        let msg = common::MavMessage::RC_CHANNELS(common::RC_CHANNELS_DATA {
+        let msg = dialect::MavMessage::RC_CHANNELS(dialect::RC_CHANNELS_DATA {
             time_boot_ms: 0,
             chancount: 4,
             chan1_raw: 1500,
@@ -1712,7 +2326,7 @@ mod tests {
         let (writers, channels) = create_channels();
         let target: Option<VehicleTarget> = None;
         let header = default_header();
-        let msg = common::MavMessage::SERVO_OUTPUT_RAW(common::SERVO_OUTPUT_RAW_DATA {
+        let msg = dialect::MavMessage::SERVO_OUTPUT_RAW(dialect::SERVO_OUTPUT_RAW_DATA {
             time_usec: 0,
             port: 0,
             servo1_raw: 1100,
@@ -1746,8 +2360,8 @@ mod tests {
         let (writers, channels) = create_channels();
         let target: Option<VehicleTarget> = None;
         let header = default_header();
-        let msg = common::MavMessage::STATUSTEXT(common::STATUSTEXT_DATA {
-            severity: common::MavSeverity::MAV_SEVERITY_INFO,
+        let msg = dialect::MavMessage::STATUSTEXT(dialect::STATUSTEXT_DATA {
+            severity: dialect::MavSeverity::MAV_SEVERITY_INFO,
             text: "".into(),
             id: 0,
             chunk_seq: 0,
@@ -1764,10 +2378,10 @@ mod tests {
         let target: Option<VehicleTarget> = None;
         let header = default_header();
         // Use sentinel values that should not update telemetry
-        let msg = common::MavMessage::SYS_STATUS(common::SYS_STATUS_DATA {
-            onboard_control_sensors_present: common::MavSysStatusSensor::empty(),
-            onboard_control_sensors_enabled: common::MavSysStatusSensor::empty(),
-            onboard_control_sensors_health: common::MavSysStatusSensor::empty(),
+        let msg = dialect::MavMessage::SYS_STATUS(dialect::SYS_STATUS_DATA {
+            onboard_control_sensors_present: dialect::MavSysStatusSensor::empty(),
+            onboard_control_sensors_enabled: dialect::MavSysStatusSensor::empty(),
+            onboard_control_sensors_health: dialect::MavSysStatusSensor::empty(),
             load: 0,
             voltage_battery: u16::MAX, // sentinel
             current_battery: -1,       // sentinel
@@ -1778,9 +2392,9 @@ mod tests {
             errors_count2: 0,
             errors_count3: 0,
             errors_count4: 0,
-            onboard_control_sensors_present_extended: common::MavSysStatusSensorExtended::empty(),
-            onboard_control_sensors_enabled_extended: common::MavSysStatusSensorExtended::empty(),
-            onboard_control_sensors_health_extended: common::MavSysStatusSensorExtended::empty(),
+            onboard_control_sensors_present_extended: dialect::MavSysStatusSensorExtended::empty(),
+            onboard_control_sensors_enabled_extended: dialect::MavSysStatusSensorExtended::empty(),
+            onboard_control_sensors_health_extended: dialect::MavSysStatusSensorExtended::empty(),
         });
         update_state(&header, &msg, &writers, &target);
 
@@ -1795,9 +2409,9 @@ mod tests {
         let (writers, channels) = create_channels();
         let target: Option<VehicleTarget> = None;
         let header = default_header();
-        let msg = common::MavMessage::GPS_RAW_INT(common::GPS_RAW_INT_DATA {
+        let msg = dialect::MavMessage::GPS_RAW_INT(dialect::GPS_RAW_INT_DATA {
             time_usec: 0,
-            fix_type: common::GpsFixType::GPS_FIX_TYPE_NO_FIX,
+            fix_type: dialect::GpsFixType::GPS_FIX_TYPE_NO_FIX,
             lat: 0,
             lon: 0,
             alt: 0,
@@ -1825,7 +2439,7 @@ mod tests {
         let (writers, channels) = create_channels();
         let target: Option<VehicleTarget> = None;
         let header = default_header();
-        let msg = common::MavMessage::GLOBAL_POSITION_INT(common::GLOBAL_POSITION_INT_DATA {
+        let msg = dialect::MavMessage::GLOBAL_POSITION_INT(dialect::GLOBAL_POSITION_INT_DATA {
             time_boot_ms: 0,
             lat: 0,
             lon: 0,
@@ -1847,14 +2461,14 @@ mod tests {
         let (writers, channels) = create_channels();
         let target: Option<VehicleTarget> = None;
         let header = default_header();
-        let present = common::MavSysStatusSensor::MAV_SYS_STATUS_SENSOR_3D_GYRO
-            | common::MavSysStatusSensor::MAV_SYS_STATUS_SENSOR_GPS
-            | common::MavSysStatusSensor::MAV_SYS_STATUS_PREARM_CHECK;
+        let present = dialect::MavSysStatusSensor::MAV_SYS_STATUS_SENSOR_3D_GYRO
+            | dialect::MavSysStatusSensor::MAV_SYS_STATUS_SENSOR_GPS
+            | dialect::MavSysStatusSensor::MAV_SYS_STATUS_PREARM_CHECK;
         let enabled = present;
-        let health = common::MavSysStatusSensor::MAV_SYS_STATUS_SENSOR_3D_GYRO
-            | common::MavSysStatusSensor::MAV_SYS_STATUS_PREARM_CHECK;
+        let health = dialect::MavSysStatusSensor::MAV_SYS_STATUS_SENSOR_3D_GYRO
+            | dialect::MavSysStatusSensor::MAV_SYS_STATUS_PREARM_CHECK;
         // GPS present+enabled but NOT healthy
-        let msg = common::MavMessage::SYS_STATUS(common::SYS_STATUS_DATA {
+        let msg = dialect::MavMessage::SYS_STATUS(dialect::SYS_STATUS_DATA {
             onboard_control_sensors_present: present,
             onboard_control_sensors_enabled: enabled,
             onboard_control_sensors_health: health,
@@ -1868,9 +2482,9 @@ mod tests {
             errors_count2: 0,
             errors_count3: 0,
             errors_count4: 0,
-            onboard_control_sensors_present_extended: common::MavSysStatusSensorExtended::empty(),
-            onboard_control_sensors_enabled_extended: common::MavSysStatusSensorExtended::empty(),
-            onboard_control_sensors_health_extended: common::MavSysStatusSensorExtended::empty(),
+            onboard_control_sensors_present_extended: dialect::MavSysStatusSensorExtended::empty(),
+            onboard_control_sensors_enabled_extended: dialect::MavSysStatusSensorExtended::empty(),
+            onboard_control_sensors_health_extended: dialect::MavSysStatusSensorExtended::empty(),
         });
         update_state(&header, &msg, &writers, &target);
 
@@ -1921,7 +2535,7 @@ mod tests {
                 default_header(),
                 ack_msg(
                     MavCmd::MAV_CMD_DO_SET_MISSION_CURRENT,
-                    common::MavResult::MAV_RESULT_ACCEPTED,
+                    dialect::MavResult::MAV_RESULT_ACCEPTED,
                 ),
             ))
             .await
@@ -1936,7 +2550,7 @@ mod tests {
             let set_current_msgs: Vec<_> = sent_msgs
                 .iter()
                 .filter(|(_, msg)| {
-                    matches!(msg, common::MavMessage::COMMAND_LONG(d)
+                    matches!(msg, dialect::MavMessage::COMMAND_LONG(d)
                         if d.command == MavCmd::MAV_CMD_DO_SET_MISSION_CURRENT)
                 })
                 .collect();
@@ -1945,7 +2559,7 @@ mod tests {
                 "expected COMMAND_LONG for DO_SET_MISSION_CURRENT"
             );
 
-            if let common::MavMessage::COMMAND_LONG(data) = &set_current_msgs[0].1 {
+            if let dialect::MavMessage::COMMAND_LONG(data) = &set_current_msgs[0].1 {
                 assert_eq!(
                     data.param1, 1.0,
                     "semantic seq 0 must become wire seq 1 (param1)"
@@ -1990,10 +2604,10 @@ mod tests {
         msg_tx
             .send((
                 default_header(),
-                common::MavMessage::MISSION_CURRENT(common::MISSION_CURRENT_DATA {
+                dialect::MavMessage::MISSION_CURRENT(dialect::MISSION_CURRENT_DATA {
                     seq: 5,
                     total: 10,
-                    mission_state: common::MissionState::MISSION_STATE_ACTIVE,
+                    mission_state: dialect::MissionState::MISSION_STATE_ACTIVE,
                     mission_mode: 0,
                     mission_id: 0,
                     fence_id: 0,
@@ -2011,13 +2625,13 @@ mod tests {
             let set_current_msgs: Vec<_> = sent_msgs
                 .iter()
                 .filter(|(_, msg)| {
-                    matches!(msg, common::MavMessage::COMMAND_LONG(d)
+                    matches!(msg, dialect::MavMessage::COMMAND_LONG(d)
                         if d.command == MavCmd::MAV_CMD_DO_SET_MISSION_CURRENT)
                 })
                 .collect();
             assert!(!set_current_msgs.is_empty());
 
-            if let common::MavMessage::COMMAND_LONG(data) = &set_current_msgs[0].1 {
+            if let dialect::MavMessage::COMMAND_LONG(data) = &set_current_msgs[0].1 {
                 assert_eq!(
                     data.param1, 5.0,
                     "semantic seq 4 must become wire seq 5 (param1)"
@@ -2034,7 +2648,7 @@ mod tests {
         let (writers, channels) = create_channels();
         let target: Option<VehicleTarget> = None;
         let header = default_header();
-        let msg = common::MavMessage::MAG_CAL_REPORT(common::MAG_CAL_REPORT_DATA {
+        let msg = dialect::MavMessage::MAG_CAL_REPORT(dialect::MAG_CAL_REPORT_DATA {
             fitness: 0.05,
             ofs_x: 1.0,
             ofs_y: 2.0,
@@ -2047,9 +2661,9 @@ mod tests {
             offdiag_z: 0.0,
             compass_id: 0,
             cal_mask: 0x01,
-            cal_status: common::MagCalStatus::MAG_CAL_SUCCESS,
+            cal_status: dialect::MagCalStatus::MAG_CAL_SUCCESS,
             autosaved: 1,
-            ..common::MAG_CAL_REPORT_DATA::DEFAULT
+            ..dialect::MAG_CAL_REPORT_DATA::DEFAULT
         });
         update_state(&header, &msg, &writers, &target);
 
@@ -2060,5 +2674,204 @@ mod tests {
         assert!(report.autosaved);
         assert!((report.fitness - 0.05).abs() < 0.001);
         assert_eq!(report.ofs_x, 1.0);
+    }
+
+    mod init {
+        use super::*;
+        use std::sync::Arc;
+
+        fn init_target() -> VehicleTarget {
+            VehicleTarget {
+                system_id: 1,
+                component_id: 1,
+                autopilot: dialect::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
+                vehicle_type: dialect::MavType::MAV_TYPE_QUADROTOR,
+            }
+        }
+
+        #[tokio::test]
+        async fn autopilot_version_request_sent_after_first_heartbeat() {
+            let (msg_tx, msg_rx) = mpsc::channel(64);
+            let (conn, sent) = MockConnection::new(msg_rx);
+
+            let (cmd_tx, cmd_rx) = mpsc::channel(16);
+            let (writers, _channels) = create_channels();
+            let cancel = CancellationToken::new();
+
+            let handle = tokio::spawn(async move {
+                run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
+            });
+
+            msg_tx
+                .send((default_header(), heartbeat_msg(false, 0)))
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_millis(200)).await;
+
+            let has_autopilot_version_request = {
+                let sent_msgs = sent.lock().unwrap();
+                sent_msgs.iter().any(|(_, msg)| {
+                    matches!(
+                                    msg,
+                    dialect::MavMessage::COMMAND_LONG(data)
+                                        if data.command == MavCmd::MAV_CMD_REQUEST_MESSAGE
+                                            && data.param1 == 148.0
+                                )
+                })
+            };
+            assert!(
+                has_autopilot_version_request,
+                "heartbeat should trigger an AUTOPILOT_VERSION request"
+            );
+
+            cmd_tx.send(Command::Shutdown).await.unwrap();
+            handle.await.unwrap();
+        }
+
+        #[tokio::test]
+        async fn autopilot_version_silence_exhausts_into_unavailable() {
+            let (_msg_tx, msg_rx) = mpsc::channel(16);
+            let (conn, sent) = MockConnection::new(msg_rx);
+            let connection: SharedConnection = Arc::new(conn);
+
+            let mut config = fast_config();
+            config.init_policy.autopilot_version.max_attempts = 3;
+            config.init_policy.autopilot_version.budget = Duration::from_millis(90);
+
+            let manager = crate::event_loop::init::InitManager::new(config.clone());
+            manager.start(connection, init_target(), CancellationToken::new());
+
+            tokio::time::sleep(Duration::from_millis(160)).await;
+
+            let snapshot = manager.snapshot();
+            assert!(matches!(
+                snapshot.autopilot_version,
+                crate::event_loop::init::InitState::Unavailable {
+                    reason: crate::event_loop::init::InitUnavailableReason::SilenceBudgetExhausted
+                }
+            ));
+
+            let sent_msgs = sent.lock().unwrap();
+            let request_count = sent_msgs
+                .iter()
+                .filter(|(_, msg)| matches!(
+                    msg,
+        dialect::MavMessage::COMMAND_LONG(data)
+                        if data.command == MavCmd::MAV_CMD_REQUEST_MESSAGE && data.param1 == 148.0
+                ))
+                .count();
+            assert_eq!(request_count, 3, "retry budget should cap attempts");
+        }
+
+        #[tokio::test]
+        async fn autopilot_version_response_transitions_to_available() {
+            let (_msg_tx, msg_rx) = mpsc::channel(16);
+            let (conn, _sent) = MockConnection::new(msg_rx);
+            let connection: SharedConnection = Arc::new(conn);
+
+            let mut config = fast_config();
+            config.init_policy.autopilot_version.budget = Duration::from_millis(120);
+
+            let manager = crate::event_loop::init::InitManager::new(config);
+            manager.start(connection, init_target(), CancellationToken::new());
+            manager.handle_message(&dialect::MavMessage::AUTOPILOT_VERSION(
+                dialect::AUTOPILOT_VERSION_DATA {
+                    flight_sw_version: 0x01020304,
+                    uid: 42,
+                    ..dialect::AUTOPILOT_VERSION_DATA::default()
+                },
+            ));
+
+            tokio::time::sleep(Duration::from_millis(20)).await;
+
+            let snapshot = manager.snapshot();
+            match snapshot.autopilot_version {
+                crate::event_loop::init::InitState::Available(version) => {
+                    assert_eq!(version.flight_sw_version, 0x01020304);
+                    assert_eq!(version.uid, 42);
+                }
+                other => panic!("expected available autopilot version, got {other:?}"),
+            }
+        }
+
+        #[tokio::test]
+        async fn home_silence_does_not_transition_to_unavailable() {
+            let (_msg_tx, msg_rx) = mpsc::channel(16);
+            let (conn, _sent) = MockConnection::new(msg_rx);
+            let connection: SharedConnection = Arc::new(conn);
+
+            let mut config = fast_config();
+            config.auto_request_home = true;
+            config.init_policy.home.max_attempts = 1;
+            config.init_policy.home.budget = Duration::from_millis(50);
+
+            let manager = crate::event_loop::init::InitManager::new(config);
+            manager.start(connection, init_target(), CancellationToken::new());
+
+            tokio::time::sleep(Duration::from_millis(90)).await;
+
+            let snapshot = manager.snapshot();
+            assert!(matches!(
+                snapshot.home_position,
+                crate::event_loop::init::InitState::Unknown
+            ));
+        }
+
+        #[tokio::test]
+        async fn origin_silence_does_not_transition_to_unavailable() {
+            let (_msg_tx, msg_rx) = mpsc::channel(16);
+            let (conn, _sent) = MockConnection::new(msg_rx);
+            let connection: SharedConnection = Arc::new(conn);
+
+            let mut config = fast_config();
+            config.init_policy.origin.max_attempts = 1;
+            config.init_policy.origin.budget = Duration::from_millis(50);
+
+            let manager = crate::event_loop::init::InitManager::new(config);
+            manager.start(connection, init_target(), CancellationToken::new());
+
+            tokio::time::sleep(Duration::from_millis(90)).await;
+
+            let snapshot = manager.snapshot();
+            assert!(matches!(
+                snapshot.gps_global_origin,
+                crate::event_loop::init::InitState::Unknown
+            ));
+        }
+
+        #[tokio::test]
+        async fn init_policy_override_limits_available_modes_attempts() {
+            let (_msg_tx, msg_rx) = mpsc::channel(16);
+            let (conn, sent) = MockConnection::new(msg_rx);
+            let connection: SharedConnection = Arc::new(conn);
+
+            let mut config = fast_config();
+            config.init_policy.available_modes.max_attempts = 1;
+            config.init_policy.available_modes.budget = Duration::from_millis(40);
+
+            let manager = crate::event_loop::init::InitManager::new(config);
+            manager.start(connection, init_target(), CancellationToken::new());
+
+            tokio::time::sleep(Duration::from_millis(80)).await;
+
+            let snapshot = manager.snapshot();
+            assert!(matches!(
+                snapshot.available_modes,
+                crate::event_loop::init::InitState::Unavailable {
+                    reason: crate::event_loop::init::InitUnavailableReason::SilenceBudgetExhausted
+                }
+            ));
+
+            let sent_msgs = sent.lock().unwrap();
+            let request_count = sent_msgs
+                .iter()
+                .filter(|(_, msg)| matches!(
+                    msg,
+        dialect::MavMessage::COMMAND_LONG(data)
+                        if data.command == MavCmd::MAV_CMD_REQUEST_MESSAGE && data.param1 == 435.0
+                ))
+                .count();
+            assert_eq!(request_count, 1, "override should reduce retry attempts");
+        }
     }
 }

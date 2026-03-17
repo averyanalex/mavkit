@@ -122,7 +122,7 @@ impl TlogFile {
                     // Validate: try to parse the MAVLink frame at this position
                     reader.seek(SeekFrom::Start(magic_file_pos)).await?;
                     let mut peek = mavlink::async_peek_reader::AsyncPeekReader::new(&mut *reader);
-                    match mavlink::read_versioned_msg_async::<mavlink::common::MavMessage, _>(
+                    match mavlink::read_versioned_msg_async::<crate::dialect::MavMessage, _>(
                         &mut peek,
                         mavlink::ReadVersion::Any,
                     )
@@ -170,7 +170,7 @@ impl TlogFile {
             use mavlink::async_peek_reader::AsyncPeekReader;
             use mavlink::{ReadVersion, read_versioned_msg_async};
             let mut peek = AsyncPeekReader::new(&mut buf_reader);
-            match read_versioned_msg_async::<mavlink::common::MavMessage, _>(
+            match read_versioned_msg_async::<crate::dialect::MavMessage, _>(
                 &mut peek,
                 ReadVersion::Any,
             )
@@ -240,7 +240,7 @@ impl TlogFile {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mavlink::common::MavMessage;
+    use crate::dialect::MavMessage;
     use mavlink::{MavHeader, MavlinkVersion};
 
     fn build_tlog(entries: &[(u64, MavMessage)]) -> Vec<u8> {
@@ -260,12 +260,12 @@ mod tests {
     }
 
     fn heartbeat() -> MavMessage {
-        MavMessage::HEARTBEAT(mavlink::common::HEARTBEAT_DATA {
+        MavMessage::HEARTBEAT(crate::dialect::HEARTBEAT_DATA {
             custom_mode: 0,
-            mavtype: mavlink::common::MavType::MAV_TYPE_QUADROTOR,
-            autopilot: mavlink::common::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
-            base_mode: mavlink::common::MavModeFlag::empty(),
-            system_status: mavlink::common::MavState::MAV_STATE_STANDBY,
+            mavtype: crate::dialect::MavType::MAV_TYPE_QUADROTOR,
+            autopilot: crate::dialect::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
+            base_mode: crate::dialect::MavModeFlag::empty(),
+            system_status: crate::dialect::MavState::MAV_STATE_STANDBY,
             mavlink_version: 3,
         })
     }

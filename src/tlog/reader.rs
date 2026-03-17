@@ -1,5 +1,5 @@
+use crate::dialect::MavMessage;
 use mavlink::async_peek_reader::AsyncPeekReader;
-use mavlink::common::MavMessage;
 use mavlink::{ReadVersion, read_versioned_msg_async};
 use tokio::io::AsyncRead;
 
@@ -97,7 +97,7 @@ impl<R: AsyncRead + Unpin> TlogReader<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mavlink::common::MavMessage;
+    use crate::dialect::MavMessage;
     use mavlink::{MavHeader, MavlinkVersion};
 
     /// Build a synthetic TLOG buffer from (timestamp, message) pairs.
@@ -118,12 +118,12 @@ mod tests {
     }
 
     fn heartbeat() -> MavMessage {
-        MavMessage::HEARTBEAT(mavlink::common::HEARTBEAT_DATA {
+        MavMessage::HEARTBEAT(crate::dialect::HEARTBEAT_DATA {
             custom_mode: 0,
-            mavtype: mavlink::common::MavType::MAV_TYPE_QUADROTOR,
-            autopilot: mavlink::common::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
-            base_mode: mavlink::common::MavModeFlag::empty(),
-            system_status: mavlink::common::MavState::MAV_STATE_STANDBY,
+            mavtype: crate::dialect::MavType::MAV_TYPE_QUADROTOR,
+            autopilot: crate::dialect::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
+            base_mode: crate::dialect::MavModeFlag::empty(),
+            system_status: crate::dialect::MavState::MAV_STATE_STANDBY,
             mavlink_version: 3,
         })
     }

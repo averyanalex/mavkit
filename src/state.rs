@@ -1,3 +1,6 @@
+use crate::telemetry::{
+    TelemetryMetricHandles, TelemetryMetricWriters, create_telemetry_backing_stores,
+};
 use serde::{Deserialize, Serialize};
 
 /// High-level vehicle state derived from MAVLink HEARTBEAT messages.
@@ -221,15 +224,6 @@ pub enum LinkState {
     Error(String),
 }
 
-/// Identifies the connected vehicle (system/component IDs and firmware type).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct VehicleIdentity {
-    pub system_id: u8,
-    pub component_id: u8,
-    pub autopilot: AutopilotType,
-    pub vehicle_type: VehicleType,
-}
-
 /// A named flight mode with its numeric custom_mode value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FlightMode {
@@ -255,8 +249,8 @@ pub enum SystemStatus {
 }
 
 impl SystemStatus {
-    pub(crate) fn from_mav(status: mavlink::common::MavState) -> Self {
-        use mavlink::common::MavState;
+    pub(crate) fn from_mav(status: crate::dialect::MavState) -> Self {
+        use crate::dialect::MavState;
         match status {
             MavState::MAV_STATE_BOOT => SystemStatus::Boot,
             MavState::MAV_STATE_CALIBRATING => SystemStatus::Calibrating,
@@ -277,6 +271,7 @@ pub enum VehicleType {
     #[default]
     Unknown,
     FixedWing,
+    Vtol,
     Quadrotor,
     Hexarotor,
     Octorotor,
@@ -284,14 +279,22 @@ pub enum VehicleType {
     Helicopter,
     Coaxial,
     GroundRover,
+    Submarine,
     Generic,
 }
 
 impl VehicleType {
-    pub(crate) fn from_mav(mav_type: mavlink::common::MavType) -> Self {
-        use mavlink::common::MavType;
+    pub(crate) fn from_mav(mav_type: crate::dialect::MavType) -> Self {
+        use crate::dialect::MavType;
         match mav_type {
             MavType::MAV_TYPE_FIXED_WING => VehicleType::FixedWing,
+            MavType::MAV_TYPE_VTOL_TAILSITTER_DUOROTOR
+            | MavType::MAV_TYPE_VTOL_TAILSITTER_QUADROTOR
+            | MavType::MAV_TYPE_VTOL_TILTROTOR
+            | MavType::MAV_TYPE_VTOL_FIXEDROTOR
+            | MavType::MAV_TYPE_VTOL_TAILSITTER
+            | MavType::MAV_TYPE_VTOL_TILTWING
+            | MavType::MAV_TYPE_VTOL_RESERVED5 => VehicleType::Vtol,
             MavType::MAV_TYPE_QUADROTOR => VehicleType::Quadrotor,
             MavType::MAV_TYPE_HEXAROTOR => VehicleType::Hexarotor,
             MavType::MAV_TYPE_OCTOROTOR => VehicleType::Octorotor,
@@ -299,6 +302,7 @@ impl VehicleType {
             MavType::MAV_TYPE_HELICOPTER => VehicleType::Helicopter,
             MavType::MAV_TYPE_COAXIAL => VehicleType::Coaxial,
             MavType::MAV_TYPE_GROUND_ROVER => VehicleType::GroundRover,
+            MavType::MAV_TYPE_SUBMARINE => VehicleType::Submarine,
             MavType::MAV_TYPE_GENERIC => VehicleType::Generic,
             _ => VehicleType::Unknown,
         }
@@ -317,8 +321,8 @@ pub enum AutopilotType {
 }
 
 impl AutopilotType {
-    pub(crate) fn from_mav(autopilot: mavlink::common::MavAutopilot) -> Self {
-        use mavlink::common::MavAutopilot;
+    pub(crate) fn from_mav(autopilot: crate::dialect::MavAutopilot) -> Self {
+        use crate::dialect::MavAutopilot;
         match autopilot {
             MavAutopilot::MAV_AUTOPILOT_GENERIC => AutopilotType::Generic,
             MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA => AutopilotType::ArduPilotMega,
@@ -343,8 +347,8 @@ pub enum MavSeverity {
 }
 
 impl MavSeverity {
-    pub(crate) fn from_mav(severity: mavlink::common::MavSeverity) -> Self {
-        use mavlink::common::MavSeverity as MS;
+    pub(crate) fn from_mav(severity: crate::dialect::MavSeverity) -> Self {
+        use crate::dialect::MavSeverity as MS;
         match severity {
             MS::MAV_SEVERITY_EMERGENCY => MavSeverity::Emergency,
             MS::MAV_SEVERITY_ALERT => MavSeverity::Alert,
@@ -534,8 +538,8 @@ pub enum MagCalStatus {
 }
 
 impl MagCalStatus {
-    pub(crate) fn from_mav(status: mavlink::common::MagCalStatus) -> Self {
-        use mavlink::common::MagCalStatus as MCS;
+    pub(crate) fn from_mav(status: crate::dialect::MagCalStatus) -> Self {
+        use crate::dialect::MagCalStatus as MCS;
         match status {
             MCS::MAG_CAL_NOT_STARTED => MagCalStatus::NotStarted,
             MCS::MAG_CAL_WAITING_TO_START => MagCalStatus::WaitingToStart,
@@ -589,10 +593,9 @@ pub(crate) struct StateWriters {
     pub link_state: tokio::sync::watch::Sender<LinkState>,
     pub mission_progress: tokio::sync::watch::Sender<Option<crate::mission::TransferProgress>>,
     pub param_store: tokio::sync::watch::Sender<crate::params::ParamStore>,
-    pub param_progress: tokio::sync::watch::Sender<crate::params::ParamProgress>,
+    pub param_progress: tokio::sync::watch::Sender<Option<crate::types::ParamOperationProgress>>,
     pub statustext: tokio::sync::watch::Sender<Option<StatusMessage>>,
     pub sensor_health: tokio::sync::watch::Sender<SensorHealth>,
-    // MAG_CAL_PROGRESS (msg 191) is ardupilotmega-only; populated when dialect is added
     #[allow(dead_code)]
     pub mag_cal_progress: tokio::sync::watch::Sender<Option<MagCalProgress>>,
     pub mag_cal_report: tokio::sync::watch::Sender<Option<MagCalReport>>,
@@ -605,10 +608,15 @@ pub(crate) struct StateWriters {
     pub terrain: tokio::sync::watch::Sender<Terrain>,
     pub rc_channels: tokio::sync::watch::Sender<RcChannels>,
     pub raw_message_tx:
-        tokio::sync::broadcast::Sender<(mavlink::MavHeader, mavlink::common::MavMessage)>,
+        tokio::sync::broadcast::Sender<(mavlink::MavHeader, crate::dialect::MavMessage)>,
+    pub telemetry_metrics: TelemetryMetricWriters,
 }
 
 /// Reader-side channels, cloneable via Arc.
+#[expect(
+    dead_code,
+    reason = "Task 6 skeleton intentionally consumes only a subset of channels until domain implementations land"
+)]
 pub(crate) struct StateChannels {
     pub vehicle_state: tokio::sync::watch::Receiver<VehicleState>,
     pub telemetry: tokio::sync::watch::Receiver<Telemetry>,
@@ -617,7 +625,7 @@ pub(crate) struct StateChannels {
     pub link_state: tokio::sync::watch::Receiver<LinkState>,
     pub mission_progress: tokio::sync::watch::Receiver<Option<crate::mission::TransferProgress>>,
     pub param_store: tokio::sync::watch::Receiver<crate::params::ParamStore>,
-    pub param_progress: tokio::sync::watch::Receiver<crate::params::ParamProgress>,
+    pub param_progress: tokio::sync::watch::Receiver<Option<crate::types::ParamOperationProgress>>,
     pub statustext: tokio::sync::watch::Receiver<Option<StatusMessage>>,
     pub sensor_health: tokio::sync::watch::Receiver<SensorHealth>,
     pub mag_cal_progress: tokio::sync::watch::Receiver<Option<MagCalProgress>>,
@@ -631,7 +639,8 @@ pub(crate) struct StateChannels {
     pub terrain: tokio::sync::watch::Receiver<Terrain>,
     pub rc_channels: tokio::sync::watch::Receiver<RcChannels>,
     pub raw_message_tx:
-        tokio::sync::broadcast::Sender<(mavlink::MavHeader, mavlink::common::MavMessage)>,
+        tokio::sync::broadcast::Sender<(mavlink::MavHeader, crate::dialect::MavMessage)>,
+    pub telemetry_handles: TelemetryMetricHandles,
 }
 
 pub(crate) fn create_channels() -> (StateWriters, StateChannels) {
@@ -642,7 +651,7 @@ pub(crate) fn create_channels() -> (StateWriters, StateChannels) {
     let (ls_tx, ls_rx) = tokio::sync::watch::channel(LinkState::Connecting);
     let (mp_tx, mp_rx) = tokio::sync::watch::channel(None);
     let (ps_tx, ps_rx) = tokio::sync::watch::channel(crate::params::ParamStore::default());
-    let (pp_tx, pp_rx) = tokio::sync::watch::channel(crate::params::ParamProgress::default());
+    let (pp_tx, pp_rx) = tokio::sync::watch::channel(None);
     let (st_tx, st_rx) = tokio::sync::watch::channel(None);
     let (sh_tx, sh_rx) = tokio::sync::watch::channel(SensorHealth::default());
     let (mcp_tx, mcp_rx) = tokio::sync::watch::channel(None);
@@ -656,6 +665,7 @@ pub(crate) fn create_channels() -> (StateWriters, StateChannels) {
     let (ter_tx, ter_rx) = tokio::sync::watch::channel(Terrain::default());
     let (rc_tx, rc_rx) = tokio::sync::watch::channel(RcChannels::default());
     let (raw_msg_tx, _) = tokio::sync::broadcast::channel(256);
+    let (telemetry_metrics, telemetry_handles) = create_telemetry_backing_stores();
 
     let writers = StateWriters {
         vehicle_state: vs_tx,
@@ -678,6 +688,7 @@ pub(crate) fn create_channels() -> (StateWriters, StateChannels) {
         terrain: ter_tx,
         rc_channels: rc_tx,
         raw_message_tx: raw_msg_tx.clone(),
+        telemetry_metrics,
     };
 
     let channels = StateChannels {
@@ -701,6 +712,7 @@ pub(crate) fn create_channels() -> (StateWriters, StateChannels) {
         terrain: ter_rx,
         rc_channels: rc_rx,
         raw_message_tx: raw_msg_tx,
+        telemetry_handles,
     };
 
     (writers, channels)

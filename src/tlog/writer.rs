@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use mavlink::common::MavMessage;
+use crate::dialect::MavMessage;
 use mavlink::{MavHeader, MavlinkVersion};
 
 use super::reader::TlogError;
@@ -76,27 +76,27 @@ impl<W: Write> TlogWriter<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dialect;
     use crate::tlog::{TlogFile, TlogReader};
-    use mavlink::common;
 
     fn heartbeat() -> MavMessage {
-        MavMessage::HEARTBEAT(common::HEARTBEAT_DATA {
+        MavMessage::HEARTBEAT(dialect::HEARTBEAT_DATA {
             custom_mode: 0,
-            mavtype: common::MavType::MAV_TYPE_QUADROTOR,
-            autopilot: common::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
-            base_mode: common::MavModeFlag::empty(),
-            system_status: common::MavState::MAV_STATE_STANDBY,
+            mavtype: dialect::MavType::MAV_TYPE_QUADROTOR,
+            autopilot: dialect::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
+            base_mode: dialect::MavModeFlag::empty(),
+            system_status: dialect::MavState::MAV_STATE_STANDBY,
             mavlink_version: 3,
         })
     }
 
     fn heartbeat_active() -> MavMessage {
-        MavMessage::HEARTBEAT(common::HEARTBEAT_DATA {
+        MavMessage::HEARTBEAT(dialect::HEARTBEAT_DATA {
             custom_mode: 4,
-            mavtype: common::MavType::MAV_TYPE_FIXED_WING,
-            autopilot: common::MavAutopilot::MAV_AUTOPILOT_PX4,
-            base_mode: common::MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED,
-            system_status: common::MavState::MAV_STATE_ACTIVE,
+            mavtype: dialect::MavType::MAV_TYPE_FIXED_WING,
+            autopilot: dialect::MavAutopilot::MAV_AUTOPILOT_PX4,
+            base_mode: dialect::MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED,
+            system_status: dialect::MavState::MAV_STATE_ACTIVE,
             mavlink_version: 3,
         })
     }

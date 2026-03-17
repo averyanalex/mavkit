@@ -1,7 +1,7 @@
+use crate::dialect;
 use core::ops::DerefMut;
 use futures::lock::Mutex;
 use mavlink::async_peek_reader::AsyncPeekReader;
-use mavlink::common;
 use mavlink::{
     MAVLinkMessageRaw, MavHeader, MavlinkVersion, ReadVersion, read_versioned_msg_async,
     read_versioned_raw_message_async, write_versioned_msg_async,
@@ -42,11 +42,11 @@ impl<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin + Send> StreamConnection
 
 #[async_trait::async_trait]
 impl<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin + Send>
-    mavlink::AsyncMavConnection<common::MavMessage> for StreamConnection<R, W>
+    mavlink::AsyncMavConnection<dialect::MavMessage> for StreamConnection<R, W>
 {
     async fn recv(
         &self,
-    ) -> Result<(MavHeader, common::MavMessage), mavlink::error::MessageReadError> {
+    ) -> Result<(MavHeader, dialect::MavMessage), mavlink::error::MessageReadError> {
         let mut reader = self.reader.lock().await;
         let version = if self.recv_any_version {
             ReadVersion::Any
@@ -63,13 +63,14 @@ impl<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin + Send>
         } else {
             ReadVersion::Single(self.protocol_version)
         };
-        read_versioned_raw_message_async::<common::MavMessage, _>(reader.deref_mut(), version).await
+        read_versioned_raw_message_async::<dialect::MavMessage, _>(reader.deref_mut(), version)
+            .await
     }
 
     async fn send(
         &self,
         header: &MavHeader,
-        data: &common::MavMessage,
+        data: &dialect::MavMessage,
     ) -> Result<usize, mavlink::error::MessageWriteError> {
         let mut lock = self.writer.lock().await;
         let header = MavHeader {
@@ -113,6 +114,6 @@ mod tests {
         fn assert_send_sync<T: Send + Sync>(_: &T) {}
         assert_send_sync(&conn);
         // Verify it satisfies AsyncMavConnection
-        let _boxed: Box<dyn AsyncMavConnection<common::MavMessage> + Send + Sync> = Box::new(conn);
+        let _boxed: Box<dyn AsyncMavConnection<dialect::MavMessage> + Send + Sync> = Box::new(conn);
     }
 }

@@ -1,9 +1,23 @@
+use crate::dialect::{self, MavCmd, MavFrame};
 use crate::error::VehicleError;
 use crate::mission::{MissionPlan, MissionType};
-use crate::params::{Param, ParamStore, ParamWriteResult};
-use mavlink::common::MavCmd;
+use crate::params::{ParamStore, ParamWriteResult};
+use crate::raw::CommandAck;
+use std::time::Instant;
 use tokio::sync::oneshot;
 
+pub(crate) struct RawCommandIntPayload {
+    pub(crate) command: MavCmd,
+    pub(crate) frame: MavFrame,
+    pub(crate) current: u8,
+    pub(crate) autocontinue: u8,
+    pub(crate) params: [f32; 4],
+    pub(crate) x: i32,
+    pub(crate) y: i32,
+    pub(crate) z: f32,
+}
+
+#[allow(dead_code)]
 pub(crate) enum Command {
     Arm {
         force: bool,
@@ -22,11 +36,40 @@ pub(crate) enum Command {
         params: [f32; 7],
         reply: oneshot::Sender<Result<(), VehicleError>>,
     },
+    LongRaw {
+        command_id: u16,
+        params: [f32; 7],
+        reply: oneshot::Sender<Result<(), VehicleError>>,
+    },
+    RawCommandLong {
+        command: MavCmd,
+        params: [f32; 7],
+        reply: oneshot::Sender<Result<(), VehicleError>>,
+    },
+    RawCommandLongAck {
+        command: MavCmd,
+        params: [f32; 7],
+        reply: oneshot::Sender<Result<CommandAck, VehicleError>>,
+    },
+    RawCommandInt {
+        payload: RawCommandIntPayload,
+        reply: oneshot::Sender<Result<CommandAck, VehicleError>>,
+    },
+    RawSend {
+        message: Box<dialect::MavMessage>,
+        reply: oneshot::Sender<Result<(), VehicleError>>,
+    },
     GuidedGoto {
         lat_e7: i32,
         lon_e7: i32,
         alt_m: f32,
         reply: oneshot::Sender<Result<(), VehicleError>>,
+    },
+    SetOrigin {
+        latitude: i32,
+        longitude: i32,
+        altitude: i32,
+        reply: oneshot::Sender<Result<Instant, VehicleError>>,
     },
     MissionUpload {
         plan: MissionPlan,
@@ -51,7 +94,7 @@ pub(crate) enum Command {
     ParamWrite {
         name: String,
         value: f32,
-        reply: oneshot::Sender<Result<Param, VehicleError>>,
+        reply: oneshot::Sender<Result<ParamWriteResult, VehicleError>>,
     },
     ParamWriteBatch {
         params: Vec<(String, f32)>,
