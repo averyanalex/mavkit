@@ -3,10 +3,10 @@
 pub mod ardupilot;
 #[cfg(feature = "stream")]
 pub mod ble_transport;
-pub mod command;
+pub(crate) mod command;
 pub mod config;
 pub mod error;
-pub mod event_loop;
+pub(crate) mod event_loop;
 pub mod fence;
 pub mod geo;
 pub mod info;
