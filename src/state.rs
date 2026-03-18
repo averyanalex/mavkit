@@ -1,5 +1,5 @@
 use crate::telemetry::{
-    TelemetryMetricHandles, TelemetryMetricWriters, create_telemetry_backing_stores,
+    create_telemetry_backing_stores, TelemetryMetricHandles, TelemetryMetricWriters,
 };
 use serde::{Deserialize, Serialize};
 
@@ -615,7 +615,9 @@ pub(crate) struct StateWriters {
 /// Reader-side channels, cloneable via Arc.
 #[expect(
     dead_code,
-    reason = "Task 6 skeleton intentionally consumes only a subset of channels until domain implementations land"
+    reason = "Per-domain telemetry receivers are consumed via telemetry_handles; \
+              remaining receivers (telemetry, home_position, statustext, sensor_health) \
+              keep watch channels alive for state_update writes"
 )]
 pub(crate) struct StateChannels {
     pub vehicle_state: tokio::sync::watch::Receiver<VehicleState>,
