@@ -24,8 +24,9 @@ pub use wire::{items_for_wire_upload, plan_from_wire_download};
 use crate::command::Command;
 use crate::error::VehicleError;
 use crate::observation::{ObservationHandle, ObservationSubscription, ObservationWriter};
+use crate::stored_plan::StoredPlanDomain;
 use crate::state::StateChannels;
-use crate::types::{MissionOperationKind, MissionOperationProgress, SyncState};
+use crate::types::{MissionOperationKind, MissionOperationProgress};
 use crate::vehicle::VehicleInner;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -35,18 +36,12 @@ use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 pub(crate) struct MissionDomain {
-    inner: Arc<MissionDomainInner>,
+    inner: StoredPlanDomain<MissionState>,
 }
 
 #[derive(Clone)]
 pub(crate) struct MissionProtocolScope {
     inner: Arc<MissionProtocolScopeInner>,
-}
-
-struct MissionDomainInner {
-    state_writer: ObservationWriter<MissionState>,
-    state: ObservationHandle<MissionState>,
-    latest_state: Mutex<MissionState>,
 }
 
 struct MissionProtocolScopeInner {
@@ -112,16 +107,8 @@ impl MissionProtocolScope {
 
 impl MissionDomain {
     pub(crate) fn new() -> Self {
-        let (state_writer, state) = ObservationHandle::watch();
-        let latest = MissionState::default();
-        let _ = state_writer.publish(latest.clone());
-
         Self {
-            inner: Arc::new(MissionDomainInner {
-                state_writer,
-                state,
-                latest_state: Mutex::new(latest),
-            }),
+            inner: StoredPlanDomain::new(),
         }
     }
 
@@ -147,7 +134,7 @@ impl MissionDomain {
     }
 
     pub(crate) fn state(&self) -> ObservationHandle<MissionState> {
-        self.inner.state.clone()
+        self.inner.state()
     }
 
     pub(crate) fn begin_operation(
@@ -156,49 +143,27 @@ impl MissionDomain {
         kind: MissionOperationKind,
         op_name: &'static str,
     ) -> Result<OperationReservation, VehicleError> {
-        let reservation = scope.begin_operation("mission", op_name)?;
-        self.update_state(|state| {
-            state.active_op = Some(kind);
-        });
-
-        Ok(reservation)
+        self.inner.begin_operation(scope, "mission", kind, op_name)
     }
 
     pub(crate) fn finish_operation(&self, scope: &MissionProtocolScope, op_id: u64) {
-        scope.finish_operation(op_id);
-        self.update_state(|state| {
-            state.active_op = None;
-        });
+        self.inner.finish_operation(scope, op_id);
     }
 
     fn note_operation_error(&self) {
-        self.update_state(|state| {
-            state.sync = SyncState::PossiblyStale;
-        });
+        self.inner.note_operation_error();
     }
 
     fn note_upload_success(&self, plan: MissionPlan) {
-        self.update_state(|state| {
-            state.plan = Some(plan);
-            state.sync = SyncState::Current;
-        });
+        self.inner.note_upload_success(plan);
     }
 
     fn note_download_success(&self, plan: MissionPlan) {
-        self.update_state(|state| {
-            state.plan = Some(plan);
-            state.sync = SyncState::Current;
-        });
+        self.inner.note_download_success(plan);
     }
 
     fn note_clear_success(&self) {
-        self.update_state(|state| {
-            state.plan = Some(MissionPlan {
-                mission_type: MissionType::Mission,
-                items: Vec::new(),
-            });
-            state.sync = SyncState::Current;
-        });
+        self.inner.note_clear_success();
     }
 
     fn update_current_index(&self, current_index: Option<u16>) {
@@ -208,13 +173,7 @@ impl MissionDomain {
     }
 
     fn update_state(&self, edit: impl FnOnce(&mut MissionState)) {
-        let mut latest = self.inner.latest_state.lock().unwrap();
-        let mut next = latest.clone();
-        edit(&mut next);
-        if *latest != next {
-            *latest = next.clone();
-            let _ = self.inner.state_writer.publish(next);
-        }
+        self.inner.update_state(edit);
     }
 }
 

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::commands::{MissionCommand, MissionFrame as CommandFrame, RawMissionCommand};
+use crate::stored_plan::StoredPlanState;
 use crate::types::{MissionOperationKind, SyncState};
 
 /// MAVLink mission storage type.
@@ -78,8 +79,8 @@ impl HomePosition {
         let (command, frame, _params, x, y, z) = item.command.clone().into_wire();
         if command == 16 && frame == CommandFrame::Global {
             Some(HomePosition {
-                latitude_deg: x as f64 / 1e7,
-                longitude_deg: y as f64 / 1e7,
+                latitude_deg: f64::from(x) / 1e7,
+                longitude_deg: f64::from(y) / 1e7,
                 altitude_m: z,
             })
         } else {
@@ -102,6 +103,30 @@ pub struct MissionState {
     pub current_index: Option<u16>,
     pub sync: SyncState,
     pub active_op: Option<MissionOperationKind>,
+}
+
+impl StoredPlanState for MissionState {
+    type Plan = MissionPlan;
+    type OperationKind = MissionOperationKind;
+
+    fn set_active_op(&mut self, kind: Option<Self::OperationKind>) {
+        self.active_op = kind;
+    }
+
+    fn set_plan(&mut self, plan: Self::Plan) {
+        self.plan = Some(plan);
+    }
+
+    fn set_sync(&mut self, sync: SyncState) {
+        self.sync = sync;
+    }
+
+    fn cleared_plan() -> Self::Plan {
+        MissionPlan {
+            mission_type: MissionType::Mission,
+            items: Vec::new(),
+        }
+    }
 }
 
 /// Severity level of a mission validation issue.

@@ -17,6 +17,7 @@ pub mod params;
 pub mod rally;
 pub mod raw;
 mod state;
+mod stored_plan;
 #[cfg(feature = "stream")]
 pub mod stream_connection;
 pub mod support;
