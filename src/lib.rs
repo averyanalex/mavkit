@@ -87,11 +87,11 @@ pub use observation::{
 
 pub use telemetry::{
     ActuatorsNamespace, AttitudeNamespace, BatteryNamespace, CellVoltages, EulerAttitude,
-    EventMessageHandle, GlobalPosition, GpsNamespace, GpsQuality, GuidanceState, MessagesHandle,
-    NavigationNamespace, PeriodicMessageHandle, PositionNamespace, RcNamespace, StatusTextEvent,
-    TelemetryHandle, TelemetryMessageKind, TerrainClearance, TerrainNamespace, VehicleTimestamp,
-    WaypointProgress, infer_time_boot_ms, infer_time_usec, infer_timestamp_from_time_boot_ms,
-    infer_timestamp_from_time_usec,
+    EventMessageHandle, GlobalPosition, GpsFixType, GpsNamespace, GpsQuality, GuidanceState,
+    MessagesHandle, NavigationNamespace, PeriodicMessageHandle, PositionNamespace, RcNamespace,
+    StatusTextEvent, TelemetryHandle, TelemetryMessageKind, TerrainClearance, TerrainNamespace,
+    VehicleTimestamp, WaypointProgress, infer_time_boot_ms, infer_time_usec,
+    infer_timestamp_from_time_boot_ms, infer_timestamp_from_time_usec,
 };
 
 pub use params::{

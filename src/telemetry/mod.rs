@@ -18,6 +18,7 @@ pub use messages::{EventMessageHandle, MessagesHandle, PeriodicMessageHandle};
 
 pub use status_text::StatusTextEvent;
 
+pub use crate::state::GpsFixType;
 pub use values::{
     CellVoltages, EulerAttitude, GlobalPosition, GpsQuality, GuidanceState, TerrainClearance,
     WaypointProgress,
