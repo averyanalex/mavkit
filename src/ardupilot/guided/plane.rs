@@ -2,7 +2,7 @@ use super::RelativeClimbTarget;
 use crate::command::{Command, RawCommandIntPayload};
 use crate::dialect;
 use crate::error::VehicleError;
-use crate::geo::{GeoPoint3dMsl, GeoPoint3dRelHome};
+use crate::geo::{GeoPoint3dMsl, GeoPoint3dRelHome, try_quantize_degrees_e7};
 use crate::mission::send_domain_command;
 
 const MAV_DO_REPOSITION_FLAGS_CHANGE_MODE: f32 = 1.0;
@@ -41,8 +41,8 @@ impl<'a> ArduPlaneGuidedHandle<'a> {
         send_reposition(
             self._session,
             dialect::MavFrame::MAV_FRAME_GLOBAL,
-            quantize_degrees_e7(target.latitude_deg, "latitude_deg")?,
-            quantize_degrees_e7(target.longitude_deg, "longitude_deg")?,
+            try_quantize_degrees_e7(target.latitude_deg, "latitude_deg")?,
+            try_quantize_degrees_e7(target.longitude_deg, "longitude_deg")?,
             finite_f32(target.altitude_msl_m, "altitude_msl_m")?,
         )
         .await
@@ -53,8 +53,8 @@ impl<'a> ArduPlaneGuidedHandle<'a> {
         send_reposition(
             self._session,
             dialect::MavFrame::MAV_FRAME_GLOBAL_RELATIVE_ALT,
-            quantize_degrees_e7(target.latitude_deg, "latitude_deg")?,
-            quantize_degrees_e7(target.longitude_deg, "longitude_deg")?,
+            try_quantize_degrees_e7(target.latitude_deg, "latitude_deg")?,
+            try_quantize_degrees_e7(target.longitude_deg, "longitude_deg")?,
             finite_f32(target.relative_alt_m, "relative_alt_m")?,
         )
         .await
@@ -136,16 +136,6 @@ async fn send_reposition(
     })
     .await
     .map(|_| ())
-}
-
-fn quantize_degrees_e7(value: f64, field: &str) -> Result<i32, VehicleError> {
-    if !value.is_finite() {
-        return Err(VehicleError::InvalidParameter(format!(
-            "{field} must be finite, got {value}"
-        )));
-    }
-
-    Ok((value * 1e7).round() as i32)
 }
 
 fn finite_f32(value: f64, field: &str) -> Result<f32, VehicleError> {

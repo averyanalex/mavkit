@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::commands::{MissionCommand, MissionFrame as CommandFrame, RawMissionCommand};
+use crate::geo::quantize_degrees_e7;
 use crate::stored_plan::StoredPlanState;
 use crate::types::{MissionOperationKind, SyncState};
 
@@ -65,8 +66,8 @@ impl HomePosition {
                 param2: 0.0,
                 param3: 0.0,
                 param4: 0.0,
-                x: (self.latitude_deg * 1e7).round() as i32,
-                y: (self.longitude_deg * 1e7).round() as i32,
+                x: quantize_degrees_e7(self.latitude_deg),
+                y: quantize_degrees_e7(self.longitude_deg),
                 z: self.altitude_m,
             }),
             current: false,

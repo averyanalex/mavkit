@@ -2,7 +2,7 @@ use super::{ArduCopterGuidedHandle, RelativeClimbTarget};
 use crate::command::Command;
 use crate::dialect;
 use crate::error::VehicleError;
-use crate::geo::{GeoPoint3dMsl, GeoPoint3dRelHome};
+use crate::geo::{GeoPoint3dMsl, GeoPoint3dRelHome, try_quantize_degrees_e7};
 use crate::mission::send_domain_command;
 
 const POSITION_ONLY_TYPE_MASK: u16 = 0x07F8;
@@ -36,8 +36,8 @@ impl<'a> ArduCopterGuidedHandle<'a> {
 
     pub async fn goto(&self, target: GeoPoint3dRelHome) -> Result<(), VehicleError> {
         self._session.ensure_active()?;
-        let lat_e7 = quantize_degrees_e7(target.latitude_deg, "latitude_deg")?;
-        let lon_e7 = quantize_degrees_e7(target.longitude_deg, "longitude_deg")?;
+        let lat_e7 = try_quantize_degrees_e7(target.latitude_deg, "latitude_deg")?;
+        let lon_e7 = try_quantize_degrees_e7(target.longitude_deg, "longitude_deg")?;
         let alt_m = finite_f32(target.relative_alt_m, "relative_alt_m")?;
 
         send_domain_command(self._session.command_tx(), |reply| Command::GuidedGoto {
@@ -53,8 +53,8 @@ impl<'a> ArduCopterGuidedHandle<'a> {
         self._session.ensure_active()?;
         self.send_position_target_global_int(
             dialect::MavFrame::MAV_FRAME_GLOBAL,
-            quantize_degrees_e7(target.latitude_deg, "latitude_deg")?,
-            quantize_degrees_e7(target.longitude_deg, "longitude_deg")?,
+            try_quantize_degrees_e7(target.latitude_deg, "latitude_deg")?,
+            try_quantize_degrees_e7(target.longitude_deg, "longitude_deg")?,
             finite_f32(target.altitude_msl_m, "altitude_msl_m")?,
         )
         .await
@@ -156,16 +156,6 @@ impl<'a> ArduCopterGuidedHandle<'a> {
         })
         .await
     }
-}
-
-fn quantize_degrees_e7(value: f64, field: &str) -> Result<i32, VehicleError> {
-    if !value.is_finite() {
-        return Err(VehicleError::InvalidParameter(format!(
-            "{field} must be finite, got {value}"
-        )));
-    }
-
-    Ok((value * 1e7).round() as i32)
 }
 
 fn finite_f32(value: f64, field: &str) -> Result<f32, VehicleError> {

@@ -1,3 +1,4 @@
+use crate::error::VehicleError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -83,6 +84,27 @@ impl From<GeoPoint3d> for GeoPoint2d {
             },
         }
     }
+}
+
+pub(crate) fn quantize_degrees_e7(value: f64) -> i32 {
+    (value * 1e7).round() as i32
+}
+
+pub(crate) fn try_quantize_degrees_e7(value: f64, field: &str) -> Result<i32, VehicleError> {
+    if !value.is_finite() {
+        return Err(VehicleError::InvalidParameter(format!(
+            "{field} must be finite, got {value}"
+        )));
+    }
+
+    let rounded = (value * 1e7).round();
+    if rounded < i32::MIN as f64 || rounded > i32::MAX as f64 {
+        return Err(VehicleError::InvalidParameter(format!(
+            "{field} is out of degE7 i32 range, got {value}"
+        )));
+    }
+
+    Ok(quantize_degrees_e7(value))
 }
 
 #[cfg(test)]

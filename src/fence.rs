@@ -1,6 +1,6 @@
 use crate::command::Command;
 use crate::error::VehicleError;
-use crate::geo::GeoPoint2d;
+use crate::geo::{GeoPoint2d, quantize_degrees_e7};
 use crate::mission::commands::MissionFrame as WireMissionFrame;
 use crate::mission::operations::MissionOperationHandle;
 use crate::mission::{
@@ -628,10 +628,6 @@ fn fence_item(seq: u16, command: u16, param1: f32, param2: f32, point: &GeoPoint
         current: false,
         autocontinue: true,
     }
-}
-
-fn quantize_degrees_e7(value: f64) -> i32 {
-    (value * 1e7).round() as i32
 }
 
 fn decode_point2d(frame: WireMissionFrame, x: i32, y: i32) -> Result<GeoPoint2d, VehicleError> {

@@ -1,6 +1,6 @@
 use crate::command::Command;
 use crate::error::VehicleError;
-use crate::geo::{GeoPoint3d, GeoPoint3dMsl, GeoPoint3dRelHome, GeoPoint3dTerrain};
+use crate::geo::{GeoPoint3d, GeoPoint3dMsl, GeoPoint3dRelHome, GeoPoint3dTerrain, quantize_degrees_e7};
 use crate::mission::commands::MissionFrame as WireMissionFrame;
 use crate::mission::operations::MissionOperationHandle;
 use crate::mission::{
@@ -447,10 +447,6 @@ fn decode_point3d(
             other
         ))),
     }
-}
-
-fn quantize_degrees_e7(value: f64) -> i32 {
-    (value * 1e7).round() as i32
 }
 
 fn rally_decode_error(detail: &str) -> VehicleError {

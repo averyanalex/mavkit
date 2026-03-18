@@ -2,6 +2,7 @@ use super::{ArduSubGuidedHandle, SubGotoDepthTarget};
 use crate::command::{Command, RawCommandIntPayload};
 use crate::dialect;
 use crate::error::VehicleError;
+use crate::geo::try_quantize_degrees_e7;
 use crate::mission::send_domain_command;
 
 const VELOCITY_YAW_RATE_TYPE_MASK: u16 = 0x05C7;
@@ -9,8 +10,8 @@ const VELOCITY_YAW_RATE_TYPE_MASK: u16 = 0x05C7;
 impl<'a> ArduSubGuidedHandle<'a> {
     pub async fn goto_depth(&self, target: SubGotoDepthTarget) -> Result<(), VehicleError> {
         self._session.ensure_active()?;
-        let lat_e7 = quantize_degrees_e7(target.point.latitude_deg, "point.latitude_deg")?;
-        let lon_e7 = quantize_degrees_e7(target.point.longitude_deg, "point.longitude_deg")?;
+        let lat_e7 = try_quantize_degrees_e7(target.point.latitude_deg, "point.latitude_deg")?;
+        let lon_e7 = try_quantize_degrees_e7(target.point.longitude_deg, "point.longitude_deg")?;
         let depth_m = validate_non_negative_f32(target.depth_m, "depth_m")?;
 
         send_domain_command(self._session.command_tx(), |reply| Command::RawCommandInt {
@@ -91,16 +92,6 @@ impl<'a> ArduSubGuidedHandle<'a> {
         .await
         .map(|_| ())
     }
-}
-
-fn quantize_degrees_e7(value: f64, field: &str) -> Result<i32, VehicleError> {
-    if !value.is_finite() {
-        return Err(VehicleError::InvalidParameter(format!(
-            "{field} must be finite, got {value}"
-        )));
-    }
-
-    Ok((value * 1e7).round() as i32)
 }
 
 fn finite_f32(value: f64, field: &str) -> Result<f32, VehicleError> {

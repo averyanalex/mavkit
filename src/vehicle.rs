@@ -5,7 +5,7 @@ use crate::dialect;
 use crate::error::VehicleError;
 use crate::event_loop::{InitManager, run_event_loop_with_init};
 use crate::fence::FenceDomain;
-use crate::geo::GeoPoint3dMsl;
+use crate::geo::{GeoPoint3dMsl, quantize_degrees_e7};
 use crate::info::{InfoDomain, InfoHandle};
 use crate::mission::{MissionDomain, MissionProtocolScope, send_domain_command};
 use crate::modes::{ModeDomain, ModesHandle, mode_number};
@@ -49,10 +49,6 @@ impl WireNormalizedGeo {
             && self.longitude_e7 == quantize_degrees_e7(observed.longitude_deg)
             && self.altitude_mm == quantize_meters_mm(observed.altitude_msl_m)
     }
-}
-
-fn quantize_degrees_e7(value: f64) -> i32 {
-    (value * 1e7).round() as i32
 }
 
 fn quantize_meters_mm(value: f64) -> i32 {

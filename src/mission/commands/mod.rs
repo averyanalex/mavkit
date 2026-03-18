@@ -1,5 +1,7 @@
 use super::types::{MissionFrame as MissionItemFrame, MissionItem};
-use crate::geo::{GeoPoint3d, GeoPoint3dMsl, GeoPoint3dRelHome, GeoPoint3dTerrain};
+use crate::geo::{
+    quantize_degrees_e7, GeoPoint3d, GeoPoint3dMsl, GeoPoint3dRelHome, GeoPoint3dTerrain,
+};
 use serde::{Deserialize, Serialize};
 
 #[allow(non_camel_case_types)]
@@ -459,10 +461,6 @@ pub enum WinchAction {
     Relax,
     LengthControl,
     RateControl,
-}
-
-fn quantize_degrees_e7(value: f64) -> i32 {
-    (value * 1e7).round() as i32
 }
 
 fn position_to_wire(position: GeoPoint3d) -> (MissionFrame, i32, i32, f32) {
