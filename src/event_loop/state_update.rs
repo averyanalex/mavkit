@@ -3,7 +3,7 @@ use crate::dialect::{self, MavModeFlag};
 use crate::geo::GeoPoint3dMsl;
 use crate::mission;
 use crate::state::{
-    AutopilotType, GpsFixType, MagCalProgress, MagCalReport, MagCalStatus, MissionState,
+    AutopilotType, GpsFixType, MagCalProgress, MagCalReport, MagCalStatus, WireMissionState,
     SensorHealth, StateWriters, SystemStatus, VehicleState, VehicleType, set_if_changed,
 };
 use crate::telemetry::{
@@ -333,7 +333,7 @@ pub(super) fn update_state(
         }
         dialect::MavMessage::MISSION_CURRENT(data) => {
             // MISSION_CURRENT always reports Mission type execution state
-            let _ = writers.mission_state.send(MissionState::from_wire(
+            let _ = writers.mission_state.send(WireMissionState::from_wire(
                 mission::MissionType::Mission,
                 data.seq,
                 data.total,

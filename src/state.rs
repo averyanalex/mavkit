@@ -1,5 +1,5 @@
 use crate::telemetry::{
-    create_telemetry_backing_stores, TelemetryMetricHandles, TelemetryMetricWriters,
+    TelemetryMetricHandles, TelemetryMetricWriters, create_telemetry_backing_stores,
 };
 use serde::{Deserialize, Serialize};
 
@@ -168,14 +168,14 @@ pub struct Telemetry {
 /// - For `MissionType::Fence` and `MissionType::Rally`: no home placeholder
 ///   exists, so wire values pass through unchanged.
 ///
-/// Construct via [`MissionState::from_wire`] to ensure correct normalization.
+/// Construct via [`WireMissionState::from_wire`] to ensure correct normalization.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct MissionState {
+pub struct WireMissionState {
     pub current_seq: Option<u16>,
     pub total_items: u16,
 }
 
-impl MissionState {
+impl WireMissionState {
     /// Convert raw MAVLink wire values into semantic mission state.
     ///
     /// For `MissionType::Mission` the wire format includes the home position at
@@ -200,12 +200,12 @@ impl MissionState {
                 } else {
                     Some(wire_seq - 1)
                 };
-                MissionState {
+                WireMissionState {
                     current_seq,
                     total_items,
                 }
             }
-            MissionType::Fence | MissionType::Rally => MissionState {
+            MissionType::Fence | MissionType::Rally => WireMissionState {
                 current_seq: Some(wire_seq),
                 total_items: wire_total,
             },
@@ -589,7 +589,7 @@ pub(crate) struct StateWriters {
     pub vehicle_state: tokio::sync::watch::Sender<VehicleState>,
     pub telemetry: tokio::sync::watch::Sender<Telemetry>,
     pub home_position: tokio::sync::watch::Sender<Option<crate::mission::HomePosition>>,
-    pub mission_state: tokio::sync::watch::Sender<MissionState>,
+    pub mission_state: tokio::sync::watch::Sender<WireMissionState>,
     pub link_state: tokio::sync::watch::Sender<LinkState>,
     pub mission_progress: tokio::sync::watch::Sender<Option<crate::mission::TransferProgress>>,
     pub param_store: tokio::sync::watch::Sender<crate::params::ParamStore>,
@@ -623,7 +623,7 @@ pub(crate) struct StateChannels {
     pub vehicle_state: tokio::sync::watch::Receiver<VehicleState>,
     pub telemetry: tokio::sync::watch::Receiver<Telemetry>,
     pub home_position: tokio::sync::watch::Receiver<Option<crate::mission::HomePosition>>,
-    pub mission_state: tokio::sync::watch::Receiver<MissionState>,
+    pub mission_state: tokio::sync::watch::Receiver<WireMissionState>,
     pub link_state: tokio::sync::watch::Receiver<LinkState>,
     pub mission_progress: tokio::sync::watch::Receiver<Option<crate::mission::TransferProgress>>,
     pub param_store: tokio::sync::watch::Receiver<crate::params::ParamStore>,
@@ -649,7 +649,7 @@ pub(crate) fn create_channels() -> (StateWriters, StateChannels) {
     let (vs_tx, vs_rx) = tokio::sync::watch::channel(VehicleState::default());
     let (telem_tx, telem_rx) = tokio::sync::watch::channel(Telemetry::default());
     let (home_tx, home_rx) = tokio::sync::watch::channel(None);
-    let (ms_tx, ms_rx) = tokio::sync::watch::channel(MissionState::default());
+    let (ms_tx, ms_rx) = tokio::sync::watch::channel(WireMissionState::default());
     let (ls_tx, ls_rx) = tokio::sync::watch::channel(LinkState::Connecting);
     let (mp_tx, mp_rx) = tokio::sync::watch::channel(None);
     let (ps_tx, ps_rx) = tokio::sync::watch::channel(crate::params::ParamStore::default());
@@ -802,7 +802,7 @@ mod tests {
     #[test]
     fn mission_state_from_wire_home_only() {
         use crate::mission::MissionType;
-        let ms = MissionState::from_wire(MissionType::Mission, 0, 1);
+        let ms = WireMissionState::from_wire(MissionType::Mission, 0, 1);
         assert_eq!(ms.current_seq, None);
         assert_eq!(ms.total_items, 0);
     }
@@ -810,7 +810,7 @@ mod tests {
     #[test]
     fn mission_state_from_wire_first_waypoint_active() {
         use crate::mission::MissionType;
-        let ms = MissionState::from_wire(MissionType::Mission, 1, 3);
+        let ms = WireMissionState::from_wire(MissionType::Mission, 1, 3);
         assert_eq!(ms.current_seq, Some(0));
         assert_eq!(ms.total_items, 2);
     }
@@ -818,7 +818,7 @@ mod tests {
     #[test]
     fn mission_state_from_wire_fence_passthrough() {
         use crate::mission::MissionType;
-        let ms = MissionState::from_wire(MissionType::Fence, 2, 5);
+        let ms = WireMissionState::from_wire(MissionType::Fence, 2, 5);
         assert_eq!(ms.current_seq, Some(2));
         assert_eq!(ms.total_items, 5);
     }
@@ -826,7 +826,7 @@ mod tests {
     #[test]
     fn mission_state_from_wire_rally_passthrough() {
         use crate::mission::MissionType;
-        let ms = MissionState::from_wire(MissionType::Rally, 0, 3);
+        let ms = WireMissionState::from_wire(MissionType::Rally, 0, 3);
         assert_eq!(ms.current_seq, Some(0));
         assert_eq!(ms.total_items, 3);
     }
@@ -840,7 +840,7 @@ mod tests {
         let wire_seq = semantic_seq + 1;
         assert_eq!(wire_seq, 1);
 
-        let state = MissionState::from_wire(MissionType::Mission, wire_seq, 5);
+        let state = WireMissionState::from_wire(MissionType::Mission, wire_seq, 5);
         assert_eq!(state.current_seq, Some(semantic_seq));
         assert_eq!(state.total_items, 4);
     }
@@ -852,7 +852,7 @@ mod tests {
         let wire_seq = semantic_seq + 1;
         assert_eq!(wire_seq, 5);
 
-        let state = MissionState::from_wire(MissionType::Mission, wire_seq, 10);
+        let state = WireMissionState::from_wire(MissionType::Mission, wire_seq, 10);
         assert_eq!(state.current_seq, Some(semantic_seq));
     }
 }
