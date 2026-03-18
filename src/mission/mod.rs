@@ -249,6 +249,69 @@ fn verify_plans_match(expected: &MissionPlan, observed: &MissionPlan) -> bool {
     plans_equivalent(&lhs, &rhs, CompareTolerance::default())
 }
 
+/// Run a domain operation with the shared progress-bridge + cancel + finalize lifecycle.
+///
+/// The `make_command` closure builds the `Command` to send. The `on_result` closure
+/// receives the command outcome and the progress writer, handles domain state updates
+/// (note_*_success / note_operation_error / finish_operation), and returns the final
+/// result to deliver to the caller.
+pub(crate) fn run_domain_operation<C, T>(
+    command_tx: mpsc::Sender<Command>,
+    mission_progress_rx: tokio::sync::watch::Receiver<Option<TransferProgress>>,
+    reservation: OperationReservation,
+    make_command: impl FnOnce(oneshot::Sender<Result<C, VehicleError>>) -> Command + Send + 'static,
+    on_result: impl FnOnce(Result<C, VehicleError>, &ObservationWriter<MissionOperationProgress>) -> Result<T, VehicleError>
+        + Send
+        + 'static,
+) -> operations::MissionOperationHandle<T>
+where
+    C: Send + 'static,
+    T: Send + 'static,
+{
+    let (progress_writer, progress) = ObservationHandle::watch();
+    let _ = progress_writer.publish(MissionOperationProgress::RequestCount);
+    let (result_tx, result_rx) = oneshot::channel();
+
+    let op = operations::MissionOperationHandle::new(
+        progress,
+        result_rx,
+        reservation.cancel.clone(),
+        command_tx.clone(),
+    );
+
+    let cancel = reservation.cancel;
+
+    tokio::spawn(async move {
+        let progress_stop = CancellationToken::new();
+        let progress_task = spawn_transfer_progress_bridge(
+            mission_progress_rx,
+            progress_writer.clone(),
+            progress_stop.clone(),
+        );
+
+        let command_result = tokio::select! {
+            _ = cancel.cancelled() => Err(VehicleError::Cancelled),
+            result = send_domain_command(command_tx, make_command) => result,
+        };
+
+        progress_stop.cancel();
+        let _ = progress_task.await;
+
+        let result = on_result(command_result, &progress_writer);
+
+        let final_phase = match &result {
+            Ok(_) => MissionOperationProgress::Completed,
+            Err(VehicleError::Cancelled) => MissionOperationProgress::Cancelled,
+            Err(_) => MissionOperationProgress::Failed,
+        };
+        let _ = progress_writer.publish(final_phase);
+
+        let _ = result_tx.send(result);
+    });
+
+    op
+}
+
 /// Accessor for mission state and mission transfer operations.
 pub struct MissionHandle<'a> {
     inner: &'a VehicleInner,
@@ -288,57 +351,24 @@ impl<'a> MissionHandle<'a> {
             MissionOperationKind::Upload,
             "upload",
         )?;
-        let (progress_writer, progress) = ObservationHandle::watch();
-        let _ = progress_writer.publish(MissionOperationProgress::RequestCount);
-        let (result_tx, result_rx) = oneshot::channel();
-
-        let op = operations::MissionOperationHandle::new(
-            progress,
-            result_rx,
-            reservation.cancel.clone(),
-            self.inner.command_tx.clone(),
-        );
-
-        let command_tx = self.inner.command_tx.clone();
-        let mission_progress_rx = self.inner.stores.mission_progress.clone();
-        let mission_protocol = self.inner.mission_protocol.clone();
+        let protocol = self.inner.mission_protocol.clone();
         let op_id = reservation.id;
-        let cancel = reservation.cancel;
         let uploaded_plan = plan.clone();
 
-        tokio::spawn(async move {
-            let progress_stop = CancellationToken::new();
-            let progress_task = spawn_transfer_progress_bridge(
-                mission_progress_rx,
-                progress_writer.clone(),
-                progress_stop.clone(),
-            );
-
-            let result = tokio::select! {
-                _ = cancel.cancelled() => Err(VehicleError::Cancelled),
-                command_result = send_domain_command(command_tx, |reply| Command::MissionUpload { plan, reply }) => command_result,
-            };
-
-            progress_stop.cancel();
-            let _ = progress_task.await;
-
-            let final_phase = match &result {
-                Ok(()) => MissionOperationProgress::Completed,
-                Err(VehicleError::Cancelled) => MissionOperationProgress::Cancelled,
-                Err(_) => MissionOperationProgress::Failed,
-            };
-            let _ = progress_writer.publish(final_phase);
-
-            match &result {
-                Ok(()) => domain.note_upload_success(uploaded_plan),
-                Err(_) => domain.note_operation_error(),
-            }
-
-            domain.finish_operation(&mission_protocol, op_id);
-            let _ = result_tx.send(result);
-        });
-
-        Ok(op)
+        Ok(run_domain_operation(
+            self.inner.command_tx.clone(),
+            self.inner.stores.mission_progress.clone(),
+            reservation,
+            |reply| Command::MissionUpload { plan, reply },
+            move |result, _| {
+                match &result {
+                    Ok(()) => domain.note_upload_success(uploaded_plan),
+                    Err(_) => domain.note_operation_error(),
+                }
+                domain.finish_operation(&protocol, op_id);
+                result
+            },
+        ))
     }
 
     pub fn download(&self) -> Result<MissionDownloadOp, VehicleError> {
@@ -348,65 +378,32 @@ impl<'a> MissionHandle<'a> {
             MissionOperationKind::Download,
             "download",
         )?;
-        let (progress_writer, progress) = ObservationHandle::watch();
-        let _ = progress_writer.publish(MissionOperationProgress::RequestCount);
-        let (result_tx, result_rx) = oneshot::channel();
-
-        let op = operations::MissionOperationHandle::new(
-            progress,
-            result_rx,
-            reservation.cancel.clone(),
-            self.inner.command_tx.clone(),
-        );
-
-        let command_tx = self.inner.command_tx.clone();
-        let mission_progress_rx = self.inner.stores.mission_progress.clone();
-        let mission_protocol = self.inner.mission_protocol.clone();
+        let protocol = self.inner.mission_protocol.clone();
         let op_id = reservation.id;
-        let cancel = reservation.cancel;
 
-        tokio::spawn(async move {
-            let progress_stop = CancellationToken::new();
-            let progress_task = spawn_transfer_progress_bridge(
-                mission_progress_rx,
-                progress_writer.clone(),
-                progress_stop.clone(),
-            );
-
-            let command_result = tokio::select! {
-                _ = cancel.cancelled() => Err(VehicleError::Cancelled),
-                result = send_domain_command(command_tx, |reply| Command::MissionDownload {
-                    mission_type: MissionType::Mission,
-                    reply,
-                }) => result,
-            };
-
-            progress_stop.cancel();
-            let _ = progress_task.await;
-
-            let result = match command_result {
-                Ok(plan) => {
-                    domain.note_download_success(plan.clone());
-                    Ok(plan)
-                }
-                Err(err) => {
-                    domain.note_operation_error();
-                    Err(err)
-                }
-            };
-
-            let final_phase = match &result {
-                Ok(_) => MissionOperationProgress::Completed,
-                Err(VehicleError::Cancelled) => MissionOperationProgress::Cancelled,
-                Err(_) => MissionOperationProgress::Failed,
-            };
-            let _ = progress_writer.publish(final_phase);
-
-            domain.finish_operation(&mission_protocol, op_id);
-            let _ = result_tx.send(result);
-        });
-
-        Ok(op)
+        Ok(run_domain_operation(
+            self.inner.command_tx.clone(),
+            self.inner.stores.mission_progress.clone(),
+            reservation,
+            |reply| Command::MissionDownload {
+                mission_type: MissionType::Mission,
+                reply,
+            },
+            move |result, _| {
+                let r = match result {
+                    Ok(plan) => {
+                        domain.note_download_success(plan.clone());
+                        Ok(plan)
+                    }
+                    Err(err) => {
+                        domain.note_operation_error();
+                        Err(err)
+                    }
+                };
+                domain.finish_operation(&protocol, op_id);
+                r
+            },
+        ))
     }
 
     pub fn clear(&self) -> Result<MissionClearOp, VehicleError> {
@@ -416,59 +413,26 @@ impl<'a> MissionHandle<'a> {
             MissionOperationKind::Clear,
             "clear",
         )?;
-        let (progress_writer, progress) = ObservationHandle::watch();
-        let _ = progress_writer.publish(MissionOperationProgress::RequestCount);
-        let (result_tx, result_rx) = oneshot::channel();
-
-        let op = operations::MissionOperationHandle::new(
-            progress,
-            result_rx,
-            reservation.cancel.clone(),
-            self.inner.command_tx.clone(),
-        );
-
-        let command_tx = self.inner.command_tx.clone();
-        let mission_progress_rx = self.inner.stores.mission_progress.clone();
-        let mission_protocol = self.inner.mission_protocol.clone();
+        let protocol = self.inner.mission_protocol.clone();
         let op_id = reservation.id;
-        let cancel = reservation.cancel;
 
-        tokio::spawn(async move {
-            let progress_stop = CancellationToken::new();
-            let progress_task = spawn_transfer_progress_bridge(
-                mission_progress_rx,
-                progress_writer.clone(),
-                progress_stop.clone(),
-            );
-
-            let result = tokio::select! {
-                _ = cancel.cancelled() => Err(VehicleError::Cancelled),
-                command_result = send_domain_command(command_tx, |reply| Command::MissionClear {
-                    mission_type: MissionType::Mission,
-                    reply,
-                }) => command_result,
-            };
-
-            progress_stop.cancel();
-            let _ = progress_task.await;
-
-            let final_phase = match &result {
-                Ok(()) => MissionOperationProgress::Completed,
-                Err(VehicleError::Cancelled) => MissionOperationProgress::Cancelled,
-                Err(_) => MissionOperationProgress::Failed,
-            };
-            let _ = progress_writer.publish(final_phase);
-
-            match &result {
-                Ok(()) => domain.note_clear_success(),
-                Err(_) => domain.note_operation_error(),
-            }
-
-            domain.finish_operation(&mission_protocol, op_id);
-            let _ = result_tx.send(result);
-        });
-
-        Ok(op)
+        Ok(run_domain_operation(
+            self.inner.command_tx.clone(),
+            self.inner.stores.mission_progress.clone(),
+            reservation,
+            |reply| Command::MissionClear {
+                mission_type: MissionType::Mission,
+                reply,
+            },
+            move |result, _| {
+                match &result {
+                    Ok(()) => domain.note_clear_success(),
+                    Err(_) => domain.note_operation_error(),
+                }
+                domain.finish_operation(&protocol, op_id);
+                result
+            },
+        ))
     }
 
     pub fn verify(&self, plan: MissionPlan) -> Result<MissionVerifyOp, VehicleError> {
@@ -484,67 +448,34 @@ impl<'a> MissionHandle<'a> {
             MissionOperationKind::Verify,
             "verify",
         )?;
-        let (progress_writer, progress) = ObservationHandle::watch();
-        let _ = progress_writer.publish(MissionOperationProgress::RequestCount);
-        let (result_tx, result_rx) = oneshot::channel();
-
-        let op = operations::MissionOperationHandle::new(
-            progress,
-            result_rx,
-            reservation.cancel.clone(),
-            self.inner.command_tx.clone(),
-        );
-
-        let command_tx = self.inner.command_tx.clone();
-        let mission_progress_rx = self.inner.stores.mission_progress.clone();
-        let mission_protocol = self.inner.mission_protocol.clone();
+        let protocol = self.inner.mission_protocol.clone();
         let op_id = reservation.id;
-        let cancel = reservation.cancel;
 
-        tokio::spawn(async move {
-            let progress_stop = CancellationToken::new();
-            let progress_task = spawn_transfer_progress_bridge(
-                mission_progress_rx,
-                progress_writer.clone(),
-                progress_stop.clone(),
-            );
-
-            let download_result = tokio::select! {
-                _ = cancel.cancelled() => Err(VehicleError::Cancelled),
-                result = send_domain_command(command_tx, |reply| Command::MissionDownload {
-                    mission_type: MissionType::Mission,
-                    reply,
-                }) => result,
-            };
-
-            progress_stop.cancel();
-            let _ = progress_task.await;
-
-            let result = match download_result {
-                Ok(downloaded_plan) => {
-                    let _ = progress_writer.publish(MissionOperationProgress::Verifying);
-                    let matched = verify_plans_match(&plan, &downloaded_plan);
-                    domain.note_download_success(downloaded_plan);
-                    Ok(matched)
-                }
-                Err(err) => {
-                    domain.note_operation_error();
-                    Err(err)
-                }
-            };
-
-            let final_phase = match &result {
-                Ok(_) => MissionOperationProgress::Completed,
-                Err(VehicleError::Cancelled) => MissionOperationProgress::Cancelled,
-                Err(_) => MissionOperationProgress::Failed,
-            };
-            let _ = progress_writer.publish(final_phase);
-
-            domain.finish_operation(&mission_protocol, op_id);
-            let _ = result_tx.send(result);
-        });
-
-        Ok(op)
+        Ok(run_domain_operation(
+            self.inner.command_tx.clone(),
+            self.inner.stores.mission_progress.clone(),
+            reservation,
+            |reply| Command::MissionDownload {
+                mission_type: MissionType::Mission,
+                reply,
+            },
+            move |result, pw| {
+                let r = match result {
+                    Ok(downloaded_plan) => {
+                        let _ = pw.publish(MissionOperationProgress::Verifying);
+                        let matched = verify_plans_match(&plan, &downloaded_plan);
+                        domain.note_download_success(downloaded_plan);
+                        Ok(matched)
+                    }
+                    Err(err) => {
+                        domain.note_operation_error();
+                        Err(err)
+                    }
+                };
+                domain.finish_operation(&protocol, op_id);
+                r
+            },
+        ))
     }
 
     pub async fn set_current(&self, index: u16) -> Result<(), VehicleError> {
