@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::mission::PyRetryPolicy;
@@ -47,15 +48,21 @@ impl PyVehicleConfig {
         command_buffer_size: usize,
         connect_timeout_secs: f64,
         retry_policy: Option<PyRetryPolicy>,
-    ) -> Self {
-        Self {
+    ) -> PyResult<Self> {
+        if !connect_timeout_secs.is_finite() || connect_timeout_secs < 0.0 {
+            return Err(PyValueError::new_err(
+                "connect_timeout_secs must be a finite non-negative number",
+            ));
+        }
+
+        Ok(Self {
             gcs_system_id,
             gcs_component_id,
             auto_request_home,
             command_buffer_size,
             connect_timeout: Duration::from_secs_f64(connect_timeout_secs),
             retry: retry_policy.map(|r| r.inner).unwrap_or_default(),
-        }
+        })
     }
 
     #[getter]
