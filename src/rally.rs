@@ -7,10 +7,10 @@ use crate::mission::{
     MissionCommand, MissionItem, MissionPlan, MissionProtocolScope, MissionType,
     OperationReservation, RawMissionCommand, send_domain_command, spawn_transfer_progress_bridge,
 };
-use crate::observation::{ObservationHandle, ObservationSubscription, ObservationWriter};
+use crate::observation::{ObservationHandle, ObservationSubscription};
+use crate::stored_plan::{StoredPlanDomain, StoredPlanState};
 use crate::types::{MissionOperationProgress, StoredPlanOperationKind, SupportState, SyncState};
 use crate::vehicle::VehicleInner;
-use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
@@ -39,32 +39,39 @@ pub type RallyClearOp = MissionOperationHandle<()>;
 
 #[derive(Clone)]
 pub(crate) struct RallyDomain {
-    inner: Arc<RallyDomainInner>,
+    inner: StoredPlanDomain<RallyState>,
 }
 
-struct RallyDomainInner {
-    state_writer: ObservationWriter<RallyState>,
-    state: ObservationHandle<RallyState>,
-    latest_state: Mutex<RallyState>,
+impl StoredPlanState for RallyState {
+    type Plan = RallyPlan;
+    type OperationKind = StoredPlanOperationKind;
+
+    fn set_active_op(&mut self, kind: Option<Self::OperationKind>) {
+        self.active_op = kind;
+    }
+
+    fn set_plan(&mut self, plan: Self::Plan) {
+        self.plan = Some(plan);
+    }
+
+    fn set_sync(&mut self, sync: SyncState) {
+        self.sync = sync;
+    }
+
+    fn cleared_plan() -> Self::Plan {
+        RallyPlan { points: Vec::new() }
+    }
 }
 
 impl RallyDomain {
     pub(crate) fn new() -> Self {
-        let (state_writer, state) = ObservationHandle::watch();
-        let latest = RallyState::default();
-        let _ = state_writer.publish(latest.clone());
-
         Self {
-            inner: Arc::new(RallyDomainInner {
-                state_writer,
-                state,
-                latest_state: Mutex::new(latest),
-            }),
+            inner: StoredPlanDomain::new(),
         }
     }
 
     pub(crate) fn state(&self) -> ObservationHandle<RallyState> {
-        self.inner.state.clone()
+        self.inner.state()
     }
 
     pub(crate) fn begin_operation(
@@ -73,55 +80,27 @@ impl RallyDomain {
         kind: StoredPlanOperationKind,
         op_name: &'static str,
     ) -> Result<OperationReservation, VehicleError> {
-        let reservation = scope.begin_operation("rally", op_name)?;
-        self.update_state(|state| {
-            state.active_op = Some(kind);
-        });
-        Ok(reservation)
+        self.inner.begin_operation(scope, "rally", kind, op_name)
     }
 
     pub(crate) fn finish_operation(&self, scope: &MissionProtocolScope, op_id: u64) {
-        scope.finish_operation(op_id);
-        self.update_state(|state| {
-            state.active_op = None;
-        });
+        self.inner.finish_operation(scope, op_id);
     }
 
     fn note_operation_error(&self) {
-        self.update_state(|state| {
-            state.sync = SyncState::PossiblyStale;
-        });
+        self.inner.note_operation_error();
     }
 
     fn note_upload_success(&self, plan: RallyPlan) {
-        self.update_state(|state| {
-            state.plan = Some(plan);
-            state.sync = SyncState::Current;
-        });
+        self.inner.note_upload_success(plan);
     }
 
     fn note_download_success(&self, plan: RallyPlan) {
-        self.update_state(|state| {
-            state.plan = Some(plan);
-            state.sync = SyncState::Current;
-        });
+        self.inner.note_download_success(plan);
     }
 
     fn note_clear_success(&self) {
-        self.update_state(|state| {
-            state.plan = Some(RallyPlan { points: Vec::new() });
-            state.sync = SyncState::Current;
-        });
-    }
-
-    fn update_state(&self, edit: impl FnOnce(&mut RallyState)) {
-        let mut latest = self.inner.latest_state.lock().unwrap();
-        let mut next = latest.clone();
-        edit(&mut next);
-        if *latest != next {
-            *latest = next.clone();
-            let _ = self.inner.state_writer.publish(next);
-        }
+        self.inner.note_clear_success();
     }
 }
 
@@ -444,24 +423,24 @@ fn decode_point3d(
     y: i32,
     z: f32,
 ) -> Result<GeoPoint3d, VehicleError> {
-    let latitude_deg = x as f64 / 1e7;
-    let longitude_deg = y as f64 / 1e7;
+    let latitude_deg = f64::from(x) / 1e7;
+    let longitude_deg = f64::from(y) / 1e7;
 
     match frame {
         WireMissionFrame::Global => Ok(GeoPoint3d::Msl(GeoPoint3dMsl {
             latitude_deg,
             longitude_deg,
-            altitude_msl_m: z as f64,
+            altitude_msl_m: f64::from(z),
         })),
         WireMissionFrame::GlobalRelativeAlt => Ok(GeoPoint3d::RelHome(GeoPoint3dRelHome {
             latitude_deg,
             longitude_deg,
-            relative_alt_m: z as f64,
+            relative_alt_m: f64::from(z),
         })),
         WireMissionFrame::GlobalTerrainAlt => Ok(GeoPoint3d::Terrain(GeoPoint3dTerrain {
             latitude_deg,
             longitude_deg,
-            altitude_terrain_m: z as f64,
+            altitude_terrain_m: f64::from(z),
         })),
         other => Err(rally_decode_error(&format!(
             "unsupported rally frame {:?}",
