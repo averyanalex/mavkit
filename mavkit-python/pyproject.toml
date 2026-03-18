@@ -18,5 +18,5 @@ classifiers = [
 dev = ["maturin>=1.7,<2.0", "ruff>=0.11", "pytest>=8.0"]
 
 [tool.maturin]
-features = ["pyo3/extension-module"]
+features = ["pyo3/extension-module", "test-support"]
 python-source = "."

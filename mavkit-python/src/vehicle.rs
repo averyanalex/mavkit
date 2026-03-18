@@ -1,12 +1,21 @@
+#[cfg(feature = "test-support")]
 use mavkit::dialect;
+#[cfg(feature = "test-support")]
 use mavlink::{
     AsyncMavConnection, MAVLinkMessageRaw, MAVLinkV2MessageRaw, MavHeader, MavlinkVersion,
 };
-use pyo3::exceptions::{PyRuntimeError, PyStopAsyncIteration, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyStopAsyncIteration, PyTypeError};
+#[cfg(feature = "test-support")]
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+#[cfg(feature = "test-support")]
+use std::sync::Mutex;
+#[cfg(feature = "test-support")]
 use std::time::Duration;
+#[cfg(feature = "test-support")]
 use tokio::sync::mpsc;
+#[cfg(feature = "test-support")]
 use tokio::time::timeout;
 
 use crate::ardupilot::PyArduPilotHandle;
@@ -1311,13 +1320,16 @@ impl PyRawHandle {
     }
 }
 
+#[cfg(feature = "test-support")]
 type TestSentMessages = Arc<Mutex<Vec<(MavHeader, dialect::MavMessage)>>>;
 
+#[cfg(feature = "test-support")]
 struct MockConnection {
     recv_rx: tokio::sync::Mutex<mpsc::Receiver<(MavHeader, dialect::MavMessage)>>,
     sent: TestSentMessages,
 }
 
+#[cfg(feature = "test-support")]
 impl MockConnection {
     fn new(rx: mpsc::Receiver<(MavHeader, dialect::MavMessage)>) -> (Self, TestSentMessages) {
         let sent = Arc::new(Mutex::new(Vec::new()));
@@ -1331,6 +1343,7 @@ impl MockConnection {
     }
 }
 
+#[cfg(feature = "test-support")]
 impl AsyncMavConnection<dialect::MavMessage> for MockConnection {
     fn recv<'life0, 'async_trait>(
         &'life0 self,
@@ -1421,6 +1434,7 @@ impl AsyncMavConnection<dialect::MavMessage> for MockConnection {
     }
 }
 
+#[cfg(feature = "test-support")]
 fn default_header() -> MavHeader {
     MavHeader {
         system_id: 1,
@@ -1429,6 +1443,7 @@ fn default_header() -> MavHeader {
     }
 }
 
+#[cfg(feature = "test-support")]
 fn heartbeat_msg() -> dialect::MavMessage {
     dialect::MavMessage::HEARTBEAT(dialect::HEARTBEAT_DATA {
         custom_mode: 7,
@@ -1440,6 +1455,7 @@ fn heartbeat_msg() -> dialect::MavMessage {
     })
 }
 
+#[cfg(feature = "test-support")]
 fn fast_config() -> mavkit::VehicleConfig {
     mavkit::VehicleConfig {
         connect_timeout: Duration::from_millis(150),
@@ -1450,6 +1466,7 @@ fn fast_config() -> mavkit::VehicleConfig {
     }
 }
 
+#[cfg(feature = "test-support")]
 fn command_ack_accepted_msg(command: u16) -> PyResult<dialect::MavMessage> {
     let command = match command {
         400 => dialect::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
@@ -1474,6 +1491,7 @@ fn command_ack_accepted_msg(command: u16) -> PyResult<dialect::MavMessage> {
     ))
 }
 
+#[cfg(feature = "test-support")]
 fn mission_type_msg(mission_type: mavkit::MissionType) -> dialect::MavMissionType {
     match mission_type {
         mavkit::MissionType::Mission => dialect::MavMissionType::MAV_MISSION_TYPE_MISSION,
@@ -1482,6 +1500,7 @@ fn mission_type_msg(mission_type: mavkit::MissionType) -> dialect::MavMissionTyp
     }
 }
 
+#[cfg(feature = "test-support")]
 fn mission_frame_msg(frame: mavkit::mission::commands::MissionFrame) -> dialect::MavFrame {
     match frame {
         mavkit::mission::commands::MissionFrame::Mission => dialect::MavFrame::MAV_FRAME_MISSION,
@@ -1496,6 +1515,7 @@ fn mission_frame_msg(frame: mavkit::mission::commands::MissionFrame) -> dialect:
     }
 }
 
+#[cfg(feature = "test-support")]
 fn mission_request_int_msg(seq: u16, mission_type: mavkit::MissionType) -> dialect::MavMessage {
     dialect::MavMessage::MISSION_REQUEST_INT(dialect::MISSION_REQUEST_INT_DATA {
         seq,
@@ -1505,6 +1525,7 @@ fn mission_request_int_msg(seq: u16, mission_type: mavkit::MissionType) -> diale
     })
 }
 
+#[cfg(feature = "test-support")]
 fn mission_count_msg(count: u16, mission_type: mavkit::MissionType) -> dialect::MavMessage {
     dialect::MavMessage::MISSION_COUNT(dialect::MISSION_COUNT_DATA {
         target_system: 0,
@@ -1515,6 +1536,7 @@ fn mission_count_msg(count: u16, mission_type: mavkit::MissionType) -> dialect::
     })
 }
 
+#[cfg(feature = "test-support")]
 fn mission_ack_accepted_msg_for_type(mission_type: mavkit::MissionType) -> dialect::MavMessage {
     dialect::MavMessage::MISSION_ACK(dialect::MISSION_ACK_DATA {
         target_system: 0,
@@ -1525,6 +1547,7 @@ fn mission_ack_accepted_msg_for_type(mission_type: mavkit::MissionType) -> diale
     })
 }
 
+#[cfg(feature = "test-support")]
 fn mission_item_int_msg(
     item: &mavkit::MissionItem,
     mission_type: mavkit::MissionType,
@@ -1558,6 +1581,7 @@ fn mission_item_int_msg(
     ))
 }
 
+#[cfg(feature = "test-support")]
 fn global_position_int_msg() -> dialect::MavMessage {
     dialect::MavMessage::GLOBAL_POSITION_INT(dialect::GLOBAL_POSITION_INT_DATA {
         time_boot_ms: 42,
@@ -1572,6 +1596,7 @@ fn global_position_int_msg() -> dialect::MavMessage {
     })
 }
 
+#[cfg(feature = "test-support")]
 #[pyclass(name = "_TestVehicleHarness", frozen, skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyTestVehicleHarness {
@@ -1579,6 +1604,7 @@ pub struct PyTestVehicleHarness {
     sent: TestSentMessages,
 }
 
+#[cfg(feature = "test-support")]
 #[pymethods]
 impl PyTestVehicleHarness {
     fn push_command_ack_accepted<'py>(
@@ -1666,6 +1692,7 @@ impl PyTestVehicleHarness {
     }
 }
 
+#[cfg(feature = "test-support")]
 #[pyfunction]
 pub fn _connect_test_vehicle<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
     let (msg_tx, msg_rx) = mpsc::channel(16);

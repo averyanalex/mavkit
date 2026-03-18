@@ -5,6 +5,9 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 publish = false
 
+[features]
+test-support = []
+
 [lib]
 name = "mavkit"
 crate-type = ["cdylib"]

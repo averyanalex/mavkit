@@ -218,6 +218,7 @@ fn mavkit(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<vehicle::PyRallyUploadOp>()?;
     m.add_class::<vehicle::PyRallyDownloadOp>()?;
     m.add_class::<vehicle::PyRallyClearOp>()?;
+    #[cfg(feature = "test-support")]
     m.add_class::<vehicle::PyTestVehicleHarness>()?;
 
     // Vehicle
@@ -254,6 +255,7 @@ fn mavkit(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Free functions (params)
     m.add_function(wrap_pyfunction!(params::format_param_file, m)?)?;
     m.add_function(wrap_pyfunction!(params::parse_param_file, m)?)?;
+    #[cfg(feature = "test-support")]
     m.add_function(wrap_pyfunction!(vehicle::_connect_test_vehicle, m)?)?;
 
     Ok(())

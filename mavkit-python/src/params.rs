@@ -1,4 +1,4 @@
-use pyo3::exceptions::{PyKeyError, PyStopAsyncIteration, PyValueError};
+use pyo3::exceptions::{PyKeyError, PyStopAsyncIteration};
 use pyo3::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
