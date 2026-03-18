@@ -87,7 +87,16 @@ impl From<GeoPoint3d> for GeoPoint2d {
 }
 
 pub(crate) fn quantize_degrees_e7(value: f64) -> i32 {
-    (value * 1e7).round() as i32
+    debug_assert!(
+        value.is_finite(),
+        "quantize_degrees_e7: value must be finite, got {value}"
+    );
+    let scaled = value * 1e7;
+    debug_assert!(
+        (i32::MIN as f64..=i32::MAX as f64).contains(&scaled.round()),
+        "quantize_degrees_e7: {value}° overflows i32 degE7 range"
+    );
+    scaled.round() as i32
 }
 
 pub(crate) fn try_quantize_degrees_e7(value: f64, field: &str) -> Result<i32, VehicleError> {
