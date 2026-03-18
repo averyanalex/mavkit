@@ -67,9 +67,9 @@ impl<'a> ArduCopterGuidedHandle<'a> {
         down_mps: f32,
     ) -> Result<(), VehicleError> {
         self._session.ensure_active()?;
-        let north_mps = finite_f32(north_mps as f64, "north_mps")?;
-        let east_mps = finite_f32(east_mps as f64, "east_mps")?;
-        let down_mps = finite_f32(down_mps as f64, "down_mps")?;
+        let north_mps = finite_f32(f64::from(north_mps), "north_mps")?;
+        let east_mps = finite_f32(f64::from(east_mps), "east_mps")?;
+        let down_mps = finite_f32(f64::from(down_mps), "down_mps")?;
         let (target_system, target_component) = self._session.target();
         let type_mask =
             dialect::PositionTargetTypemask::from_bits_truncate(VELOCITY_ONLY_TYPE_MASK);

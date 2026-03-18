@@ -38,10 +38,10 @@ impl<'a> ArduSubGuidedHandle<'a> {
         yaw_rate_dps: f32,
     ) -> Result<(), VehicleError> {
         self._session.ensure_active()?;
-        let forward_mps = finite_f32(forward_mps as f64, "forward_mps")?;
-        let lateral_mps = finite_f32(lateral_mps as f64, "lateral_mps")?;
-        let vertical_mps = finite_f32(vertical_mps as f64, "vertical_mps")?;
-        let yaw_rate = degrees_to_radians_f32(yaw_rate_dps as f64, "yaw_rate_dps")?;
+        let forward_mps = finite_f32(f64::from(forward_mps), "forward_mps")?;
+        let lateral_mps = finite_f32(f64::from(lateral_mps), "lateral_mps")?;
+        let vertical_mps = finite_f32(f64::from(vertical_mps), "vertical_mps")?;
+        let yaw_rate = degrees_to_radians_f32(f64::from(yaw_rate_dps), "yaw_rate_dps")?;
         let (target_system, target_component) = self._session.target();
         let type_mask =
             dialect::PositionTargetTypemask::from_bits_truncate(VELOCITY_YAW_RATE_TYPE_MASK);

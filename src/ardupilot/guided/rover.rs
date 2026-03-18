@@ -32,8 +32,8 @@ impl<'a> ArduRoverGuidedHandle<'a> {
 
     pub async fn drive(&self, forward_mps: f32, turn_rate_dps: f32) -> Result<(), VehicleError> {
         self._session.ensure_active()?;
-        let forward_mps = finite_f32(forward_mps as f64, "forward_mps")?;
-        let yaw_rate = degrees_to_radians_f32(turn_rate_dps as f64, "turn_rate_dps")?;
+        let forward_mps = finite_f32(f64::from(forward_mps), "forward_mps")?;
+        let yaw_rate = degrees_to_radians_f32(f64::from(turn_rate_dps), "turn_rate_dps")?;
         let (target_system, target_component) = self._session.target();
         let type_mask =
             dialect::PositionTargetTypemask::from_bits_truncate(VELOCITY_YAW_RATE_TYPE_MASK);

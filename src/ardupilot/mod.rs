@@ -249,10 +249,10 @@ impl<'a> ArduPilotHandle<'a> {
         self.send_long(
             dialect::MavCmd::MAV_CMD_DO_MOTOR_TEST,
             [
-                instance as f32,
+                f32::from(instance),
                 0.0,
                 throttle_pct,
-                duration_s as f32,
+                f32::from(duration_s),
                 1.0,
                 0.0,
                 0.0,
@@ -301,7 +301,7 @@ impl<'a> ArduPilotHandle<'a> {
     pub async fn start_mag_cal(&self, compass_mask: u8) -> Result<(), VehicleError> {
         self.send_long_raw(
             MAV_CMD_DO_START_MAG_CAL_ID,
-            [compass_mask as f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [f32::from(compass_mask), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         )
         .await
     }
