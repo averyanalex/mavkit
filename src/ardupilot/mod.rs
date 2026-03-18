@@ -381,8 +381,7 @@ mod tests {
     use crate::state::{self, create_channels};
     use crate::test_support::{MockConnection, SentMessages};
     use crate::vehicle::Vehicle;
-    use mavlink::{MavHeader, MavlinkVersion};
-    use std::sync::{Arc, Mutex};
+    use mavlink::MavHeader;
     use std::time::Duration;
     use tokio::sync::mpsc;
     use tokio::time::timeout;

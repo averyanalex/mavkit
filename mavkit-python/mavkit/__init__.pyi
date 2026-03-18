@@ -2054,6 +2054,7 @@ class VehicleConfig:
         auto_request_home: bool = True,
         command_buffer_size: int = 32,
         connect_timeout_secs: float = 30.0,
+        transfer_timeout_secs: float = 30.0,
         retry_policy: RetryPolicy | None = None,
     ) -> None: ...
     @property
@@ -2066,6 +2067,8 @@ class VehicleConfig:
     def command_buffer_size(self) -> int: ...
     @property
     def connect_timeout_secs(self) -> float: ...
+    @property
+    def transfer_timeout_secs(self) -> float: ...
     @property
     def retry_policy(self) -> RetryPolicy: ...
 

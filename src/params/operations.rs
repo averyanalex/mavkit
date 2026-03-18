@@ -48,6 +48,12 @@ impl<T: Send + 'static> ParamOperationHandle<T> {
     }
 }
 
+impl<T: Send + 'static> Drop for ParamOperationHandle<T> {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+    }
+}
+
 /// Handle for a parameter download-all operation.
 pub type ParamDownloadOp = ParamOperationHandle<crate::params::ParamStore>;
 /// Handle for a parameter write-batch operation.

@@ -348,21 +348,20 @@ impl ModeTracker {
 
         // If we already have a CURRENT_MODE-sourced snapshot for the same mode,
         // preserve it — it carries intended_custom_mode that heartbeat lacks.
-        if let Some(ref last) = self.last_current {
-            if last.custom_mode == custom_mode
-                && last.source == CurrentModeSource::CurrentModeMessage
-            {
-                // Re-publish with updated name in case catalog changed.
-                let refreshed = CurrentMode {
-                    name: catalog_name_or_fallback(&self.catalog, custom_mode),
-                    ..last.clone()
-                };
-                if self.last_current.as_ref() != Some(&refreshed) {
-                    self.last_current = Some(refreshed.clone());
-                    let _ = domain.current_writer.publish(refreshed);
-                }
-                return;
+        if let Some(ref last) = self.last_current
+            && last.custom_mode == custom_mode
+            && last.source == CurrentModeSource::CurrentModeMessage
+        {
+            // Re-publish with updated name in case catalog changed.
+            let refreshed = CurrentMode {
+                name: catalog_name_or_fallback(&self.catalog, custom_mode),
+                ..last.clone()
+            };
+            if self.last_current.as_ref() != Some(&refreshed) {
+                self.last_current = Some(refreshed.clone());
+                let _ = domain.current_writer.publish(refreshed);
             }
+            return;
         }
 
         let next = CurrentMode {

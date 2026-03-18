@@ -76,10 +76,13 @@ pub(super) async fn handle_param_download_all(
     let max_retries = u32::from(ctx.config.retry_policy.max_retries);
     let mut retries = 0u32;
 
+    let overall_deadline = tokio::time::sleep(ctx.config.transfer_timeout);
+    tokio::pin!(overall_deadline);
+
     loop {
-        let timeout = Duration::from_secs(2);
-        let deadline = tokio::time::sleep(timeout);
-        tokio::pin!(deadline);
+        let round_timeout = Duration::from_secs(2);
+        let round_deadline = tokio::time::sleep(round_timeout);
+        tokio::pin!(round_deadline);
         let cancel = ctx.cancel.clone();
 
         let mut got_new = false;
@@ -93,7 +96,18 @@ pub(super) async fn handle_param_download_all(
                         .send_replace(Some(ParamOperationProgress::Cancelled));
                     return Err(VehicleError::Cancelled);
                 }
-                _ = &mut deadline => break,
+                _ = &mut overall_deadline => {
+                    let received = params.len() as u16;
+                    warn!(
+                        "param download timed out after {:?}: received {}/{}",
+                        ctx.config.transfer_timeout, received, expected_count
+                    );
+                    ctx.writers
+                        .param_progress
+                        .send_replace(Some(ParamOperationProgress::Failed));
+                    return Err(VehicleError::Timeout);
+                }
+                _ = &mut round_deadline => break,
                 result = recv_routed(&mut ctx.inbound_rx) => {
                     let (_, msg) = result?;
 
@@ -134,14 +148,14 @@ pub(super) async fn handle_param_download_all(
                                 }));
                         }
 
-                        // Reset deadline on new data
-                        deadline.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(2));
+                        // Reset round deadline on new data
+                        round_deadline.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(2));
                     }
                 }
             }
         }
 
-        // Timeout reached — check if we're done
+        // Round timeout reached — check if we're done
         let received = params.len() as u16;
         let download_complete = count_known
             && received >= expected_count

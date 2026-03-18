@@ -250,7 +250,6 @@ mod tests {
     use crate::config::VehicleConfig;
     use crate::dialect::{self, MavModeFlag, MavState};
     use crate::test_support::{MockConnection, SentMessages};
-    use std::sync::{Arc, Mutex};
     use tokio::sync::mpsc;
     use tokio::time::timeout;
 

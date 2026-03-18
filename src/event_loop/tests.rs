@@ -8,9 +8,8 @@ use super::*;
 use crate::dialect::{self, MavCmd, MavModeFlag, MavState};
 use crate::mission::{MissionFrame, MissionType};
 use crate::state::{self, LinkState, create_channels};
-use crate::test_support::{MockConnection, SentMessages};
-use mavlink::{MavHeader, MavlinkVersion};
-use std::sync::{Arc, Mutex};
+use crate::test_support::MockConnection;
+use mavlink::MavHeader;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 

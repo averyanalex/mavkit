@@ -578,8 +578,8 @@ mod tests {
     use super::*;
     use crate::dialect::{self, MavModeFlag, MavState};
     use crate::test_support::{MockConnection, SentMessages};
-    use mavlink::{MavHeader, MavlinkVersion};
-    use std::sync::{Arc, Mutex};
+    use mavlink::MavHeader;
+    use std::sync::Arc;
     use std::time::Duration;
     use tokio::time::timeout;
 
