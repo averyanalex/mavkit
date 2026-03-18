@@ -1,6 +1,6 @@
 use super::types::{MissionFrame as MissionItemFrame, MissionItem};
 use crate::geo::{
-    quantize_degrees_e7, GeoPoint3d, GeoPoint3dMsl, GeoPoint3dRelHome, GeoPoint3dTerrain,
+    GeoPoint3d, GeoPoint3dMsl, GeoPoint3dRelHome, GeoPoint3dTerrain, quantize_degrees_e7,
 };
 use serde::{Deserialize, Serialize};
 
@@ -101,6 +101,7 @@ impl From<MissionFrame> for MissionItemFrame {
             MissionFrame::GlobalRelativeAlt => MissionItemFrame::GlobalRelativeAltInt,
             MissionFrame::GlobalTerrainAlt => MissionItemFrame::GlobalTerrainAltInt,
             MissionFrame::Mission => MissionItemFrame::Mission,
+            MissionFrame::Other(1) => MissionItemFrame::LocalNed,
             MissionFrame::Other(_) => MissionItemFrame::Other,
         }
     }
@@ -113,7 +114,8 @@ impl From<MissionItemFrame> for MissionFrame {
             MissionItemFrame::GlobalInt => MissionFrame::Global,
             MissionItemFrame::GlobalRelativeAltInt => MissionFrame::GlobalRelativeAlt,
             MissionItemFrame::GlobalTerrainAltInt => MissionFrame::GlobalTerrainAlt,
-            MissionItemFrame::LocalNed | MissionItemFrame::Other => MissionFrame::Other(0),
+            MissionItemFrame::LocalNed => MissionFrame::Other(1),
+            MissionItemFrame::Other => MissionFrame::Other(0),
         }
     }
 }
@@ -566,11 +568,7 @@ fn yaw_direction_from_param(value: f32) -> YawDirection {
 }
 
 fn bool_to_param(value: bool) -> f32 {
-    if value {
-        1.0
-    } else {
-        0.0
-    }
+    if value { 1.0 } else { 0.0 }
 }
 
 fn bool_from_param(value: f32) -> bool {
@@ -670,11 +668,7 @@ fn winch_action_from_param(value: f32) -> WinchAction {
 }
 
 fn engine_allow_disarmed_to_param(value: bool) -> f32 {
-    if value {
-        1.0
-    } else {
-        0.0
-    }
+    if value { 1.0 } else { 0.0 }
 }
 
 fn engine_allow_disarmed_from_param(value: f32) -> bool {

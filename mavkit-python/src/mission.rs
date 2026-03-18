@@ -13,9 +13,8 @@ fn command_frame_from_py(frame: PyMissionFrame) -> mavkit::mission::commands::Mi
         PyMissionFrame::GlobalTerrainAltInt => {
             mavkit::mission::commands::MissionFrame::GlobalTerrainAlt
         }
-        PyMissionFrame::LocalNed | PyMissionFrame::Other => {
-            mavkit::mission::commands::MissionFrame::Other(0)
-        }
+        PyMissionFrame::LocalNed => mavkit::mission::commands::MissionFrame::Other(1),
+        PyMissionFrame::Other => mavkit::mission::commands::MissionFrame::Other(0),
     }
 }
 
@@ -29,6 +28,7 @@ fn py_frame_from_command(frame: mavkit::mission::commands::MissionFrame) -> PyMi
         mavkit::mission::commands::MissionFrame::GlobalTerrainAlt => {
             PyMissionFrame::GlobalTerrainAltInt
         }
+        mavkit::mission::commands::MissionFrame::Other(1) => PyMissionFrame::LocalNed,
         mavkit::mission::commands::MissionFrame::Other(_) => PyMissionFrame::Other,
     }
 }
