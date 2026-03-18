@@ -54,6 +54,11 @@ impl PyVehicleConfig {
                 "connect_timeout_secs must be a finite non-negative number",
             ));
         }
+        if command_buffer_size == 0 {
+            return Err(PyValueError::new_err(
+                "command_buffer_size must be at least 1",
+            ));
+        }
 
         Ok(Self {
             gcs_system_id,

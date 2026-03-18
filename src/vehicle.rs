@@ -257,6 +257,11 @@ impl Vehicle {
         connection: Box<dyn mavlink::AsyncMavConnection<dialect::MavMessage> + Sync + Send>,
         config: VehicleConfig,
     ) -> Result<Self, VehicleError> {
+        if config.command_buffer_size == 0 {
+            return Err(VehicleError::InvalidParameter(
+                "command_buffer_size must be at least 1".to_string(),
+            ));
+        }
         let (writers, stores) = create_channels();
         let cancel = CancellationToken::new();
         let (command_tx, command_rx) = mpsc::channel(config.command_buffer_size);
