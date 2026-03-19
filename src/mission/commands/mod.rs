@@ -702,6 +702,18 @@ pub struct NavWaypoint {
     pub yaw_deg: f32,
 }
 
+impl NavWaypoint {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            position: position.into(),
+            hold_time_s: 0.0,
+            acceptance_radius_m: 0.0,
+            pass_radius_m: 0.0,
+            yaw_deg: 0.0,
+        }
+    }
+}
+
 fn nav_waypoint_to_wire(command: NavWaypoint) -> (MissionFrame, [f32; 4], i32, i32, f32) {
     position_command_to_wire(
         command.position,
@@ -737,6 +749,15 @@ pub struct NavSplineWaypoint {
     pub hold_time_s: f32,
 }
 
+impl NavSplineWaypoint {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            position: position.into(),
+            hold_time_s: 0.0,
+        }
+    }
+}
+
 fn nav_spline_waypoint_to_wire(
     command: NavSplineWaypoint,
 ) -> (MissionFrame, [f32; 4], i32, i32, f32) {
@@ -762,6 +783,16 @@ pub struct NavArcWaypoint {
     pub position: GeoPoint3d,
     pub arc_angle_deg: f32,
     pub direction: LoiterDirection,
+}
+
+impl NavArcWaypoint {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            position: position.into(),
+            arc_angle_deg: 0.0,
+            direction: LoiterDirection::Clockwise,
+        }
+    }
 }
 
 fn nav_arc_waypoint_to_wire(command: NavArcWaypoint) -> (MissionFrame, [f32; 4], i32, i32, f32) {
@@ -797,6 +828,15 @@ pub struct NavTakeoff {
     pub pitch_deg: f32,
 }
 
+impl NavTakeoff {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            position: position.into(),
+            pitch_deg: 0.0,
+        }
+    }
+}
+
 fn nav_takeoff_to_wire(command: NavTakeoff) -> (MissionFrame, [f32; 4], i32, i32, f32) {
     position_command_to_wire(command.position, [command.pitch_deg, 0.0, 0.0, 0.0])
 }
@@ -819,6 +859,15 @@ fn nav_takeoff_from_wire(
 pub struct NavLand {
     pub position: GeoPoint3d,
     pub abort_alt_m: f32,
+}
+
+impl NavLand {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            position: position.into(),
+            abort_alt_m: 0.0,
+        }
+    }
 }
 
 fn nav_land_to_wire(command: NavLand) -> (MissionFrame, [f32; 4], i32, i32, f32) {
@@ -846,6 +895,16 @@ pub struct NavLoiterUnlimited {
     pub position: GeoPoint3d,
     pub radius_m: f32,
     pub direction: LoiterDirection,
+}
+
+impl NavLoiterUnlimited {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            position: position.into(),
+            radius_m: 0.0,
+            direction: LoiterDirection::Clockwise,
+        }
+    }
 }
 
 fn nav_loiter_unlimited_to_wire(
@@ -886,6 +945,18 @@ pub struct NavLoiterTurns {
     pub exit_xtrack: bool,
 }
 
+impl NavLoiterTurns {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            position: position.into(),
+            turns: 0.0,
+            radius_m: 0.0,
+            direction: LoiterDirection::Clockwise,
+            exit_xtrack: false,
+        }
+    }
+}
+
 fn nav_loiter_turns_to_wire(command: NavLoiterTurns) -> (MissionFrame, [f32; 4], i32, i32, f32) {
     position_command_to_wire(
         command.position,
@@ -921,6 +992,17 @@ pub struct NavLoiterTime {
     pub time_s: f32,
     pub direction: LoiterDirection,
     pub exit_xtrack: bool,
+}
+
+impl NavLoiterTime {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            position: position.into(),
+            time_s: 0.0,
+            direction: LoiterDirection::Clockwise,
+            exit_xtrack: false,
+        }
+    }
 }
 
 fn nav_loiter_time_to_wire(command: NavLoiterTime) -> (MissionFrame, [f32; 4], i32, i32, f32) {
@@ -959,6 +1041,17 @@ pub struct NavLoiterToAlt {
     pub exit_xtrack: bool,
 }
 
+impl NavLoiterToAlt {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            position: position.into(),
+            radius_m: 0.0,
+            direction: LoiterDirection::Clockwise,
+            exit_xtrack: false,
+        }
+    }
+}
+
 fn nav_loiter_to_alt_to_wire(command: NavLoiterToAlt) -> (MissionFrame, [f32; 4], i32, i32, f32) {
     position_command_to_wire(
         command.position,
@@ -991,6 +1084,15 @@ fn nav_loiter_to_alt_from_wire(
 pub struct NavContinueAndChangeAlt {
     pub position: GeoPoint3d,
     pub action: AltChangeAction,
+}
+
+impl NavContinueAndChangeAlt {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            position: position.into(),
+            action: AltChangeAction::Neutral,
+        }
+    }
 }
 
 fn nav_continue_and_change_alt_to_wire(
@@ -1117,6 +1219,14 @@ pub struct NavVtolTakeoff {
     pub position: GeoPoint3d,
 }
 
+impl NavVtolTakeoff {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            position: position.into(),
+        }
+    }
+}
+
 fn nav_vtol_takeoff_to_wire(command: NavVtolTakeoff) -> (MissionFrame, [f32; 4], i32, i32, f32) {
     position_command_to_wire(command.position, [0.0, 0.0, 0.0, 0.0])
 }
@@ -1138,6 +1248,15 @@ fn nav_vtol_takeoff_from_wire(
 pub struct NavVtolLand {
     pub position: GeoPoint3d,
     pub options: u8,
+}
+
+impl NavVtolLand {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            position: position.into(),
+            options: 0,
+        }
+    }
 }
 
 fn nav_vtol_land_to_wire(command: NavVtolLand) -> (MissionFrame, [f32; 4], i32, i32, f32) {
@@ -1165,6 +1284,15 @@ fn nav_vtol_land_from_wire(
 pub struct NavPayloadPlace {
     pub position: GeoPoint3d,
     pub max_descent_m: f32,
+}
+
+impl NavPayloadPlace {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            position: position.into(),
+            max_descent_m: 0.0,
+        }
+    }
 }
 
 fn nav_payload_place_to_wire(command: NavPayloadPlace) -> (MissionFrame, [f32; 4], i32, i32, f32) {
@@ -1470,6 +1598,15 @@ pub struct DoSetHome {
     pub use_current: bool,
 }
 
+impl DoSetHome {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            position: position.into(),
+            use_current: false,
+        }
+    }
+}
+
 fn do_set_home_to_wire(command: DoSetHome) -> (MissionFrame, [f32; 4], i32, i32, f32) {
     position_command_to_wire(
         command.position,
@@ -1496,6 +1633,14 @@ pub struct DoLandStart {
     pub position: GeoPoint3d,
 }
 
+impl DoLandStart {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            position: position.into(),
+        }
+    }
+}
+
 fn do_land_start_to_wire(command: DoLandStart) -> (MissionFrame, [f32; 4], i32, i32, f32) {
     position_command_to_wire(command.position, [0.0, 0.0, 0.0, 0.0])
 }
@@ -1516,6 +1661,14 @@ fn do_land_start_from_wire(
 /// Typed mission command API item used by plan serialization and validation.
 pub struct DoReturnPathStart {
     pub position: GeoPoint3d,
+}
+
+impl DoReturnPathStart {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            position: position.into(),
+        }
+    }
 }
 
 fn do_return_path_start_to_wire(
@@ -1542,6 +1695,14 @@ pub struct DoGoAround {
     pub position: GeoPoint3d,
 }
 
+impl DoGoAround {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            position: position.into(),
+        }
+    }
+}
+
 fn do_go_around_to_wire(command: DoGoAround) -> (MissionFrame, [f32; 4], i32, i32, f32) {
     position_command_to_wire(command.position, [0.0, 0.0, 0.0, 0.0])
 }
@@ -1562,6 +1723,14 @@ fn do_go_around_from_wire(
 /// Typed mission command API item used by plan serialization and validation.
 pub struct DoSetRoiLocation {
     pub position: GeoPoint3d,
+}
+
+impl DoSetRoiLocation {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            position: position.into(),
+        }
+    }
 }
 
 fn do_set_roi_location_to_wire(
@@ -1595,6 +1764,15 @@ fn do_set_roi_none_from_wire(frame: MissionFrame, params: [f32; 4], x: i32, y: i
 pub struct DoSetRoi {
     pub mode: u8,
     pub position: GeoPoint3d,
+}
+
+impl DoSetRoi {
+    pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
+        Self {
+            mode: 0,
+            position: position.into(),
+        }
+    }
 }
 
 fn do_set_roi_to_wire(command: DoSetRoi) -> (MissionFrame, [f32; 4], i32, i32, f32) {

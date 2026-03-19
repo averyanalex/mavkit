@@ -4,14 +4,7 @@ use mavkit::{
 };
 
 fn waypoint(lat: f64, lon: f64, alt: f32) -> MissionItem {
-    NavWaypoint {
-        position: GeoPoint3d::rel_home(lat, lon, f64::from(alt)),
-        hold_time_s: 0.0,
-        acceptance_radius_m: 0.0,
-        pass_radius_m: 0.0,
-        yaw_deg: 0.0,
-    }
-    .into()
+    NavWaypoint::from_point(GeoPoint3d::rel_home(lat, lon, f64::from(alt))).into()
 }
 
 #[tokio::main]
