@@ -476,10 +476,7 @@ impl PyParamsHandle {
 impl PyParamsHandle {
     /// Look up a single cached parameter by name from the last download.
     fn get(&self, name: &str) -> Option<PyParam> {
-        self.inner
-            .params()
-            .get(name)
-            .map(|inner| PyParam { inner })
+        self.inner.params().get(name).map(|inner| PyParam { inner })
     }
 
     fn latest(&self) -> Option<PyParamState> {

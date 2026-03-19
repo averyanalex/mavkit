@@ -794,7 +794,10 @@ mod tests {
         let via_shortcut = vehicle.current_mode();
         let via_handle = vehicle.available_modes().current();
         // No data yet — both should be None on a bare vehicle.
-        assert_eq!(via_shortcut.latest().is_none(), via_handle.latest().is_none());
+        assert_eq!(
+            via_shortcut.latest().is_none(),
+            via_handle.latest().is_none()
+        );
     }
 
     #[test]
@@ -1583,7 +1586,10 @@ mod tests {
         let result = op.wait_timeout(Duration::from_millis(10)).await;
         // Without an event loop the oneshot drops → Disconnected, or times out.
         assert!(
-            matches!(result, Err(VehicleError::Timeout(_)) | Err(VehicleError::Disconnected)),
+            matches!(
+                result,
+                Err(VehicleError::Timeout(_)) | Err(VehicleError::Disconnected)
+            ),
             "expected Timeout or Disconnected, got {result:?}"
         );
     }
@@ -1598,6 +1604,9 @@ mod tests {
             result.is_err(),
             "expected error without protocol responses, got {result:?}"
         );
-        vehicle.disconnect().await.expect("disconnect should succeed");
+        vehicle
+            .disconnect()
+            .await
+            .expect("disconnect should succeed");
     }
 }

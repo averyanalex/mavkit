@@ -1,7 +1,7 @@
 use crate::types::{ParamOperationKind, SyncState};
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map;
 use std::collections::HashMap;
+use std::collections::hash_map;
 
 /// MAVLink parameter value type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

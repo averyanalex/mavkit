@@ -92,10 +92,12 @@ mod tests {
         let contents = "BATT_CAPACITY\n";
         let result = parse_param_file(contents);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("expected NAME,VALUE"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("expected NAME,VALUE")
+        );
     }
 
     #[test]

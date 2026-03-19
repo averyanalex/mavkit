@@ -29,10 +29,7 @@ fn mavkit(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         py.get_type::<error::CommandRejectedError>(),
     )?;
     m.add("TimeoutError", py.get_type::<error::TimeoutError>())?;
-    m.add(
-        "UnsupportedError",
-        py.get_type::<error::UnsupportedError>(),
-    )?;
+    m.add("UnsupportedError", py.get_type::<error::UnsupportedError>())?;
     m.add(
         "InvalidParameterError",
         py.get_type::<error::InvalidParameterError>(),

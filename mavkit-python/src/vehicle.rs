@@ -862,7 +862,11 @@ macro_rules! define_progress_op {
                 })
             }
 
-            fn wait_timeout<'py>(&self, py: Python<'py>, timeout_secs: f64) -> PyResult<Bound<'py, PyAny>> {
+            fn wait_timeout<'py>(
+                &self,
+                py: Python<'py>,
+                timeout_secs: f64,
+            ) -> PyResult<Bound<'py, PyAny>> {
                 let inner = self.inner.clone();
                 let timeout = duration_from_secs(timeout_secs)?;
                 let map = $map;
