@@ -1,5 +1,6 @@
 use crate::types::{ParamOperationKind, SyncState};
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map;
 use std::collections::HashMap;
 
 /// MAVLink parameter value type.
@@ -29,6 +30,56 @@ pub struct Param {
 pub struct ParamStore {
     pub params: HashMap<String, Param>,
     pub expected_count: u16,
+}
+
+impl ParamStore {
+    /// Look up a parameter by name.
+    pub fn get(&self, name: &str) -> Option<&Param> {
+        self.params.get(name)
+    }
+
+    /// Check whether a parameter with the given name exists.
+    pub fn contains(&self, name: &str) -> bool {
+        self.params.contains_key(name)
+    }
+
+    /// Number of parameters in the store.
+    pub fn len(&self) -> usize {
+        self.params.len()
+    }
+
+    /// Whether the store is empty.
+    pub fn is_empty(&self) -> bool {
+        self.params.is_empty()
+    }
+
+    /// Iterate over all `(name, param)` pairs.
+    pub fn iter(&self) -> hash_map::Iter<'_, String, Param> {
+        self.params.iter()
+    }
+
+    /// Iterate over all parameter names.
+    pub fn names(&self) -> hash_map::Keys<'_, String, Param> {
+        self.params.keys()
+    }
+}
+
+impl<'a> IntoIterator for &'a ParamStore {
+    type Item = (&'a String, &'a Param);
+    type IntoIter = hash_map::Iter<'a, String, Param>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.params.iter()
+    }
+}
+
+impl IntoIterator for ParamStore {
+    type Item = (String, Param);
+    type IntoIter = hash_map::IntoIter<String, Param>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.params.into_iter()
+    }
 }
 
 /// Result of a single parameter write, with requested and confirmed values.

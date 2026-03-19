@@ -32,11 +32,11 @@ pub fn parse_param_file(contents: &str) -> Result<Vec<(String, f32)>, VehicleErr
 
 /// Format a `ParamStore` as a `.param` file. Parameters sorted alphabetically.
 pub fn format_param_file(store: &ParamStore) -> String {
-    let mut names: Vec<&String> = store.params.keys().collect();
+    let mut names: Vec<&String> = store.names().collect();
     names.sort();
     let mut output = String::new();
     for name in names {
-        if let Some(param) = store.params.get(name) {
+        if let Some(param) = store.get(name) {
             output.push_str(&format!("{},{}\n", param.name, param.value));
         }
     }
@@ -92,12 +92,10 @@ mod tests {
         let contents = "BATT_CAPACITY\n";
         let result = parse_param_file(contents);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("expected NAME,VALUE")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("expected NAME,VALUE"));
     }
 
     #[test]
