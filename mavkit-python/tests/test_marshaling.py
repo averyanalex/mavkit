@@ -151,7 +151,7 @@ class TestEnumRoundtrip:
                 mavkit.MissionFrame.GlobalTerrainAltInt,
                 mavkit.MissionFrame.GlobalTerrainAltInt,
             ),
-            (mavkit.MissionFrame.LocalNed, mavkit.MissionFrame.Other),
+            (mavkit.MissionFrame.LocalNed, mavkit.MissionFrame.LocalNed),
             (mavkit.MissionFrame.Other, mavkit.MissionFrame.Other),
         ]
         for frame, expected in expected_frames:
