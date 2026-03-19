@@ -148,6 +148,18 @@ impl<'a> ParamsHandle<'a> {
         Self { inner }
     }
 
+    /// Look up a single cached parameter by name from the last download.
+    ///
+    /// Returns `None` if no download has completed or if the name is absent.
+    pub fn get(&self, name: &str) -> Option<Param> {
+        self.inner
+            .params
+            .state()
+            .latest()
+            .and_then(|state| state.store)
+            .and_then(|store| store.get(name).cloned())
+    }
+
     pub fn latest(&self) -> Option<ParamState> {
         self.inner.params.state().latest()
     }
