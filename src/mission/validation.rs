@@ -116,8 +116,7 @@ pub fn plans_equivalent(lhs: &MissionPlan, rhs: &MissionPlan, tolerance: Compare
         let (lc, lf, lp, lx, ly, lz) = left.command.clone().into_wire();
         let (rc, rf, rp, rx, ry, rz) = right.command.clone().into_wire();
 
-        left.current == right.current
-            && left.autocontinue == right.autocontinue
+        left.autocontinue == right.autocontinue
             && lc == rc
             && lf == rf
             && lx == rx
