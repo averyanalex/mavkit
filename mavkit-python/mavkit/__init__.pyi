@@ -2057,7 +2057,9 @@ class VehicleConfig:
         gcs_component_id: int = 190,
         auto_request_home: bool = True,
         command_buffer_size: int = 32,
-        connect_timeout_secs: float = 30.0,
+        connect_timeout_secs: float = 10.0,
+        command_timeout_secs: float = 5.0,
+        command_completion_timeout_secs: float = 10.0,
         transfer_timeout_secs: float = 30.0,
         retry_policy: RetryPolicy | None = None,
     ) -> None: ...
@@ -2071,6 +2073,10 @@ class VehicleConfig:
     def command_buffer_size(self) -> int: ...
     @property
     def connect_timeout_secs(self) -> float: ...
+    @property
+    def command_timeout_secs(self) -> float: ...
+    @property
+    def command_completion_timeout_secs(self) -> float: ...
     @property
     def transfer_timeout_secs(self) -> float: ...
     @property
