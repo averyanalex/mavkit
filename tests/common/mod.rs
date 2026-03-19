@@ -190,12 +190,6 @@ pub async fn arm_with_retries(
 }
 
 pub async fn run_roundtrip_case(plan: MissionPlan) {
-    assert_eq!(
-        plan.mission_type,
-        MissionType::Mission,
-        "run_roundtrip_case only supports MissionType::Mission"
-    );
-
     let vehicle = Vehicle::connect_udp(&sitl_bind_addr()).await.unwrap();
 
     let result: Result<(), String> = async {
@@ -271,8 +265,5 @@ pub fn sample_plan_mission(item_count: usize) -> MissionPlan {
         items.push(waypoint(lat, lon, alt));
     }
 
-    MissionPlan {
-        mission_type: MissionType::Mission,
-        items,
-    }
+    MissionPlan { items }
 }

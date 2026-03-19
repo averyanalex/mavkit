@@ -23,7 +23,6 @@ async def main():
         mission = vehicle.mission()
 
         plan = mavkit.MissionPlan(
-            mission_type=mavkit.MissionType.Mission,
             items=[
                 waypoint(47.397742, 8.545594, 25.0),
                 waypoint(47.398100, 8.546100, 30.0),

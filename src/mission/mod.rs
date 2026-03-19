@@ -14,12 +14,13 @@ pub use transfer::{
     MissionTransferMachine, RetryPolicy, TransferDirection, TransferError, TransferEvent,
     TransferPhase, TransferProgress,
 };
+pub(crate) use types::WireMissionPlan;
 pub use types::{
     HomePosition, IssueSeverity, MissionFrame, MissionIssue, MissionItem, MissionPlan,
     MissionState, MissionType,
 };
 pub use validation::{CompareTolerance, normalize_for_compare, plans_equivalent, validate_plan};
-pub use wire::{items_for_wire_upload, plan_from_wire_download};
+pub use wire::{mission_items_for_upload, mission_plan_from_download};
 
 use crate::command::Command;
 use crate::error::VehicleError;
@@ -342,11 +343,18 @@ impl<'a> MissionHandle<'a> {
     }
 
     pub fn upload(&self, plan: MissionPlan) -> Result<MissionUploadOp, VehicleError> {
-        if plan.mission_type != MissionType::Mission {
-            return Err(VehicleError::InvalidParameter(
-                "mission.upload expects MissionType::Mission plan".to_string(),
-            ));
+        let issues = validate_plan(&plan);
+        if let Some(issue) = issues.iter().find(|i| i.severity == IssueSeverity::Error) {
+            return Err(VehicleError::MissionValidation(format!(
+                "{}: {}",
+                issue.code, issue.message
+            )));
         }
+
+        let wire_plan = WireMissionPlan {
+            mission_type: MissionType::Mission,
+            items: plan.items.clone(),
+        };
 
         let domain = self.inner.mission.clone();
         let reservation = domain.begin_operation(
@@ -356,16 +364,18 @@ impl<'a> MissionHandle<'a> {
         )?;
         let protocol = self.inner.mission_protocol.clone();
         let op_id = reservation.id;
-        let uploaded_plan = plan.clone();
 
         Ok(run_domain_operation(
             self.inner.command_tx.clone(),
             self.inner.stores.mission_progress.clone(),
             reservation,
-            |reply| Command::MissionUpload { plan, reply },
+            |reply| Command::MissionUpload {
+                plan: wire_plan,
+                reply,
+            },
             move |result, _| {
                 match &result {
-                    Ok(()) => domain.note_upload_success(uploaded_plan),
+                    Ok(()) => domain.note_upload_success(plan),
                     Err(_) => domain.note_operation_error(),
                 }
                 domain.finish_operation(&protocol, op_id);
@@ -394,7 +404,10 @@ impl<'a> MissionHandle<'a> {
             },
             move |result, _| {
                 let r = match result {
-                    Ok(plan) => {
+                    Ok(wire_plan) => {
+                        let plan = MissionPlan {
+                            items: wire_plan.items,
+                        };
                         domain.note_download_success(plan.clone());
                         Ok(plan)
                     }
@@ -439,12 +452,6 @@ impl<'a> MissionHandle<'a> {
     }
 
     pub fn verify(&self, plan: MissionPlan) -> Result<MissionVerifyOp, VehicleError> {
-        if plan.mission_type != MissionType::Mission {
-            return Err(VehicleError::InvalidParameter(
-                "mission.verify expects MissionType::Mission plan".to_string(),
-            ));
-        }
-
         let domain = self.inner.mission.clone();
         let reservation = domain.begin_operation(
             &self.inner.mission_protocol,
@@ -464,10 +471,13 @@ impl<'a> MissionHandle<'a> {
             },
             move |result, pw| {
                 let r = match result {
-                    Ok(downloaded_plan) => {
+                    Ok(wire_plan) => {
+                        let downloaded = MissionPlan {
+                            items: wire_plan.items,
+                        };
                         let _ = pw.publish(MissionOperationProgress::Verifying);
-                        let matched = verify_plans_match(&plan, &downloaded_plan);
-                        domain.note_download_success(downloaded_plan);
+                        let matched = verify_plans_match(&plan, &downloaded);
+                        domain.note_download_success(downloaded);
                         Ok(matched)
                     }
                     Err(err) => {

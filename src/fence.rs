@@ -4,8 +4,8 @@ use crate::geo::{GeoPoint2d, try_latitude_e7, try_longitude_e7};
 use crate::mission::commands::MissionFrame as WireMissionFrame;
 use crate::mission::operations::MissionOperationHandle;
 use crate::mission::{
-    MissionCommand, MissionItem, MissionPlan, MissionProtocolScope, MissionType,
-    OperationReservation, RawMissionCommand, run_domain_operation,
+    MissionCommand, MissionItem, MissionProtocolScope, MissionType, OperationReservation,
+    RawMissionCommand, WireMissionPlan, run_domain_operation,
 };
 use crate::observation::{ObservationHandle, ObservationSubscription};
 use crate::stored_plan::{StoredPlanDomain, StoredPlanState};
@@ -301,7 +301,7 @@ impl<'a> FenceHandle<'a> {
     }
 }
 
-fn mission_plan_from_fence_plan(plan: &FencePlan) -> Result<MissionPlan, VehicleError> {
+fn mission_plan_from_fence_plan(plan: &FencePlan) -> Result<WireMissionPlan, VehicleError> {
     let mut items = Vec::new();
 
     if let Some(return_point) = &plan.return_point {
@@ -362,13 +362,13 @@ fn mission_plan_from_fence_plan(plan: &FencePlan) -> Result<MissionPlan, Vehicle
         )));
     }
 
-    Ok(MissionPlan {
+    Ok(WireMissionPlan {
         mission_type: MissionType::Fence,
         items,
     })
 }
 
-fn fence_plan_from_mission_plan(plan: MissionPlan) -> Result<FencePlan, VehicleError> {
+fn fence_plan_from_mission_plan(plan: WireMissionPlan) -> Result<FencePlan, VehicleError> {
     if plan.mission_type != MissionType::Fence {
         return Err(VehicleError::InvalidParameter(
             "fence operations expect MissionType::Fence plan".to_string(),

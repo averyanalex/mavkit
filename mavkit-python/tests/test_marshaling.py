@@ -44,23 +44,14 @@ def raw_command(
 
 
 class TestMissionItemBoundaryValues:
-    def test_max_seq(self):
-        item = mavkit.MissionItem(
-            seq=65535,
-            command=raw_command(command=0, frame=mavkit.MissionFrame.GlobalInt),
-        )
-        assert item.seq == 65535
-
     def test_max_command(self):
         item = mavkit.MissionItem(
-            seq=0,
             command=raw_command(command=65535, frame=mavkit.MissionFrame.GlobalInt),
         )
         assert item.command == 65535
 
     def test_large_positive_coordinates(self):
         item = mavkit.MissionItem(
-            seq=0,
             command=nav_waypoint_command(latitude_deg=90.0, longitude_deg=180.0),
         )
         assert item.x == 900000000
@@ -68,7 +59,6 @@ class TestMissionItemBoundaryValues:
 
     def test_large_negative_coordinates(self):
         item = mavkit.MissionItem(
-            seq=0,
             command=nav_waypoint_command(latitude_deg=-90.0, longitude_deg=-180.0),
         )
         assert item.x == -900000000
@@ -76,14 +66,12 @@ class TestMissionItemBoundaryValues:
 
     def test_float_precision_z(self):
         item = mavkit.MissionItem(
-            seq=0,
             command=nav_waypoint_command(altitude_m=123.456),
         )
         assert item.z == pytest.approx(123.456, rel=1e-3)
 
     def test_float_precision_params(self):
         item = mavkit.MissionItem(
-            seq=0,
             command=raw_command(
                 command=16,
                 frame=mavkit.MissionFrame.GlobalInt,
@@ -120,18 +108,15 @@ class TestHomePositionBoundaryValues:
 class TestMissionPlanItemListMarshaling:
     def test_many_items(self):
         items = [
-            mavkit.MissionItem(seq=i, command=nav_waypoint_command())
+            mavkit.MissionItem(command=nav_waypoint_command())
             for i in range(100)
         ]
-        plan = mavkit.MissionPlan(mission_type=mavkit.MissionType.Mission, items=items)
+        plan = mavkit.MissionPlan(items=items)
         assert len(plan) == 100
-        retrieved = plan.items
-        for i, item in enumerate(retrieved):
-            assert item.seq == i
 
     def test_items_are_copies(self):
-        items = [mavkit.MissionItem(seq=0, command=nav_waypoint_command())]
-        plan = mavkit.MissionPlan(mission_type=mavkit.MissionType.Mission, items=items)
+        items = [mavkit.MissionItem(command=nav_waypoint_command())]
+        plan = mavkit.MissionPlan(items=items)
         retrieved = plan.items
         assert len(retrieved) == 1
         retrieved2 = plan.items
@@ -156,26 +141,15 @@ class TestEnumRoundtrip:
         ]
         for frame, expected in expected_frames:
             item = mavkit.MissionItem(
-                seq=0,
                 command=raw_command(command=16, frame=frame),
             )
             assert item.frame == expected
-
-    def test_mission_type_roundtrip(self):
-        for mt in [
-            mavkit.MissionType.Mission,
-            mavkit.MissionType.Fence,
-            mavkit.MissionType.Rally,
-        ]:
-            plan = mavkit.MissionPlan(mission_type=mt, items=[])
-            assert plan.mission_type == mt
 
 
 class TestWireRoundtrip:
     def test_mission_wire_roundtrip(self):
         items = [
             mavkit.MissionItem(
-                seq=0,
                 command=nav_waypoint_command(
                     latitude_deg=47.43,
                     longitude_deg=-122.3,
@@ -184,21 +158,15 @@ class TestWireRoundtrip:
                 ),
             ),
         ]
-        original = mavkit.MissionPlan(
-            mission_type=mavkit.MissionType.Mission,
-            items=items,
-        )
+        original = mavkit.MissionPlan(items=items)
 
-        wire_items = mavkit.items_for_wire_upload(original)
+        wire_items = mavkit.mission_items_for_upload(original)
         assert len(wire_items) == 2
 
-        reconstructed = mavkit.plan_from_wire_download(
-            mavkit.MissionType.Mission, wire_items
-        )
+        reconstructed = mavkit.mission_plan_from_download(wire_items)
 
         assert not hasattr(reconstructed, "home")
         assert len(reconstructed.items) == 1
-        assert reconstructed.items[0].seq == 0
         assert reconstructed.items[0].command == 16
         assert reconstructed.items[0].x == items[0].x
         assert reconstructed.items[0].y == items[0].y
@@ -207,7 +175,7 @@ class TestWireRoundtrip:
 
 class TestTypedMissionCommandMarshaling:
     def test_nav_return_to_launch_marshals_as_fieldless_nav_command(self):
-        item = mavkit.MissionItem(seq=0, command=mavkit.NavReturnToLaunch())
+        item = mavkit.MissionItem(command=mavkit.NavReturnToLaunch())
         assert item.command == 20
         assert item.frame == mavkit.MissionFrame.Mission
         assert item.x == 0
@@ -220,7 +188,7 @@ class TestTypedMissionCommandMarshaling:
             throttle_pct=42.0,
             speed_type="groundspeed",
         )
-        item = mavkit.MissionItem(seq=0, command=command)
+        item = mavkit.MissionItem(command=command)
         assert command.speed_type == "groundspeed"
         assert item.command == 178
         assert item.param1 == pytest.approx(1.0)
@@ -234,7 +202,7 @@ class TestTypedMissionCommandMarshaling:
             direction="clockwise",
             relative=False,
         )
-        item = mavkit.MissionItem(seq=0, command=command)
+        item = mavkit.MissionItem(command=command)
         assert command.direction == "clockwise"
         assert item.command == 115
         assert item.param1 == pytest.approx(30.0)
@@ -244,7 +212,6 @@ class TestTypedMissionCommandMarshaling:
 
     def test_geo_point3d_helper_preserves_frame_semantics(self):
         item = mavkit.MissionItem(
-            seq=0,
             command=mavkit.NavWaypoint.from_point(
                 position=mavkit.GeoPoint3d.rel_home(
                     latitude_deg=-12.34,
@@ -260,7 +227,6 @@ class TestTypedMissionCommandMarshaling:
 
     def test_nav_land_and_nav_loiter_time_support_typed_nav_family(self):
         land_item = mavkit.MissionItem(
-            seq=0,
             command=mavkit.NavLand.from_point(
                 position=mavkit.GeoPoint3d.msl(
                     latitude_deg=47.7,
@@ -275,7 +241,6 @@ class TestTypedMissionCommandMarshaling:
         assert land_item.param1 == pytest.approx(14.0)
 
         loiter_item = mavkit.MissionItem(
-            seq=1,
             command=mavkit.NavLoiterTime(
                 latitude_deg=47.71,
                 longitude_deg=-122.41,
@@ -292,21 +257,19 @@ class TestTypedMissionCommandMarshaling:
 
     def test_nav_guided_enable_and_do_fieldless_command_marshaling(self):
         guided_item = mavkit.MissionItem(
-            seq=0,
             command=mavkit.NavGuidedEnable(enabled=False),
         )
         assert guided_item.command == 92
         assert guided_item.frame == mavkit.MissionFrame.Mission
         assert guided_item.param1 == pytest.approx(0.0)
 
-        roi_none_item = mavkit.MissionItem(seq=1, command=mavkit.DoSetRoiNone())
+        roi_none_item = mavkit.MissionItem(command=mavkit.DoSetRoiNone())
         assert roi_none_item.command == 197
         assert roi_none_item.frame == mavkit.MissionFrame.Mission
         assert roi_none_item.param1 == pytest.approx(0.0)
 
     def test_do_and_condition_representative_typed_marshaling(self):
         set_home_item = mavkit.MissionItem(
-            seq=0,
             command=mavkit.DoSetHome(
                 latitude_deg=47.72,
                 longitude_deg=-122.42,
@@ -320,19 +283,17 @@ class TestTypedMissionCommandMarshaling:
         assert set_home_item.param1 == pytest.approx(1.0)
 
         relay_item = mavkit.MissionItem(
-            seq=1,
             command=mavkit.DoSetRelay(number=5, state=True),
         )
         assert relay_item.command == 181
         assert relay_item.param1 == pytest.approx(5.0)
         assert relay_item.param2 == pytest.approx(1.0)
 
-        delay_item = mavkit.MissionItem(seq=2, command=mavkit.CondDelay(delay_s=6.0))
+        delay_item = mavkit.MissionItem(command=mavkit.CondDelay(delay_s=6.0))
         assert delay_item.command == 112
         assert delay_item.param1 == pytest.approx(6.0)
 
         distance_item = mavkit.MissionItem(
-            seq=3,
             command=mavkit.CondDistance(distance_m=33.0),
         )
         assert distance_item.command == 114
@@ -340,7 +301,6 @@ class TestTypedMissionCommandMarshaling:
 
     def test_extended_nav_family_marshaling(self):
         loiter_turns_item = mavkit.MissionItem(
-            seq=0,
             command=mavkit.NavLoiterTurns(
                 latitude_deg=47.0,
                 longitude_deg=-122.0,
@@ -357,7 +317,6 @@ class TestTypedMissionCommandMarshaling:
         assert loiter_turns_item.param4 == pytest.approx(1.0)
 
         continue_alt_item = mavkit.MissionItem(
-            seq=1,
             command=mavkit.NavContinueAndChangeAlt(
                 latitude_deg=47.1,
                 longitude_deg=-122.1,
@@ -369,7 +328,6 @@ class TestTypedMissionCommandMarshaling:
         assert continue_alt_item.param1 == pytest.approx(2.0)
 
         script_time_item = mavkit.MissionItem(
-            seq=2,
             command=mavkit.NavScriptTime(
                 command=12,
                 timeout_s=3.0,
@@ -386,21 +344,20 @@ class TestTypedMissionCommandMarshaling:
 
     def test_extended_do_family_marshaling(self):
         jump_item = mavkit.MissionItem(
-            seq=0, command=mavkit.DoJump(target_index=4, repeat_count=2)
+            command=mavkit.DoJump(target_index=4, repeat_count=2)
         )
         assert jump_item.command == 177
         assert jump_item.param1 == pytest.approx(4.0)
         assert jump_item.param2 == pytest.approx(2.0)
 
         servo_item = mavkit.MissionItem(
-            seq=1, command=mavkit.DoSetServo(channel=9, pwm=1550)
+            command=mavkit.DoSetServo(channel=9, pwm=1550)
         )
         assert servo_item.command == 183
         assert servo_item.param1 == pytest.approx(9.0)
         assert servo_item.param2 == pytest.approx(1550.0)
 
         roi_item = mavkit.MissionItem(
-            seq=2,
             command=mavkit.DoSetRoi(
                 latitude_deg=47.2,
                 longitude_deg=-122.2,
@@ -412,7 +369,6 @@ class TestTypedMissionCommandMarshaling:
         assert roi_item.param1 == pytest.approx(3.0)
 
         camera_item = mavkit.MissionItem(
-            seq=3,
             command=mavkit.DoSetCameraSource(instance=0, primary=2, secondary=3),
         )
         assert camera_item.command == 534
@@ -421,7 +377,6 @@ class TestTypedMissionCommandMarshaling:
         assert camera_item.param3 == pytest.approx(3.0)
 
         limits_item = mavkit.MissionItem(
-            seq=4,
             command=mavkit.DoGuidedLimits(
                 max_time_s=5.0,
                 min_alt_m=10.0,
@@ -437,7 +392,6 @@ class TestTypedMissionCommandMarshaling:
 
     def test_remaining_do_command_parity_marshaling(self):
         mount_item = mavkit.MissionItem(
-            seq=0,
             command=mavkit.DoMountControl(pitch_deg=1.0, roll_deg=2.0, yaw_deg=3.0),
         )
         assert mount_item.command == 205
@@ -446,7 +400,6 @@ class TestTypedMissionCommandMarshaling:
         assert mount_item.param3 == pytest.approx(3.0)
 
         gimbal_item = mavkit.MissionItem(
-            seq=1,
             command=mavkit.DoGimbalManagerPitchYaw(
                 pitch_deg=4.0,
                 yaw_deg=5.0,
@@ -465,7 +418,6 @@ class TestTypedMissionCommandMarshaling:
         assert gimbal_item.z == pytest.approx(9.0)
 
         trigger_item = mavkit.MissionItem(
-            seq=2,
             command=mavkit.DoCamTriggerDistance(meters=12.5, trigger_now=True),
         )
         assert trigger_item.command == 206
@@ -473,7 +425,6 @@ class TestTypedMissionCommandMarshaling:
         assert trigger_item.param3 == pytest.approx(1.0)
 
         digicam_config_item = mavkit.MissionItem(
-            seq=3,
             command=mavkit.DoDigicamConfigure(
                 shooting_mode=1,
                 shutter_speed=2,
@@ -494,7 +445,6 @@ class TestTypedMissionCommandMarshaling:
         assert digicam_config_item.z == pytest.approx(6.0)
 
         digicam_control_item = mavkit.MissionItem(
-            seq=4,
             command=mavkit.DoDigicamControl(
                 session=1,
                 zoom_pos=2,
@@ -513,21 +463,18 @@ class TestTypedMissionCommandMarshaling:
         assert digicam_control_item.y == 6
 
         fence_item = mavkit.MissionItem(
-            seq=5,
             command=mavkit.DoFenceEnable(action="disable_floor"),
         )
         assert fence_item.command == 207
         assert fence_item.param1 == pytest.approx(2.0)
 
         parachute_item = mavkit.MissionItem(
-            seq=6,
             command=mavkit.DoParachute(action="release"),
         )
         assert parachute_item.command == 208
         assert parachute_item.param1 == pytest.approx(2.0)
 
         gripper_item = mavkit.MissionItem(
-            seq=7,
             command=mavkit.DoGripper(number=2, action="grab"),
         )
         assert gripper_item.command == 211
@@ -535,14 +482,12 @@ class TestTypedMissionCommandMarshaling:
         assert gripper_item.param2 == pytest.approx(1.0)
 
         sprayer_item = mavkit.MissionItem(
-            seq=8,
             command=mavkit.DoSprayer(enabled=True),
         )
         assert sprayer_item.command == 216
         assert sprayer_item.param1 == pytest.approx(1.0)
 
         winch_item = mavkit.MissionItem(
-            seq=9,
             command=mavkit.DoWinch(
                 number=1,
                 action="rate_control",
@@ -557,7 +502,6 @@ class TestTypedMissionCommandMarshaling:
         assert winch_item.param4 == pytest.approx(3.0)
 
         engine_item = mavkit.MissionItem(
-            seq=10,
             command=mavkit.DoEngineControl(
                 start=True,
                 cold_start=False,
@@ -572,14 +516,12 @@ class TestTypedMissionCommandMarshaling:
         assert engine_item.param4 == pytest.approx(1.0)
 
         inverted_item = mavkit.MissionItem(
-            seq=11,
             command=mavkit.DoInvertedFlight(inverted=True),
         )
         assert inverted_item.command == 210
         assert inverted_item.param1 == pytest.approx(1.0)
 
         autotune_item = mavkit.MissionItem(
-            seq=12,
             command=mavkit.DoAutotuneEnable(enabled=True),
         )
         assert autotune_item.command == 212

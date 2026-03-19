@@ -249,8 +249,8 @@ fn mavkit(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(mission::validate_plan, m)?)?;
     m.add_function(wrap_pyfunction!(mission::plans_equivalent, m)?)?;
     m.add_function(wrap_pyfunction!(mission::normalize_for_compare, m)?)?;
-    m.add_function(wrap_pyfunction!(mission::items_for_wire_upload, m)?)?;
-    m.add_function(wrap_pyfunction!(mission::plan_from_wire_download, m)?)?;
+    m.add_function(wrap_pyfunction!(mission::mission_items_for_upload, m)?)?;
+    m.add_function(wrap_pyfunction!(mission::mission_plan_from_download, m)?)?;
 
     // Free functions (params)
     m.add_function(wrap_pyfunction!(params::format_param_file, m)?)?;

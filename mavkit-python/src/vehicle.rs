@@ -1641,8 +1641,8 @@ impl PyTestVehicleHarness {
         plan: &PyMissionPlan,
     ) -> PyResult<Bound<'py, PyAny>> {
         let msg_tx = self.msg_tx.clone();
-        let mission_type = plan.inner.mission_type;
-        let wire_items = mavkit::items_for_wire_upload(&plan.inner);
+        let mission_type = mavkit::MissionType::Mission;
+        let wire_items = mavkit::mission_items_for_upload(&plan.inner);
         let mut responses = Vec::with_capacity(wire_items.len() + 1);
         for seq in 0..wire_items.len() {
             responses.push(mission_request_int_msg(seq as u16, mission_type));
@@ -1666,8 +1666,8 @@ impl PyTestVehicleHarness {
         plan: &PyMissionPlan,
     ) -> PyResult<Bound<'py, PyAny>> {
         let msg_tx = self.msg_tx.clone();
-        let mission_type = plan.inner.mission_type;
-        let wire_items = mavkit::items_for_wire_upload(&plan.inner);
+        let mission_type = mavkit::MissionType::Mission;
+        let wire_items = mavkit::mission_items_for_upload(&plan.inner);
         let wire_item_count: u16 = wire_items.len().try_into().map_err(|_| {
             PyValueError::new_err("plan has too many items for MAVLink mission count")
         })?;

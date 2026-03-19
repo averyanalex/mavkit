@@ -1,6 +1,6 @@
 use crate::dialect::{self, MavCmd, MavFrame};
 use crate::error::VehicleError;
-use crate::mission::{MissionPlan, MissionType};
+use crate::mission::{MissionType, WireMissionPlan};
 use crate::params::{ParamStore, ParamWriteResult};
 use crate::raw::CommandAck;
 use std::time::Instant;
@@ -71,12 +71,12 @@ pub(crate) enum Command {
         reply: oneshot::Sender<Result<Instant, VehicleError>>,
     },
     MissionUpload {
-        plan: MissionPlan,
+        plan: WireMissionPlan,
         reply: oneshot::Sender<Result<(), VehicleError>>,
     },
     MissionDownload {
         mission_type: MissionType,
-        reply: oneshot::Sender<Result<MissionPlan, VehicleError>>,
+        reply: oneshot::Sender<Result<WireMissionPlan, VehicleError>>,
     },
     MissionClear {
         mission_type: MissionType,

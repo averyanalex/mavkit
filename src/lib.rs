@@ -76,7 +76,7 @@ pub use mission::{
     MissionDownloadOp, MissionFrame, MissionIssue, MissionItem, MissionPlan,
     MissionTransferMachine, MissionType, MissionUploadOp, MissionVerifyOp, RawMissionCommand,
     RetryPolicy, TransferDirection, TransferError, TransferEvent, TransferPhase, TransferProgress,
-    items_for_wire_upload, normalize_for_compare, plan_from_wire_download, plans_equivalent,
+    mission_items_for_upload, mission_plan_from_download, normalize_for_compare, plans_equivalent,
     validate_plan,
 };
 

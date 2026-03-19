@@ -1,5 +1,5 @@
 use mavkit::{
-    CompareTolerance, GeoPoint3d, MissionItem, MissionPlan, MissionType, NavWaypoint, Vehicle,
+    CompareTolerance, GeoPoint3d, MissionItem, MissionPlan, NavWaypoint, Vehicle,
     normalize_for_compare, plans_equivalent,
 };
 
@@ -16,7 +16,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mission = vehicle.mission();
 
     let plan = MissionPlan {
-        mission_type: MissionType::Mission,
         items: vec![
             waypoint(47.397742, 8.545594, 25.0),
             waypoint(47.398100, 8.546100, 30.0),

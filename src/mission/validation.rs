@@ -1,5 +1,5 @@
 use super::commands::{DoCommand, MissionCommand, MissionFrame};
-use super::types::{IssueSeverity, MissionIssue, MissionPlan, MissionType};
+use super::types::{IssueSeverity, MissionIssue, MissionPlan};
 
 #[derive(Debug, Clone, Copy)]
 /// Numeric tolerances used when treating near-identical mission items as equivalent after wire roundtrips.
@@ -48,9 +48,8 @@ pub fn validate_plan(plan: &MissionPlan) -> Vec<MissionIssue> {
             }
         }
 
-        if plan.mission_type == MissionType::Mission
-            && let MissionCommand::Do(DoCommand::Jump(jump)) =
-                MissionCommand::from_wire(wire_command, frame, params, x, y, z)
+        if let MissionCommand::Do(DoCommand::Jump(jump)) =
+            MissionCommand::from_wire(wire_command, frame, params, x, y, z)
             && jump.target_index as usize >= plan.items.len()
         {
             issues.push(MissionIssue {
@@ -109,7 +108,7 @@ pub fn normalize_for_compare(plan: &MissionPlan) -> MissionPlan {
 }
 
 pub fn plans_equivalent(lhs: &MissionPlan, rhs: &MissionPlan, tolerance: CompareTolerance) -> bool {
-    if lhs.mission_type != rhs.mission_type || lhs.items.len() != rhs.items.len() {
+    if lhs.items.len() != rhs.items.len() {
         return false;
     }
 
@@ -142,14 +141,13 @@ fn round_to(value: f32, step: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mission::MissionItem;
     use crate::mission::commands::{DoJump, MissionCommand, MissionFrame, RawMissionCommand};
     use crate::mission::test_support::sample_item;
-    use crate::mission::{MissionItem, MissionType};
 
     #[test]
     fn detects_invalid_global_coordinates_and_nan() {
         let plan = MissionPlan {
-            mission_type: MissionType::Mission,
             items: vec![MissionItem {
                 command: MissionCommand::Other(RawMissionCommand {
                     command: 16,
@@ -187,7 +185,6 @@ mod tests {
     #[test]
     fn normalize_and_equivalent_tolerates_small_float_drift() {
         let base = MissionPlan {
-            mission_type: MissionType::Mission,
             items: vec![MissionItem {
                 command: MissionCommand::Other(RawMissionCommand {
                     command: 16,
@@ -224,7 +221,6 @@ mod tests {
     #[test]
     fn detects_out_of_range_do_jump_target() {
         let plan = MissionPlan {
-            mission_type: MissionType::Mission,
             items: vec![MissionItem {
                 command: MissionCommand::from(DoJump {
                     target_index: 1,

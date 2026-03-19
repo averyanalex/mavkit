@@ -1,5 +1,5 @@
 use super::commands::{MissionCommand, MissionFrame, RawMissionCommand};
-use super::types::{MissionItem, MissionPlan, MissionType};
+use super::types::{MissionItem, MissionPlan, MissionType, WireMissionPlan};
 
 fn mission_home_placeholder() -> MissionItem {
     MissionItem {
@@ -39,7 +39,7 @@ fn decode_command_from_wire(command: &MissionCommand) -> MissionCommand {
     MissionCommand::from_wire(raw_command, frame, params, x, y, z)
 }
 
-pub fn items_for_wire_upload(plan: &MissionPlan) -> Vec<MissionItem> {
+pub(crate) fn items_for_wire_upload(plan: &WireMissionPlan) -> Vec<MissionItem> {
     if plan.mission_type != MissionType::Mission {
         return plan.items.clone();
     }
@@ -56,12 +56,12 @@ pub fn items_for_wire_upload(plan: &MissionPlan) -> Vec<MissionItem> {
     wire
 }
 
-pub fn plan_from_wire_download(
+pub(crate) fn plan_from_wire_download(
     mission_type: MissionType,
     wire_items: Vec<MissionItem>,
-) -> MissionPlan {
+) -> WireMissionPlan {
     if mission_type != MissionType::Mission {
-        return MissionPlan {
+        return WireMissionPlan {
             mission_type,
             items: wire_items,
         };
@@ -78,10 +78,25 @@ pub fn plan_from_wire_download(
         })
         .collect();
 
-    MissionPlan {
+    WireMissionPlan {
         mission_type,
         items,
     }
+}
+
+/// Convert a user-facing mission plan to wire items, prepending a home placeholder.
+pub fn mission_items_for_upload(plan: &MissionPlan) -> Vec<MissionItem> {
+    let wire = WireMissionPlan {
+        mission_type: MissionType::Mission,
+        items: plan.items.clone(),
+    };
+    items_for_wire_upload(&wire)
+}
+
+/// Convert downloaded wire items back to a user-facing mission plan, stripping the home item.
+pub fn mission_plan_from_download(wire_items: Vec<MissionItem>) -> MissionPlan {
+    let wire = plan_from_wire_download(MissionType::Mission, wire_items);
+    MissionPlan { items: wire.items }
 }
 
 #[cfg(test)]
@@ -141,7 +156,7 @@ mod tests {
     fn wire_upload_prepends_placeholder_for_mission_type() {
         let first = typed_waypoint_item(47.397_742);
         let second = typed_waypoint_item(47.397_842);
-        let plan = MissionPlan {
+        let plan = WireMissionPlan {
             mission_type: MissionType::Mission,
             items: vec![first, second],
         };
@@ -161,7 +176,7 @@ mod tests {
     #[test]
     fn wire_upload_passthrough_for_fence() {
         let item = typed_waypoint_item(47.397_742);
-        let plan = MissionPlan {
+        let plan = WireMissionPlan {
             mission_type: MissionType::Fence,
             items: vec![item],
         };
@@ -206,7 +221,7 @@ mod tests {
     fn typed_roundtrip() {
         let mut first = typed_waypoint_item(47.397_742);
         first.current = true; // download always marks first item current
-        let plan = MissionPlan {
+        let plan = WireMissionPlan {
             mission_type: MissionType::Mission,
             items: vec![first, typed_jump_item(0)],
         };
@@ -220,7 +235,6 @@ mod tests {
     #[test]
     fn jump_validation() {
         let invalid = MissionPlan {
-            mission_type: MissionType::Mission,
             items: vec![typed_jump_item(1)],
         };
 
@@ -234,7 +248,7 @@ mod tests {
 
     #[test]
     fn empty_mission_upload_has_placeholder_only() {
-        let plan = MissionPlan {
+        let plan = WireMissionPlan {
             mission_type: MissionType::Mission,
             items: Vec::new(),
         };

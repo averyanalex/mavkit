@@ -203,10 +203,10 @@ mod tests {
     use super::*;
     use crate::mission::commands::MissionFrame as CommandFrame;
     use crate::mission::{
-        MissionCommand, MissionItem, MissionPlan, MissionType, RawMissionCommand,
+        MissionCommand, MissionItem, MissionType, RawMissionCommand, WireMissionPlan,
     };
 
-    fn sample_plan(count: usize) -> MissionPlan {
+    fn sample_plan(count: usize) -> WireMissionPlan {
         let items: Vec<MissionItem> = (0..count)
             .map(|_| {
                 MissionCommand::Other(RawMissionCommand {
@@ -223,7 +223,7 @@ mod tests {
                 .into()
             })
             .collect();
-        MissionPlan {
+        WireMissionPlan {
             mission_type: MissionType::Mission,
             items,
         }

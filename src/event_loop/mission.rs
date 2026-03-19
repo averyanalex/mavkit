@@ -2,8 +2,8 @@ use super::{CommandContext, VehicleTarget, get_target, recv_routed, send_message
 use crate::dialect::{self, MavCmd};
 use crate::error::VehicleError;
 use crate::mission::{
-    IssueSeverity, MissionFrame, MissionItem, MissionPlan, MissionTransferMachine, MissionType,
-    TransferPhase, commands, items_for_wire_upload, plan_from_wire_download, validate_plan,
+    MissionFrame, MissionItem, MissionTransferMachine, MissionType, TransferPhase, WireMissionPlan,
+    commands, wire,
 };
 use std::collections::HashSet;
 use std::time::Duration;
@@ -178,19 +178,10 @@ fn send_requested_item_msg(
 
 #[allow(deprecated)]
 pub(super) async fn handle_mission_upload(
-    plan: MissionPlan,
+    plan: WireMissionPlan,
     ctx: &mut CommandContext,
 ) -> Result<(), VehicleError> {
-    // Validate
-    let issues = validate_plan(&plan);
-    if let Some(issue) = issues.iter().find(|i| i.severity == IssueSeverity::Error) {
-        return Err(VehicleError::MissionValidation(format!(
-            "{}: {}",
-            issue.code, issue.message
-        )));
-    }
-
-    let wire_items = items_for_wire_upload(&plan);
+    let wire_items = wire::items_for_wire_upload(&plan);
     let target = get_target(&ctx.vehicle_target)?;
     let mav_mission_type = to_mav_mission_type(plan.mission_type);
 
@@ -348,7 +339,7 @@ where
 pub(super) async fn handle_mission_download(
     mission_type: MissionType,
     ctx: &mut CommandContext,
-) -> Result<MissionPlan, VehicleError> {
+) -> Result<WireMissionPlan, VehicleError> {
     let target = get_target(&ctx.vehicle_target)?;
     let mav_mission_type = to_mav_mission_type(mission_type);
     let mut machine = MissionTransferMachine::new_download(mission_type, ctx.config.retry_policy);
@@ -505,7 +496,7 @@ pub(super) async fn handle_mission_download(
     machine.on_ack_success();
     let _ = ctx.writers.mission_progress.send(Some(machine.progress()));
 
-    Ok(plan_from_wire_download(mission_type, items))
+    Ok(wire::plan_from_wire_download(mission_type, items))
 }
 
 // ---------------------------------------------------------------------------

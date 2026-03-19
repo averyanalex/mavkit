@@ -2927,19 +2927,13 @@ pub struct PyMissionPlan {
 #[pymethods]
 impl PyMissionPlan {
     #[new]
-    #[pyo3(signature = (*, mission_type, items))]
-    fn new(mission_type: PyMissionType, items: Vec<PyMissionItem>) -> Self {
+    #[pyo3(signature = (*, items))]
+    fn new(items: Vec<PyMissionItem>) -> Self {
         Self {
             inner: mavkit::MissionPlan {
-                mission_type: mission_type.into(),
                 items: items.into_iter().map(|i| i.inner).collect(),
             },
         }
-    }
-
-    #[getter]
-    fn mission_type(&self) -> PyMissionType {
-        self.inner.mission_type.into()
     }
 
     #[getter]
@@ -2952,11 +2946,7 @@ impl PyMissionPlan {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "MissionPlan(type={:?}, items={})",
-            self.inner.mission_type,
-            self.inner.items.len()
-        )
+        format!("MissionPlan(items={})", self.inner.items.len())
     }
 
     fn __len__(&self) -> usize {
@@ -3182,20 +3172,17 @@ pub fn normalize_for_compare(plan: &PyMissionPlan) -> PyMissionPlan {
 }
 
 #[pyfunction]
-pub fn items_for_wire_upload(plan: &PyMissionPlan) -> Vec<PyMissionItem> {
-    mavkit::items_for_wire_upload(&plan.inner)
+pub fn mission_items_for_upload(plan: &PyMissionPlan) -> Vec<PyMissionItem> {
+    mavkit::mission_items_for_upload(&plan.inner)
         .into_iter()
         .map(|i| PyMissionItem { inner: i })
         .collect()
 }
 
 #[pyfunction]
-pub fn plan_from_wire_download(
-    mission_type: PyMissionType,
-    items: Vec<PyMissionItem>,
-) -> PyMissionPlan {
+pub fn mission_plan_from_download(items: Vec<PyMissionItem>) -> PyMissionPlan {
     let wire_items: Vec<mavkit::MissionItem> = items.into_iter().map(|i| i.inner).collect();
     PyMissionPlan {
-        inner: mavkit::plan_from_wire_download(mission_type.into(), wire_items),
+        inner: mavkit::mission_plan_from_download(wire_items),
     }
 }

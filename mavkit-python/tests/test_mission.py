@@ -536,9 +536,7 @@ class TestMissionItem:
         assert loiter_item.param3 == pytest.approx(-0.0)
         assert loiter_item.param4 == pytest.approx(1.0)
 
-        guided_item = mavkit.MissionItem(
-            command=mavkit.NavGuidedEnable(enabled=True)
-        )
+        guided_item = mavkit.MissionItem(command=mavkit.NavGuidedEnable(enabled=True))
         assert guided_item.command == 92
         assert guided_item.frame == mavkit.MissionFrame.Mission
         assert guided_item.param1 == pytest.approx(1.0)
@@ -568,9 +566,7 @@ class TestMissionItem:
         assert roi_none_item.command == 197
         assert roi_none_item.frame == mavkit.MissionFrame.Mission
 
-        cond_delay_item = mavkit.MissionItem(
-            command=mavkit.CondDelay(delay_s=4.5)
-        )
+        cond_delay_item = mavkit.MissionItem(command=mavkit.CondDelay(delay_s=4.5))
         assert cond_delay_item.command == 112
         assert cond_delay_item.param1 == pytest.approx(4.5)
 
@@ -607,8 +603,7 @@ class TestHomePosition:
 
 class TestMissionPlan:
     def test_construction_empty(self):
-        plan = mavkit.MissionPlan(mission_type=mavkit.MissionType.Mission, items=[])
-        assert plan.mission_type == mavkit.MissionType.Mission
+        plan = mavkit.MissionPlan(items=[])
         assert not hasattr(plan, "home")
         assert plan.items == []
         assert len(plan) == 0
@@ -618,7 +613,7 @@ class TestMissionPlan:
             mavkit.MissionItem(command=nav_waypoint_command()),
             mavkit.MissionItem(command=nav_takeoff_command()),
         ]
-        plan = mavkit.MissionPlan(mission_type=mavkit.MissionType.Mission, items=items)
+        plan = mavkit.MissionPlan(items=items)
         assert len(plan) == 2
 
     def test_construction_rejects_home(self):
@@ -628,23 +623,14 @@ class TestMissionPlan:
         with pytest.raises(TypeError):
             constructor = getattr(mavkit, "MissionPlan")
             _ = constructor(
-                mission_type=mavkit.MissionType.Mission,
                 items=[],
                 home=home,
             )
 
     def test_repr(self):
-        plan = mavkit.MissionPlan(mission_type=mavkit.MissionType.Mission, items=[])
+        plan = mavkit.MissionPlan(items=[])
         r = repr(plan)
         assert "MissionPlan" in r
-
-    def test_fence_type(self):
-        plan = mavkit.MissionPlan(mission_type=mavkit.MissionType.Fence, items=[])
-        assert plan.mission_type == mavkit.MissionType.Fence
-
-    def test_rally_type(self):
-        plan = mavkit.MissionPlan(mission_type=mavkit.MissionType.Rally, items=[])
-        assert plan.mission_type == mavkit.MissionType.Rally
 
 
 class TestStoredPlanTypes:
@@ -747,7 +733,7 @@ class TestCompareTolerance:
 
 class TestValidatePlan:
     def test_valid_plan_no_issues(self):
-        plan = mavkit.MissionPlan(mission_type=mavkit.MissionType.Mission, items=[])
+        plan = mavkit.MissionPlan(items=[])
         issues = mavkit.validate_plan(plan)
         assert issues == []
 
@@ -756,7 +742,6 @@ class TestValidatePlan:
             command=nav_waypoint_command(latitude_deg=100.0),
         )
         plan = mavkit.MissionPlan(
-            mission_type=mavkit.MissionType.Mission,
             items=[item],
         )
         issues = mavkit.validate_plan(plan)
@@ -772,7 +757,6 @@ class TestValidatePlan:
             command=nav_waypoint_command(longitude_deg=200.0),
         )
         plan = mavkit.MissionPlan(
-            mission_type=mavkit.MissionType.Mission,
             items=[item],
         )
         issues = mavkit.validate_plan(plan)
@@ -784,7 +768,6 @@ class TestValidatePlan:
             command=nav_waypoint_command(latitude_deg=100.0),
         )
         plan = mavkit.MissionPlan(
-            mission_type=mavkit.MissionType.Mission,
             items=[item],
         )
         issues = mavkit.validate_plan(plan)
@@ -796,21 +779,15 @@ class TestValidatePlan:
 class TestPlansEquivalent:
     def test_identical_plans(self):
         items = [mavkit.MissionItem(command=nav_waypoint_command())]
-        plan_a = mavkit.MissionPlan(
-            mission_type=mavkit.MissionType.Mission, items=items
-        )
-        plan_b = mavkit.MissionPlan(
-            mission_type=mavkit.MissionType.Mission, items=items
-        )
+        plan_a = mavkit.MissionPlan(items=items)
+        plan_b = mavkit.MissionPlan(items=items)
         assert mavkit.plans_equivalent(plan_a, plan_b) is True
 
     def test_different_plans(self):
         plan_a = mavkit.MissionPlan(
-            mission_type=mavkit.MissionType.Mission,
             items=[mavkit.MissionItem(command=nav_waypoint_command())],
         )
         plan_b = mavkit.MissionPlan(
-            mission_type=mavkit.MissionType.Mission,
             items=[mavkit.MissionItem(command=nav_takeoff_command())],
         )
         assert mavkit.plans_equivalent(plan_a, plan_b) is False
@@ -818,21 +795,19 @@ class TestPlansEquivalent:
     def test_with_tolerance(self):
         tol = mavkit.CompareTolerance(param_epsilon=0.01, altitude_epsilon_m=1.0)
         plan = mavkit.MissionPlan(
-            mission_type=mavkit.MissionType.Mission,
             items=[mavkit.MissionItem(command=nav_waypoint_command())],
         )
         assert mavkit.plans_equivalent(plan, plan, tolerance=tol) is True
 
     def test_empty_plans(self):
-        plan_a = mavkit.MissionPlan(mission_type=mavkit.MissionType.Mission, items=[])
-        plan_b = mavkit.MissionPlan(mission_type=mavkit.MissionType.Mission, items=[])
+        plan_a = mavkit.MissionPlan(items=[])
+        plan_b = mavkit.MissionPlan(items=[])
         assert mavkit.plans_equivalent(plan_a, plan_b) is True
 
 
 class TestNormalizeForCompare:
     def test_returns_plan(self):
         plan = mavkit.MissionPlan(
-            mission_type=mavkit.MissionType.Mission,
             items=[mavkit.MissionItem(command=nav_waypoint_command())],
         )
         normalized = mavkit.normalize_for_compare(plan)
@@ -843,21 +818,15 @@ class TestNormalizeForCompare:
 class TestWireUploadDownload:
     def test_mission_upload_prepends_placeholder_item(self):
         items = [mavkit.MissionItem(command=nav_waypoint_command())]
-        plan = mavkit.MissionPlan(
-            mission_type=mavkit.MissionType.Mission,
-            items=items,
-        )
-        wire_items = mavkit.items_for_wire_upload(plan)
+        plan = mavkit.MissionPlan(items=items)
+        wire_items = mavkit.mission_items_for_upload(plan)
         assert len(wire_items) == 2
         assert wire_items[0].command == 16
         assert wire_items[0].frame == mavkit.MissionFrame.GlobalInt
 
     def test_mission_upload_empty_items_still_emit_placeholder(self):
-        plan = mavkit.MissionPlan(
-            mission_type=mavkit.MissionType.Mission,
-            items=[],
-        )
-        wire_items = mavkit.items_for_wire_upload(plan)
+        plan = mavkit.MissionPlan(items=[])
+        wire_items = mavkit.mission_items_for_upload(plan)
         assert len(wire_items) == 1
         assert wire_items[0].command == 16
 
@@ -866,44 +835,9 @@ class TestWireUploadDownload:
             mavkit.MissionItem(command=nav_waypoint_command()),
             mavkit.MissionItem(command=nav_takeoff_command()),
         ]
-        plan = mavkit.MissionPlan(
-            mission_type=mavkit.MissionType.Mission,
-            items=items,
-        )
-        wire_items = mavkit.items_for_wire_upload(plan)
+        plan = mavkit.MissionPlan(items=items)
+        wire_items = mavkit.mission_items_for_upload(plan)
         assert len(wire_items) == 3
-
-    def test_fence_upload_passthrough(self):
-        items = [
-            mavkit.MissionItem(
-                command=raw_command(
-                    command=5001,
-                    frame=mavkit.MissionFrame.GlobalInt,
-                ),
-            ),
-            mavkit.MissionItem(
-                command=raw_command(
-                    command=5001,
-                    frame=mavkit.MissionFrame.GlobalInt,
-                ),
-            ),
-        ]
-        plan = mavkit.MissionPlan(mission_type=mavkit.MissionType.Fence, items=items)
-        wire_items = mavkit.items_for_wire_upload(plan)
-        assert len(wire_items) == 2
-
-    def test_rally_upload_passthrough(self):
-        items = [
-            mavkit.MissionItem(
-                command=raw_command(
-                    command=5100,
-                    frame=mavkit.MissionFrame.GlobalInt,
-                ),
-            ),
-        ]
-        plan = mavkit.MissionPlan(mission_type=mavkit.MissionType.Rally, items=items)
-        wire_items = mavkit.items_for_wire_upload(plan)
-        assert len(wire_items) == 1
 
     def test_download_strips_hidden_home_and_resequences(self):
         wire_items = [
@@ -923,25 +857,12 @@ class TestWireUploadDownload:
                 ),
             ),
         ]
-        plan = mavkit.plan_from_wire_download(mavkit.MissionType.Mission, wire_items)
+        plan = mavkit.mission_plan_from_download(wire_items)
         assert not hasattr(plan, "home")
         assert len(plan.items) == 1
         assert plan.items[0].current is True
 
-    def test_download_fence_passthrough(self):
-        wire_items = [
-            mavkit.MissionItem(
-                command=raw_command(
-                    command=5001,
-                    frame=mavkit.MissionFrame.GlobalInt,
-                ),
-            ),
-        ]
-        plan = mavkit.plan_from_wire_download(mavkit.MissionType.Fence, wire_items)
-        assert not hasattr(plan, "home")
-        assert len(plan.items) == 1
-
     def test_download_empty_items(self):
-        plan = mavkit.plan_from_wire_download(mavkit.MissionType.Mission, [])
+        plan = mavkit.mission_plan_from_download([])
         assert not hasattr(plan, "home")
         assert len(plan.items) == 0

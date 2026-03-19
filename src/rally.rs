@@ -7,8 +7,8 @@ use crate::geo::{
 use crate::mission::commands::MissionFrame as WireMissionFrame;
 use crate::mission::operations::MissionOperationHandle;
 use crate::mission::{
-    MissionCommand, MissionItem, MissionPlan, MissionProtocolScope, MissionType,
-    OperationReservation, RawMissionCommand, run_domain_operation,
+    MissionCommand, MissionItem, MissionProtocolScope, MissionType, OperationReservation,
+    RawMissionCommand, WireMissionPlan, run_domain_operation,
 };
 use crate::observation::{ObservationHandle, ObservationSubscription};
 use crate::stored_plan::{StoredPlanDomain, StoredPlanState};
@@ -234,7 +234,7 @@ impl<'a> RallyHandle<'a> {
     }
 }
 
-fn mission_plan_from_rally_plan(plan: &RallyPlan) -> Result<MissionPlan, VehicleError> {
+fn mission_plan_from_rally_plan(plan: &RallyPlan) -> Result<WireMissionPlan, VehicleError> {
     if plan.points.len() > u16::MAX as usize {
         return Err(VehicleError::InvalidParameter(format!(
             "rally plan has {} points, exceeding the {} item protocol limit",
@@ -249,13 +249,13 @@ fn mission_plan_from_rally_plan(plan: &RallyPlan) -> Result<MissionPlan, Vehicle
         .map(rally_item)
         .collect::<Result<_, _>>()?;
 
-    Ok(MissionPlan {
+    Ok(WireMissionPlan {
         mission_type: MissionType::Rally,
         items,
     })
 }
 
-fn rally_plan_from_mission_plan(plan: MissionPlan) -> Result<RallyPlan, VehicleError> {
+fn rally_plan_from_mission_plan(plan: WireMissionPlan) -> Result<RallyPlan, VehicleError> {
     if plan.mission_type != MissionType::Rally {
         return Err(VehicleError::InvalidParameter(
             "rally operations expect MissionType::Rally plan".to_string(),
