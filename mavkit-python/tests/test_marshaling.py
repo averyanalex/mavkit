@@ -107,10 +107,7 @@ class TestHomePositionBoundaryValues:
 
 class TestMissionPlanItemListMarshaling:
     def test_many_items(self):
-        items = [
-            mavkit.MissionItem(command=nav_waypoint_command())
-            for i in range(100)
-        ]
+        items = [mavkit.MissionItem(command=nav_waypoint_command()) for i in range(100)]
         plan = mavkit.MissionPlan(items=items)
         assert len(plan) == 100
 
@@ -350,9 +347,7 @@ class TestTypedMissionCommandMarshaling:
         assert jump_item.param1 == pytest.approx(4.0)
         assert jump_item.param2 == pytest.approx(2.0)
 
-        servo_item = mavkit.MissionItem(
-            command=mavkit.DoSetServo(channel=9, pwm=1550)
-        )
+        servo_item = mavkit.MissionItem(command=mavkit.DoSetServo(channel=9, pwm=1550))
         assert servo_item.command == 183
         assert servo_item.param1 == pytest.approx(9.0)
         assert servo_item.param2 == pytest.approx(1550.0)
