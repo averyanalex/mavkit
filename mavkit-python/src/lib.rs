@@ -17,8 +17,40 @@ use pyo3::prelude::*;
 
 #[pymodule]
 fn mavkit(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // Exception
+    // Exceptions — MavkitError is the base; subclasses allow granular catching
     m.add("MavkitError", py.get_type::<error::MavkitError>())?;
+    m.add("ConnectionError", py.get_type::<error::ConnectionError>())?;
+    m.add(
+        "DisconnectedError",
+        py.get_type::<error::DisconnectedError>(),
+    )?;
+    m.add(
+        "CommandRejectedError",
+        py.get_type::<error::CommandRejectedError>(),
+    )?;
+    m.add("TimeoutError", py.get_type::<error::TimeoutError>())?;
+    m.add(
+        "UnsupportedError",
+        py.get_type::<error::UnsupportedError>(),
+    )?;
+    m.add(
+        "InvalidParameterError",
+        py.get_type::<error::InvalidParameterError>(),
+    )?;
+    m.add(
+        "ModeNotAvailableError",
+        py.get_type::<error::ModeNotAvailableError>(),
+    )?;
+    m.add(
+        "TransferFailedError",
+        py.get_type::<error::TransferFailedError>(),
+    )?;
+    m.add(
+        "OperationConflictError",
+        py.get_type::<error::OperationConflictError>(),
+    )?;
+    m.add("CancelledError", py.get_type::<error::CancelledError>())?;
+    m.add("ValidationError", py.get_type::<error::ValidationError>())?;
 
     // Enums
     m.add_class::<enums::PySystemStatus>()?;
