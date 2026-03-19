@@ -95,6 +95,36 @@ pub struct MissionPlan {
     pub items: Vec<MissionItem>,
 }
 
+impl MissionPlan {
+    /// Create a plan from a list of mission items.
+    pub fn new(items: Vec<MissionItem>) -> Self {
+        Self { items }
+    }
+
+    /// Create an empty plan with no items.
+    pub fn empty() -> Self {
+        Self { items: Vec::new() }
+    }
+
+    /// Number of items in the plan.
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    /// Whether the plan has no items.
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+}
+
+impl FromIterator<MissionItem> for MissionPlan {
+    fn from_iter<I: IntoIterator<Item = MissionItem>>(iter: I) -> Self {
+        Self {
+            items: iter.into_iter().collect(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Internal wire-level mission plan that carries the MAVLink mission type.
 /// Used by the event loop and fence/rally domain converters.
@@ -129,7 +159,7 @@ impl StoredPlanState for MissionState {
     }
 
     fn cleared_plan() -> Self::Plan {
-        MissionPlan { items: Vec::new() }
+        MissionPlan::empty()
     }
 }
 
