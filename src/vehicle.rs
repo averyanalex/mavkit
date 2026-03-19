@@ -5,7 +5,7 @@ use crate::dialect;
 use crate::error::VehicleError;
 use crate::event_loop::{InitManager, run_event_loop_with_init};
 use crate::fence::FenceDomain;
-use crate::geo::{GeoPoint3dMsl, quantize_degrees_e7};
+use crate::geo::{GeoPoint3dMsl, try_quantize_degrees_e7};
 use crate::info::{InfoDomain, InfoHandle};
 use crate::mission::{MissionDomain, MissionProtocolScope, send_domain_command};
 use crate::modes::{ModeDomain, ModesHandle, mode_number};
@@ -36,17 +36,18 @@ struct WireNormalizedGeo {
 }
 
 impl WireNormalizedGeo {
-    fn from_point(point: &GeoPoint3dMsl) -> Self {
-        Self {
-            latitude_e7: quantize_degrees_e7(point.latitude_deg),
-            longitude_e7: quantize_degrees_e7(point.longitude_deg),
+    fn from_point(point: &GeoPoint3dMsl) -> Result<Self, VehicleError> {
+        Ok(Self {
+            latitude_e7: try_quantize_degrees_e7(point.latitude_deg, "latitude_deg")?,
+            longitude_e7: try_quantize_degrees_e7(point.longitude_deg, "longitude_deg")?,
             altitude_mm: quantize_meters_mm(point.altitude_msl_m),
-        }
+        })
     }
 
     fn matches(self, observed: &GeoPoint3dMsl) -> bool {
-        self.latitude_e7 == quantize_degrees_e7(observed.latitude_deg)
-            && self.longitude_e7 == quantize_degrees_e7(observed.longitude_deg)
+        // observed comes from wire-decoded data — valid by construction.
+        self.latitude_e7 == crate::geo::quantize_degrees_e7(observed.latitude_deg)
+            && self.longitude_e7 == crate::geo::quantize_degrees_e7(observed.longitude_deg)
             && self.altitude_mm == quantize_meters_mm(observed.altitude_msl_m)
     }
 }
@@ -452,6 +453,8 @@ impl Vehicle {
     }
 
     pub async fn set_home(&self, position: GeoPoint3dMsl) -> Result<(), VehicleError> {
+        let lat_e7 = try_quantize_degrees_e7(position.latitude_deg, "latitude_deg")?;
+        let lon_e7 = try_quantize_degrees_e7(position.longitude_deg, "longitude_deg")?;
         self.send_command(|reply| Command::RawCommandInt {
             payload: crate::command::RawCommandIntPayload {
                 command: dialect::MavCmd::MAV_CMD_DO_SET_HOME,
@@ -459,8 +462,8 @@ impl Vehicle {
                 current: 0,
                 autocontinue: 0,
                 params: [0.0, 0.0, 0.0, 0.0],
-                x: quantize_degrees_e7(position.latitude_deg),
-                y: quantize_degrees_e7(position.longitude_deg),
+                x: lat_e7,
+                y: lon_e7,
                 // Altitude narrowed to f32 at wire boundary (MAVLink z field).
                 z: position.altitude_msl_m as f32,
             },
@@ -481,7 +484,7 @@ impl Vehicle {
     }
 
     pub async fn set_origin(&self, origin: GeoPoint3dMsl) -> Result<(), VehicleError> {
-        let normalized = WireNormalizedGeo::from_point(&origin);
+        let normalized = WireNormalizedGeo::from_point(&origin)?;
         let origin_handle = self.telemetry().origin();
         let mut subscription = origin_handle.subscribe();
 
@@ -578,6 +581,7 @@ impl Vehicle {
 mod tests {
     use super::*;
     use crate::dialect::{self, MavModeFlag, MavState};
+    use crate::geo::quantize_degrees_e7;
     use crate::test_support::{MockConnection, SentMessages};
     use mavlink::MavHeader;
     use std::sync::Arc;

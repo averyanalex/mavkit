@@ -1,7 +1,7 @@
 use crate::command::Command;
 use crate::error::VehicleError;
 use crate::geo::{
-    GeoPoint3d, GeoPoint3dMsl, GeoPoint3dRelHome, GeoPoint3dTerrain, quantize_degrees_e7,
+    GeoPoint3d, GeoPoint3dMsl, GeoPoint3dRelHome, GeoPoint3dTerrain, try_quantize_degrees_e7,
 };
 use crate::mission::commands::MissionFrame as WireMissionFrame;
 use crate::mission::operations::MissionOperationHandle;
@@ -242,12 +242,12 @@ fn mission_plan_from_rally_plan(plan: &RallyPlan) -> Result<MissionPlan, Vehicle
         )));
     }
 
-    let items = plan
+    let items: Vec<MissionItem> = plan
         .points
         .iter()
         .enumerate()
         .map(|(index, point)| rally_item(index as u16, point))
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     Ok(MissionPlan {
         mission_type: MissionType::Rally,
@@ -270,10 +270,10 @@ fn rally_plan_from_mission_plan(plan: MissionPlan) -> Result<RallyPlan, VehicleE
     Ok(RallyPlan { points })
 }
 
-fn rally_item(seq: u16, point: &GeoPoint3d) -> MissionItem {
-    let (frame, x, y, z) = point_to_wire(point);
+fn rally_item(seq: u16, point: &GeoPoint3d) -> Result<MissionItem, VehicleError> {
+    let (frame, x, y, z) = point_to_wire(point)?;
 
-    MissionItem {
+    Ok(MissionItem {
         seq,
         command: MissionCommand::Other(RawMissionCommand {
             command: MAV_CMD_NAV_RALLY_POINT,
@@ -288,29 +288,29 @@ fn rally_item(seq: u16, point: &GeoPoint3d) -> MissionItem {
         }),
         current: false,
         autocontinue: true,
-    }
+    })
 }
 
-fn point_to_wire(point: &GeoPoint3d) -> (WireMissionFrame, i32, i32, f32) {
+fn point_to_wire(point: &GeoPoint3d) -> Result<(WireMissionFrame, i32, i32, f32), VehicleError> {
     match point {
-        GeoPoint3d::Msl(point) => (
+        GeoPoint3d::Msl(point) => Ok((
             WireMissionFrame::Global,
-            quantize_degrees_e7(point.latitude_deg),
-            quantize_degrees_e7(point.longitude_deg),
+            try_quantize_degrees_e7(point.latitude_deg, "rally latitude")?,
+            try_quantize_degrees_e7(point.longitude_deg, "rally longitude")?,
             point.altitude_msl_m as f32,
-        ),
-        GeoPoint3d::RelHome(point) => (
+        )),
+        GeoPoint3d::RelHome(point) => Ok((
             WireMissionFrame::GlobalRelativeAlt,
-            quantize_degrees_e7(point.latitude_deg),
-            quantize_degrees_e7(point.longitude_deg),
+            try_quantize_degrees_e7(point.latitude_deg, "rally latitude")?,
+            try_quantize_degrees_e7(point.longitude_deg, "rally longitude")?,
             point.relative_alt_m as f32,
-        ),
-        GeoPoint3d::Terrain(point) => (
+        )),
+        GeoPoint3d::Terrain(point) => Ok((
             WireMissionFrame::GlobalTerrainAlt,
-            quantize_degrees_e7(point.latitude_deg),
-            quantize_degrees_e7(point.longitude_deg),
+            try_quantize_degrees_e7(point.latitude_deg, "rally latitude")?,
+            try_quantize_degrees_e7(point.longitude_deg, "rally longitude")?,
             point.altitude_terrain_m as f32,
-        ),
+        )),
     }
 }
 

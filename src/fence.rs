@@ -1,6 +1,6 @@
 use crate::command::Command;
 use crate::error::VehicleError;
-use crate::geo::{GeoPoint2d, quantize_degrees_e7};
+use crate::geo::{GeoPoint2d, try_quantize_degrees_e7};
 use crate::mission::commands::MissionFrame as WireMissionFrame;
 use crate::mission::operations::MissionOperationHandle;
 use crate::mission::{
@@ -311,7 +311,7 @@ fn mission_plan_from_fence_plan(plan: &FencePlan) -> Result<MissionPlan, Vehicle
             0.0,
             0.0,
             return_point,
-        ));
+        )?);
     }
 
     for region in &plan.regions {
@@ -323,7 +323,7 @@ fn mission_plan_from_fence_plan(plan: &FencePlan) -> Result<MissionPlan, Vehicle
                     MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION,
                     &region.vertices,
                     region.inclusion_group,
-                );
+                )?;
             }
             FenceRegion::ExclusionPolygon(region) => {
                 validate_polygon("exclusion polygon", &region.vertices)?;
@@ -332,7 +332,7 @@ fn mission_plan_from_fence_plan(plan: &FencePlan) -> Result<MissionPlan, Vehicle
                     MAV_CMD_NAV_FENCE_POLYGON_VERTEX_EXCLUSION,
                     &region.vertices,
                     0,
-                );
+                )?;
             }
             FenceRegion::InclusionCircle(region) => {
                 validate_radius("inclusion circle", region.radius_m)?;
@@ -342,7 +342,7 @@ fn mission_plan_from_fence_plan(plan: &FencePlan) -> Result<MissionPlan, Vehicle
                     region.radius_m,
                     f32::from(region.inclusion_group),
                     &region.center,
-                ));
+                )?);
             }
             FenceRegion::ExclusionCircle(region) => {
                 validate_radius("exclusion circle", region.radius_m)?;
@@ -352,7 +352,7 @@ fn mission_plan_from_fence_plan(plan: &FencePlan) -> Result<MissionPlan, Vehicle
                     region.radius_m,
                     0.0,
                     &region.center,
-                ));
+                )?);
             }
         }
     }
@@ -504,7 +504,7 @@ fn append_polygon_items(
     command: u16,
     vertices: &[GeoPoint2d],
     param2: u8,
-) {
+) -> Result<(), VehicleError> {
     let vertex_count = vertices.len() as f32;
     for vertex in vertices {
         items.push(fence_item(
@@ -513,12 +513,19 @@ fn append_polygon_items(
             vertex_count,
             f32::from(param2),
             vertex,
-        ));
+        )?);
     }
+    Ok(())
 }
 
-fn fence_item(seq: u16, command: u16, param1: f32, param2: f32, point: &GeoPoint2d) -> MissionItem {
-    MissionItem {
+fn fence_item(
+    seq: u16,
+    command: u16,
+    param1: f32,
+    param2: f32,
+    point: &GeoPoint2d,
+) -> Result<MissionItem, VehicleError> {
+    Ok(MissionItem {
         seq,
         command: MissionCommand::Other(RawMissionCommand {
             command,
@@ -527,13 +534,13 @@ fn fence_item(seq: u16, command: u16, param1: f32, param2: f32, point: &GeoPoint
             param2,
             param3: 0.0,
             param4: 0.0,
-            x: quantize_degrees_e7(point.latitude_deg),
-            y: quantize_degrees_e7(point.longitude_deg),
+            x: try_quantize_degrees_e7(point.latitude_deg, "fence latitude")?,
+            y: try_quantize_degrees_e7(point.longitude_deg, "fence longitude")?,
             z: 0.0,
         }),
         current: false,
         autocontinue: true,
-    }
+    })
 }
 
 fn decode_point2d(frame: WireMissionFrame, x: i32, y: i32) -> Result<GeoPoint2d, VehicleError> {
