@@ -35,15 +35,19 @@ struct WireNormalizedGeo {
     altitude_mm: i32,
 }
 
-impl WireNormalizedGeo {
-    fn from_point(point: &GeoPoint3dMsl) -> Result<Self, VehicleError> {
+impl TryFrom<&GeoPoint3dMsl> for WireNormalizedGeo {
+    type Error = VehicleError;
+
+    fn try_from(point: &GeoPoint3dMsl) -> Result<Self, Self::Error> {
         Ok(Self {
             latitude_e7: try_quantize_degrees_e7(point.latitude_deg, "latitude_deg")?,
             longitude_e7: try_quantize_degrees_e7(point.longitude_deg, "longitude_deg")?,
             altitude_mm: quantize_meters_mm(point.altitude_msl_m),
         })
     }
+}
 
+impl WireNormalizedGeo {
     fn matches(self, observed: &GeoPoint3dMsl) -> bool {
         // observed comes from wire-decoded data — valid by construction.
         self.latitude_e7 == crate::geo::quantize_degrees_e7(observed.latitude_deg)
@@ -484,7 +488,7 @@ impl Vehicle {
     }
 
     pub async fn set_origin(&self, origin: GeoPoint3dMsl) -> Result<(), VehicleError> {
-        let normalized = WireNormalizedGeo::from_point(&origin)?;
+        let normalized = WireNormalizedGeo::try_from(&origin)?;
         let origin_handle = self.telemetry().origin();
         let mut subscription = origin_handle.subscribe();
 
