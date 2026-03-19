@@ -1,8 +1,8 @@
 use mavkit::mission::MissionState;
 use mavkit::mission::commands::NavWaypoint;
 use mavkit::{
-    CompareTolerance, GeoPoint3d, GeoPoint3dRelHome, MissionCommand, MissionItem, MissionPlan,
-    MissionType, Vehicle, VehicleError, normalize_for_compare, plans_equivalent,
+    CompareTolerance, GeoPoint3d, GeoPoint3dRelHome, MissionItem, MissionPlan, MissionType,
+    Vehicle, VehicleError, normalize_for_compare, plans_equivalent,
 };
 use std::time::Duration;
 
@@ -257,21 +257,18 @@ pub async fn run_roundtrip_case(plan: MissionPlan) {
 }
 
 pub fn waypoint(lat: f64, lon: f64, alt: f32) -> MissionItem {
-    MissionItem {
-        command: MissionCommand::from(NavWaypoint {
-            position: GeoPoint3d::RelHome(GeoPoint3dRelHome {
-                latitude_deg: lat,
-                longitude_deg: lon,
-                relative_alt_m: f64::from(alt),
-            }),
-            hold_time_s: 0.0,
-            acceptance_radius_m: 0.0,
-            pass_radius_m: 0.0,
-            yaw_deg: 0.0,
+    NavWaypoint {
+        position: GeoPoint3d::RelHome(GeoPoint3dRelHome {
+            latitude_deg: lat,
+            longitude_deg: lon,
+            relative_alt_m: f64::from(alt),
         }),
-        current: false,
-        autocontinue: true,
+        hold_time_s: 0.0,
+        acceptance_radius_m: 0.0,
+        pass_radius_m: 0.0,
+        yaw_deg: 0.0,
     }
+    .into()
 }
 
 pub fn sample_plan_mission(item_count: usize) -> MissionPlan {
@@ -283,9 +280,6 @@ pub fn sample_plan_mission(item_count: usize) -> MissionPlan {
         let lon = base_lon + (i as f64) * 0.000_2;
         let alt = 25.0 + (i as f32);
         items.push(waypoint(lat, lon, alt));
-    }
-    if let Some(first) = items.first_mut() {
-        first.current = true;
     }
 
     MissionPlan {

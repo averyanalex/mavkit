@@ -91,75 +91,63 @@ mod tests {
     use crate::mission::commands::{DoCommand, DoJump, NavCommand, NavWaypoint};
     use crate::mission::validate_plan;
 
-    fn typed_waypoint_item(latitude_deg: f64, current: bool) -> MissionItem {
-        MissionItem {
-            command: MissionCommand::from(NavWaypoint {
-                position: GeoPoint3d::RelHome(GeoPoint3dRelHome {
-                    latitude_deg,
-                    longitude_deg: 8.545_594,
-                    relative_alt_m: 50.0,
-                }),
-                hold_time_s: 0.0,
-                acceptance_radius_m: 1.0,
-                pass_radius_m: 0.0,
-                yaw_deg: 0.0,
+    fn typed_waypoint_item(latitude_deg: f64) -> MissionItem {
+        NavWaypoint {
+            position: GeoPoint3d::RelHome(GeoPoint3dRelHome {
+                latitude_deg,
+                longitude_deg: 8.545_594,
+                relative_alt_m: 50.0,
             }),
-            current,
-            autocontinue: true,
+            hold_time_s: 0.0,
+            acceptance_radius_m: 1.0,
+            pass_radius_m: 0.0,
+            yaw_deg: 0.0,
         }
+        .into()
     }
 
     fn typed_jump_item(target_index: u16) -> MissionItem {
-        MissionItem {
-            command: MissionCommand::from(DoJump {
-                target_index,
-                repeat_count: 1,
-            }),
-            current: false,
-            autocontinue: true,
+        DoJump {
+            target_index,
+            repeat_count: 1,
         }
+        .into()
     }
 
     fn raw_wire_waypoint() -> MissionItem {
-        MissionItem {
-            command: MissionCommand::Other(RawMissionCommand {
-                command: 16,
-                frame: MissionFrame::GlobalRelativeAlt,
-                param1: 0.0,
-                param2: 1.0,
-                param3: 0.0,
-                param4: 0.0,
-                x: 473_977_420,
-                y: 85_455_970,
-                z: 42.0,
-            }),
-            current: false,
-            autocontinue: true,
-        }
+        MissionCommand::Other(RawMissionCommand {
+            command: 16,
+            frame: MissionFrame::GlobalRelativeAlt,
+            param1: 0.0,
+            param2: 1.0,
+            param3: 0.0,
+            param4: 0.0,
+            x: 473_977_420,
+            y: 85_455_970,
+            z: 42.0,
+        })
+        .into()
     }
 
     fn raw_wire_jump(target_index: u16) -> MissionItem {
-        MissionItem {
-            command: MissionCommand::Other(RawMissionCommand {
-                command: 177,
-                frame: MissionFrame::Mission,
-                param1: f32::from(target_index),
-                param2: 2.0,
-                param3: 0.0,
-                param4: 0.0,
-                x: 0,
-                y: 0,
-                z: 0.0,
-            }),
-            current: false,
-            autocontinue: true,
-        }
+        MissionCommand::Other(RawMissionCommand {
+            command: 177,
+            frame: MissionFrame::Mission,
+            param1: f32::from(target_index),
+            param2: 2.0,
+            param3: 0.0,
+            param4: 0.0,
+            x: 0,
+            y: 0,
+            z: 0.0,
+        })
+        .into()
     }
 
     #[test]
     fn wire_upload_prepends_placeholder_for_mission_type() {
-        let first = typed_waypoint_item(47.397_742, false);
-        let second = typed_waypoint_item(47.397_842, false);
+        let first = typed_waypoint_item(47.397_742);
+        let second = typed_waypoint_item(47.397_842);
         let plan = MissionPlan {
             mission_type: MissionType::Mission,
             items: vec![first, second],
@@ -179,7 +167,7 @@ mod tests {
 
     #[test]
     fn wire_upload_passthrough_for_fence() {
-        let item = typed_waypoint_item(47.397_742, false);
+        let item = typed_waypoint_item(47.397_742);
         let plan = MissionPlan {
             mission_type: MissionType::Fence,
             items: vec![item],
@@ -223,9 +211,11 @@ mod tests {
 
     #[test]
     fn typed_roundtrip() {
+        let mut first = typed_waypoint_item(47.397_742);
+        first.current = true; // download always marks first item current
         let plan = MissionPlan {
             mission_type: MissionType::Mission,
-            items: vec![typed_waypoint_item(47.397_742, true), typed_jump_item(0)],
+            items: vec![first, typed_jump_item(0)],
         };
 
         let wire = items_for_wire_upload(&plan);

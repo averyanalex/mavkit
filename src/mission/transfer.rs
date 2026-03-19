@@ -207,10 +207,9 @@ mod tests {
     };
 
     fn sample_plan(count: usize) -> MissionPlan {
-        let mut items = Vec::with_capacity(count);
-        for seq in 0..count {
-            items.push(MissionItem {
-                command: MissionCommand::Other(RawMissionCommand {
+        let items: Vec<MissionItem> = (0..count)
+            .map(|_| {
+                MissionCommand::Other(RawMissionCommand {
                     command: 16,
                     frame: CommandFrame::GlobalRelativeAlt,
                     param1: 0.0,
@@ -220,11 +219,10 @@ mod tests {
                     x: 0,
                     y: 0,
                     z: 10.0,
-                }),
-                current: seq == 0,
-                autocontinue: true,
-            });
-        }
+                })
+                .into()
+            })
+            .collect();
         MissionPlan {
             mission_type: MissionType::Mission,
             items,

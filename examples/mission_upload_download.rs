@@ -4,22 +4,18 @@ use mavkit::{
 };
 
 fn waypoint(lat: f64, lon: f64, alt: f32) -> MissionItem {
-    MissionItem {
-        command: NavWaypoint {
-            position: GeoPoint3d::RelHome(GeoPoint3dRelHome {
-                latitude_deg: lat,
-                longitude_deg: lon,
-                relative_alt_m: f64::from(alt),
-            }),
-            hold_time_s: 0.0,
-            acceptance_radius_m: 0.0,
-            pass_radius_m: 0.0,
-            yaw_deg: 0.0,
-        }
-        .into(),
-        current: false,
-        autocontinue: true,
+    NavWaypoint {
+        position: GeoPoint3d::RelHome(GeoPoint3dRelHome {
+            latitude_deg: lat,
+            longitude_deg: lon,
+            relative_alt_m: f64::from(alt),
+        }),
+        hold_time_s: 0.0,
+        acceptance_radius_m: 0.0,
+        pass_radius_m: 0.0,
+        yaw_deg: 0.0,
     }
+    .into()
 }
 
 #[tokio::main]
@@ -30,14 +26,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let vehicle = Vehicle::connect_udp(&bind_addr).await?;
     let mission = vehicle.mission();
 
-    let mut items = vec![
-        waypoint(47.397742, 8.545594, 25.0),
-        waypoint(47.398100, 8.546100, 30.0),
-    ];
-    items[0].current = true;
     let plan = MissionPlan {
         mission_type: MissionType::Mission,
-        items,
+        items: vec![
+            waypoint(47.397742, 8.545594, 25.0),
+            waypoint(47.398100, 8.546100, 30.0),
+        ],
     };
 
     mission.upload(plan.clone())?.wait().await?;
