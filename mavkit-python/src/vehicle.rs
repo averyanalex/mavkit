@@ -1095,6 +1095,19 @@ impl PyFenceHandle {
         })
     }
 
+    fn wait_timeout<'py>(&self, py: Python<'py>, timeout_secs: f64) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        let timeout = duration_from_secs(timeout_secs)?;
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let inner = vehicle
+                .fence()
+                .wait_timeout(timeout)
+                .await
+                .map_err(to_py_err)?;
+            Ok(PyFenceState { inner })
+        })
+    }
+
     fn subscribe(&self) -> PyFenceStateSubscription {
         PyFenceStateSubscription {
             inner: Arc::new(tokio::sync::Mutex::new(self.inner.fence().subscribe())),
@@ -1166,6 +1179,19 @@ impl PyRallyHandle {
         let vehicle = self.inner.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let inner = vehicle.rally().wait().await;
+            Ok(PyRallyState { inner })
+        })
+    }
+
+    fn wait_timeout<'py>(&self, py: Python<'py>, timeout_secs: f64) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        let timeout = duration_from_secs(timeout_secs)?;
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let inner = vehicle
+                .rally()
+                .wait_timeout(timeout)
+                .await
+                .map_err(to_py_err)?;
             Ok(PyRallyState { inner })
         })
     }
