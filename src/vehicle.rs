@@ -8,8 +8,8 @@ use crate::fence::FenceDomain;
 use crate::geo::{GeoPoint3dMsl, try_latitude_e7, try_longitude_e7};
 use crate::info::{InfoDomain, InfoHandle};
 use crate::mission::{MissionDomain, MissionProtocolScope, send_domain_command};
-use crate::modes::{ModeDomain, ModesHandle, mode_number};
-use crate::observation::{MetricHandle, MetricSample, ObservationSubscription};
+use crate::modes::{CurrentMode, ModeDomain, ModesHandle, mode_number};
+use crate::observation::{MetricHandle, MetricSample, ObservationHandle, ObservationSubscription};
 use crate::params::ParamsDomain;
 use crate::rally::RallyDomain;
 use crate::raw::RawHandle;
@@ -426,6 +426,21 @@ impl Vehicle {
 
     pub fn ardupilot(&self) -> ArduPilotHandle<'_> {
         self.handle()
+    }
+
+    /// Shortcut for `vehicle.available_modes().current()`.
+    pub fn current_mode(&self) -> ObservationHandle<CurrentMode> {
+        self.available_modes().current()
+    }
+
+    /// Shortcut for `vehicle.telemetry().home()`.
+    pub fn home(&self) -> MetricHandle<GeoPoint3dMsl> {
+        self.telemetry().home()
+    }
+
+    /// Shortcut for `vehicle.telemetry().origin()`.
+    pub fn origin(&self) -> MetricHandle<GeoPoint3dMsl> {
+        self.telemetry().origin()
     }
 
     pub async fn arm(&self, force: bool) -> Result<(), VehicleError> {
