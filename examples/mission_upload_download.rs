@@ -1,15 +1,11 @@
 use mavkit::{
-    CompareTolerance, GeoPoint3d, GeoPoint3dRelHome, MissionItem, MissionPlan, MissionType,
-    NavWaypoint, Vehicle, normalize_for_compare, plans_equivalent,
+    CompareTolerance, GeoPoint3d, MissionItem, MissionPlan, MissionType, NavWaypoint, Vehicle,
+    normalize_for_compare, plans_equivalent,
 };
 
 fn waypoint(lat: f64, lon: f64, alt: f32) -> MissionItem {
     NavWaypoint {
-        position: GeoPoint3d::RelHome(GeoPoint3dRelHome {
-            latitude_deg: lat,
-            longitude_deg: lon,
-            relative_alt_m: f64::from(alt),
-        }),
+        position: GeoPoint3d::rel_home(lat, lon, f64::from(alt)),
         hold_time_s: 0.0,
         acceptance_radius_m: 0.0,
         pass_radius_m: 0.0,

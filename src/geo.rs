@@ -40,6 +40,50 @@ pub enum GeoPoint3d {
     Terrain(GeoPoint3dTerrain),
 }
 
+impl GeoPoint3d {
+    pub fn msl(latitude_deg: f64, longitude_deg: f64, altitude_msl_m: f64) -> Self {
+        Self::Msl(GeoPoint3dMsl {
+            latitude_deg,
+            longitude_deg,
+            altitude_msl_m,
+        })
+    }
+
+    pub fn rel_home(latitude_deg: f64, longitude_deg: f64, relative_alt_m: f64) -> Self {
+        Self::RelHome(GeoPoint3dRelHome {
+            latitude_deg,
+            longitude_deg,
+            relative_alt_m,
+        })
+    }
+
+    pub fn terrain(latitude_deg: f64, longitude_deg: f64, altitude_terrain_m: f64) -> Self {
+        Self::Terrain(GeoPoint3dTerrain {
+            latitude_deg,
+            longitude_deg,
+            altitude_terrain_m,
+        })
+    }
+}
+
+impl From<GeoPoint3dMsl> for GeoPoint3d {
+    fn from(value: GeoPoint3dMsl) -> Self {
+        Self::Msl(value)
+    }
+}
+
+impl From<GeoPoint3dRelHome> for GeoPoint3d {
+    fn from(value: GeoPoint3dRelHome) -> Self {
+        Self::RelHome(value)
+    }
+}
+
+impl From<GeoPoint3dTerrain> for GeoPoint3d {
+    fn from(value: GeoPoint3dTerrain) -> Self {
+        Self::Terrain(value)
+    }
+}
+
 impl From<GeoPoint3dMsl> for GeoPoint2d {
     fn from(value: GeoPoint3dMsl) -> Self {
         Self {

@@ -87,17 +87,13 @@ pub fn plan_from_wire_download(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geo::{GeoPoint3d, GeoPoint3dRelHome};
+    use crate::geo::GeoPoint3d;
     use crate::mission::commands::{DoCommand, DoJump, NavCommand, NavWaypoint};
     use crate::mission::validate_plan;
 
     fn typed_waypoint_item(latitude_deg: f64) -> MissionItem {
         NavWaypoint {
-            position: GeoPoint3d::RelHome(GeoPoint3dRelHome {
-                latitude_deg,
-                longitude_deg: 8.545_594,
-                relative_alt_m: 50.0,
-            }),
+            position: GeoPoint3d::rel_home(latitude_deg, 8.545_594, 50.0),
             hold_time_s: 0.0,
             acceptance_radius_m: 1.0,
             pass_radius_m: 0.0,
