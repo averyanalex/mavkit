@@ -4,6 +4,13 @@ use pyo3::types::PyAny;
 use crate::enums::*;
 
 fn command_frame_from_py(frame: PyMissionFrame) -> mavkit::mission::commands::MissionFrame {
+    command_frame_from_py_raw(frame, None)
+}
+
+fn command_frame_from_py_raw(
+    frame: PyMissionFrame,
+    frame_raw: Option<u8>,
+) -> mavkit::mission::commands::MissionFrame {
     match frame {
         PyMissionFrame::Mission => mavkit::mission::commands::MissionFrame::Mission,
         PyMissionFrame::GlobalInt => mavkit::mission::commands::MissionFrame::Global,
@@ -14,7 +21,9 @@ fn command_frame_from_py(frame: PyMissionFrame) -> mavkit::mission::commands::Mi
             mavkit::mission::commands::MissionFrame::GlobalTerrainAlt
         }
         PyMissionFrame::LocalNed => mavkit::mission::commands::MissionFrame::Other(1),
-        PyMissionFrame::Other => mavkit::mission::commands::MissionFrame::Other(0),
+        PyMissionFrame::Other => {
+            mavkit::mission::commands::MissionFrame::Other(frame_raw.unwrap_or(0))
+        }
     }
 }
 
@@ -30,6 +39,17 @@ fn py_frame_from_command(frame: mavkit::mission::commands::MissionFrame) -> PyMi
         }
         mavkit::mission::commands::MissionFrame::Other(1) => PyMissionFrame::LocalNed,
         mavkit::mission::commands::MissionFrame::Other(_) => PyMissionFrame::Other,
+    }
+}
+
+/// Extract the raw MAVLink frame ID from a command frame.
+fn raw_frame_id(frame: mavkit::mission::commands::MissionFrame) -> u8 {
+    match frame {
+        mavkit::mission::commands::MissionFrame::Global => 0,
+        mavkit::mission::commands::MissionFrame::Mission => 2,
+        mavkit::mission::commands::MissionFrame::GlobalRelativeAlt => 3,
+        mavkit::mission::commands::MissionFrame::GlobalTerrainAlt => 10,
+        mavkit::mission::commands::MissionFrame::Other(v) => v,
     }
 }
 
@@ -367,7 +387,7 @@ pub struct PyRawMissionCommand {
 #[pymethods]
 impl PyRawMissionCommand {
     #[new]
-    #[pyo3(signature = (*, command, frame, x=0, y=0, z=0.0, param1=0.0, param2=0.0, param3=0.0, param4=0.0))]
+    #[pyo3(signature = (*, command, frame, x=0, y=0, z=0.0, param1=0.0, param2=0.0, param3=0.0, param4=0.0, frame_raw=None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         command: u16,
@@ -379,11 +399,12 @@ impl PyRawMissionCommand {
         param2: f32,
         param3: f32,
         param4: f32,
+        frame_raw: Option<u8>,
     ) -> Self {
         Self {
             inner: mavkit::RawMissionCommand {
                 command,
-                frame: command_frame_from_py(frame),
+                frame: command_frame_from_py_raw(frame, frame_raw),
                 param1,
                 param2,
                 param3,
@@ -403,6 +424,13 @@ impl PyRawMissionCommand {
     #[getter]
     fn frame(&self) -> PyMissionFrame {
         py_frame_from_command(self.inner.frame)
+    }
+
+    /// Raw MAVLink frame ID, preserving the exact numeric value for
+    /// non-standard frames that ``MissionFrame.Other`` would collapse.
+    #[getter]
+    fn frame_raw(&self) -> u8 {
+        raw_frame_id(self.inner.frame)
     }
 
     #[getter]
