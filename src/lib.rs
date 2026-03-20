@@ -10,6 +10,7 @@ pub(crate) mod event_loop;
 pub mod fence;
 pub mod geo;
 pub mod info;
+pub mod link;
 pub mod mission;
 pub mod modes;
 pub mod observation;
@@ -45,11 +46,13 @@ pub use fence::{
 };
 pub use geo::{GeoPoint2d, GeoPoint3d, GeoPoint3dMsl, GeoPoint3dRelHome, GeoPoint3dTerrain};
 pub use info::{FirmwareInfo, HardwareInfo, InfoHandle, PersistentIdentity, UniqueIds};
+pub use link::LinkHandle;
 pub use modes::{
     CurrentMode, CurrentModeSource, FlightMode, ModeCatalogSource, ModeDescriptor, ModesHandle,
 };
 pub use rally::{RallyClearOp, RallyDownloadOp, RallyPlan, RallyState, RallyUploadOp};
 pub use raw::{CommandAck, RawHandle, RawMessage};
+pub use state::LinkState;
 pub use support::SupportHandle;
 pub use vehicle::{
     AutopilotType, FenceHandle, MissionHandle, ParamsHandle, RallyHandle, Vehicle, VehicleIdentity,

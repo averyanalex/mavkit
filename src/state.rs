@@ -1,3 +1,4 @@
+use crate::observation::{ObservationHandle, ObservationWriter};
 use crate::telemetry::{
     TelemetryMetricHandles, TelemetryMetricWriters, create_telemetry_backing_stores,
 };
@@ -591,6 +592,7 @@ pub(crate) struct StateWriters {
     pub home_position: tokio::sync::watch::Sender<Option<crate::mission::HomePosition>>,
     pub mission_state: tokio::sync::watch::Sender<WireMissionState>,
     pub link_state: tokio::sync::watch::Sender<LinkState>,
+    pub link_state_observation: ObservationWriter<LinkState>,
     pub mission_progress: tokio::sync::watch::Sender<Option<crate::mission::TransferProgress>>,
     pub param_store: tokio::sync::watch::Sender<crate::params::ParamStore>,
     pub param_progress: tokio::sync::watch::Sender<Option<crate::types::ParamOperationProgress>>,
@@ -624,6 +626,7 @@ pub(crate) struct StateChannels {
     pub home_position: tokio::sync::watch::Receiver<Option<crate::mission::HomePosition>>,
     pub mission_state: tokio::sync::watch::Receiver<WireMissionState>,
     pub link_state: tokio::sync::watch::Receiver<LinkState>,
+    pub link_state_observation: ObservationHandle<LinkState>,
     pub mission_progress: tokio::sync::watch::Receiver<Option<crate::mission::TransferProgress>>,
     pub param_store: tokio::sync::watch::Receiver<crate::params::ParamStore>,
     pub param_progress: tokio::sync::watch::Receiver<Option<crate::types::ParamOperationProgress>>,
@@ -650,6 +653,8 @@ pub(crate) fn create_channels() -> (StateWriters, StateChannels) {
     let (home_tx, home_rx) = tokio::sync::watch::channel(None);
     let (ms_tx, ms_rx) = tokio::sync::watch::channel(WireMissionState::default());
     let (ls_tx, ls_rx) = tokio::sync::watch::channel(LinkState::Connecting);
+    let (link_state_observation_writer, link_state_observation) = ObservationHandle::watch();
+    let _ = link_state_observation_writer.publish(LinkState::Connecting);
     let (mp_tx, mp_rx) = tokio::sync::watch::channel(None);
     let (ps_tx, ps_rx) = tokio::sync::watch::channel(crate::params::ParamStore::default());
     let (pp_tx, pp_rx) = tokio::sync::watch::channel(None);
@@ -674,6 +679,7 @@ pub(crate) fn create_channels() -> (StateWriters, StateChannels) {
         home_position: home_tx,
         mission_state: ms_tx,
         link_state: ls_tx,
+        link_state_observation: link_state_observation_writer,
         mission_progress: mp_tx,
         param_store: ps_tx,
         param_progress: pp_tx,
@@ -698,6 +704,7 @@ pub(crate) fn create_channels() -> (StateWriters, StateChannels) {
         home_position: home_rx,
         mission_state: ms_rx,
         link_state: ls_rx,
+        link_state_observation,
         mission_progress: mp_rx,
         param_store: ps_rx,
         param_progress: pp_rx,

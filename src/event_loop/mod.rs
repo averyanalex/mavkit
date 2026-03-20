@@ -109,7 +109,7 @@ pub(crate) async fn run_event_loop_with_init(
 
     let mut vehicle_target: Option<VehicleTarget> = None;
 
-    let _ = state_writers.link_state.send(LinkState::Connected);
+    publish_link_state(state_writers.as_ref(), LinkState::Connected);
 
     loop {
         tokio::select! {
@@ -117,7 +117,7 @@ pub(crate) async fn run_event_loop_with_init(
 
             _ = cancel.cancelled() => {
                 debug!("event loop cancelled");
-                let _ = state_writers.link_state.send(LinkState::Disconnected);
+                publish_link_state(state_writers.as_ref(), LinkState::Disconnected);
                 break;
             }
             Some(cmd) = command_rx.recv() => {
@@ -125,7 +125,7 @@ pub(crate) async fn run_event_loop_with_init(
                     Command::Shutdown => {
                         debug!("event loop shutdown requested");
                         cancel.cancel();
-                        let _ = state_writers.link_state.send(LinkState::Disconnected);
+                        publish_link_state(state_writers.as_ref(), LinkState::Disconnected);
                         break;
                     }
                     cmd => {
@@ -178,7 +178,7 @@ pub(crate) async fn run_event_loop_with_init(
                     }
                     Err(err) => {
                         warn!("MAVLink recv error: {err}");
-                        let _ = state_writers.link_state.send(LinkState::Error(err.to_string()));
+                        publish_link_state(state_writers.as_ref(), LinkState::Error(err.to_string()));
                         break;
                     }
                 }
@@ -193,6 +193,11 @@ pub(crate) async fn run_event_loop_with_init(
 
     command_tasks.abort_all();
     while command_tasks.join_next().await.is_some() {}
+}
+
+fn publish_link_state(state_writers: &StateWriters, state: LinkState) {
+    let _ = state_writers.link_state.send(state.clone());
+    let _ = state_writers.link_state_observation.publish(state);
 }
 
 async fn route_incoming_message(

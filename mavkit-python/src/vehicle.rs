@@ -23,6 +23,7 @@ use crate::config::PyVehicleConfig;
 use crate::enums::{PyAutopilotType, PyVehicleType};
 use crate::error::{duration_from_secs, to_py_err};
 use crate::info::PyInfoHandle;
+use crate::link::PyLinkHandle;
 use crate::mission::PyMissionPlan;
 use crate::modes::{PyCurrentModeHandle, PyModesHandle};
 use crate::params::{PyParamsHandle, PySyncState};
@@ -1842,6 +1843,10 @@ impl PyVehicle {
 
     fn support(&self) -> PySupportHandle {
         PySupportHandle::new(self.inner.clone())
+    }
+
+    fn link(&self) -> PyLinkHandle {
+        PyLinkHandle::new(self.inner.clone())
     }
 
     fn mission(&self) -> PyMissionHandle {

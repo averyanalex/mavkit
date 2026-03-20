@@ -4,6 +4,7 @@ mod enums;
 mod error;
 mod guided;
 mod info;
+mod link;
 mod mission;
 mod modes;
 mod params;
@@ -98,6 +99,10 @@ fn mavkit(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<support::PySupportState>()?;
     m.add_class::<support::PySupportStateHandle>()?;
     m.add_class::<support::PySupportStateSubscription>()?;
+    m.add_class::<link::PyLinkState>()?;
+    m.add_class::<link::PyLinkStateHandle>()?;
+    m.add_class::<link::PyLinkStateSubscription>()?;
+    m.add_class::<link::PyLinkHandle>()?;
     m.add_class::<modes::PyModeCatalogSource>()?;
     m.add_class::<modes::PyModeDescriptor>()?;
     m.add_class::<modes::PyCurrentModeSource>()?;

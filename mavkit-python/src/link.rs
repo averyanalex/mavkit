@@ -1,0 +1,130 @@
+use std::sync::Arc;
+
+use pyo3::exceptions::PyStopAsyncIteration;
+use pyo3::prelude::*;
+
+use crate::error::{duration_from_secs, to_py_err};
+use crate::vehicle::vehicle_label;
+
+#[pyclass(name = "LinkState", eq, frozen, from_py_object)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PyLinkState {
+    Connecting,
+    Connected,
+    Disconnected,
+    Error,
+}
+
+impl From<mavkit::LinkState> for PyLinkState {
+    fn from(value: mavkit::LinkState) -> Self {
+        match value {
+            mavkit::LinkState::Connecting => Self::Connecting,
+            mavkit::LinkState::Connected => Self::Connected,
+            mavkit::LinkState::Disconnected => Self::Disconnected,
+            mavkit::LinkState::Error(_) => Self::Error,
+        }
+    }
+}
+
+#[pyclass(name = "LinkStateSubscription", frozen, skip_from_py_object)]
+pub struct PyLinkStateSubscription {
+    inner: Arc<tokio::sync::Mutex<mavkit::ObservationSubscription<mavkit::LinkState>>>,
+}
+
+#[pymethods]
+impl PyLinkStateSubscription {
+    fn recv<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let inner = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut guard = inner.lock().await;
+            match guard.recv().await {
+                Some(value) => Ok(PyLinkState::from(value)),
+                None => Err(PyStopAsyncIteration::new_err(
+                    "link-state subscription closed",
+                )),
+            }
+        })
+    }
+
+    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __anext__<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let inner = slf.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut guard = inner.lock().await;
+            match guard.recv().await {
+                Some(value) => Ok(PyLinkState::from(value)),
+                None => Err(PyStopAsyncIteration::new_err(
+                    "link-state subscription closed",
+                )),
+            }
+        })
+    }
+}
+
+#[pyclass(name = "LinkStateHandle", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyLinkStateHandle {
+    inner: mavkit::ObservationHandle<mavkit::LinkState>,
+}
+
+impl PyLinkStateHandle {
+    pub(crate) fn new(inner: mavkit::ObservationHandle<mavkit::LinkState>) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl PyLinkStateHandle {
+    fn latest(&self) -> Option<PyLinkState> {
+        self.inner.latest().map(Into::into)
+    }
+
+    fn wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let inner = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let value = inner.wait().await.map_err(to_py_err)?;
+            Ok(PyLinkState::from(value))
+        })
+    }
+
+    fn wait_timeout<'py>(&self, py: Python<'py>, timeout_secs: f64) -> PyResult<Bound<'py, PyAny>> {
+        let inner = self.inner.clone();
+        let timeout = duration_from_secs(timeout_secs)?;
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let value = inner.wait_timeout(timeout).await.map_err(to_py_err)?;
+            Ok(PyLinkState::from(value))
+        })
+    }
+
+    fn subscribe(&self) -> PyLinkStateSubscription {
+        PyLinkStateSubscription {
+            inner: Arc::new(tokio::sync::Mutex::new(self.inner.subscribe())),
+        }
+    }
+}
+
+#[pyclass(name = "LinkHandle", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyLinkHandle {
+    pub(crate) inner: mavkit::Vehicle,
+}
+
+impl PyLinkHandle {
+    pub(crate) fn new(inner: mavkit::Vehicle) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl PyLinkHandle {
+    fn state(&self) -> PyLinkStateHandle {
+        PyLinkStateHandle::new(self.inner.link().state())
+    }
+
+    fn __repr__(&self) -> String {
+        format!("LinkHandle({})", vehicle_label(&self.inner))
+    }
+}

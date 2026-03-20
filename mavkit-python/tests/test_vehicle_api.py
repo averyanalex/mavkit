@@ -190,6 +190,7 @@ class TestVehicleApi:
             "available_modes",
             "info",
             "support",
+            "link",
             "mission",
             "fence",
             "rally",
@@ -206,6 +207,7 @@ class TestVehicleApi:
             "ModesHandle",
             "InfoHandle",
             "SupportHandle",
+            "LinkHandle",
             "MissionHandle",
             "FenceHandle",
             "RallyHandle",
@@ -435,6 +437,20 @@ class TestVehicleApi:
                     )
                     await raw.send(sendable)
                     assert len(peer.received_packets) >= 2
+                finally:
+                    await vehicle.disconnect()
+
+        asyncio.run(scenario())
+
+    def test_link_handle_runtime_methods(self):
+        async def scenario() -> None:
+            with _FakeMavlinkPeer(_free_udp_port()) as peer:
+                vehicle = await mavkit.Vehicle.connect_udp(peer.bind_addr)
+                try:
+                    link = vehicle.link()
+                    state = link.state()
+                    assert state.latest() == mavkit.LinkState.Connected
+                    assert await state.wait_timeout(0.1) == mavkit.LinkState.Connected
                 finally:
                     await vehicle.disconnect()
 

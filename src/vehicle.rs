@@ -7,13 +7,14 @@ use crate::event_loop::{InitManager, run_event_loop_with_init};
 use crate::fence::FenceDomain;
 use crate::geo::{GeoPoint3dMsl, try_latitude_e7, try_longitude_e7};
 use crate::info::{InfoDomain, InfoHandle};
+use crate::link::LinkHandle;
 use crate::mission::{MissionDomain, MissionProtocolScope, send_domain_command};
 use crate::modes::{CurrentMode, ModeDomain, ModesHandle, mode_number};
 use crate::observation::{MetricHandle, MetricSample, ObservationHandle, ObservationSubscription};
 use crate::params::ParamsDomain;
 use crate::rally::RallyDomain;
 use crate::raw::RawHandle;
-use crate::state::{LinkState, StateChannels, VehicleState, create_channels};
+use crate::state::{StateChannels, VehicleState, create_channels};
 use crate::support::{SupportDomain, SupportHandle};
 use crate::telemetry::TelemetryHandle;
 use std::sync::Arc;
@@ -26,6 +27,7 @@ pub use crate::fence::FenceHandle;
 pub use crate::mission::MissionHandle;
 pub use crate::params::ParamsHandle;
 pub use crate::rally::RallyHandle;
+pub use crate::state::LinkState;
 pub use crate::state::{AutopilotType, VehicleType};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -224,6 +226,12 @@ impl<'a> DomainHandle<'a> for SupportHandle<'a> {
     }
 }
 
+impl<'a> DomainHandle<'a> for LinkHandle<'a> {
+    fn from_inner(inner: &'a VehicleInner) -> Self {
+        LinkHandle::new(inner)
+    }
+}
+
 impl<'a> DomainHandle<'a> for ParamsHandle<'a> {
     fn from_inner(inner: &'a VehicleInner) -> Self {
         ParamsHandle::new(inner)
@@ -390,6 +398,10 @@ impl Vehicle {
     }
 
     pub fn support(&self) -> SupportHandle<'_> {
+        self.handle()
+    }
+
+    pub fn link(&self) -> LinkHandle<'_> {
         self.handle()
     }
 
@@ -777,6 +789,7 @@ mod tests {
 
         let _ = vehicle.info();
         let _ = vehicle.support();
+        let _ = vehicle.link();
         let _ = vehicle.available_modes();
         let _ = vehicle.telemetry();
         let _ = vehicle.mission();
@@ -785,6 +798,26 @@ mod tests {
         let _ = vehicle.params();
         let _ = vehicle.raw();
         let _ = vehicle.ardupilot();
+    }
+
+    #[test]
+    fn link_state_starts_as_connecting() {
+        let vehicle = dummy_vehicle();
+
+        assert_eq!(
+            vehicle.link().state().latest(),
+            Some(crate::LinkState::Connecting)
+        );
+    }
+
+    #[tokio::test]
+    async fn link_state_transitions_to_connected_after_connect() {
+        let (vehicle, _msg_tx) = connect_mock_vehicle().await;
+
+        assert_eq!(
+            vehicle.link().state().latest(),
+            Some(crate::LinkState::Connected)
+        );
     }
 
     #[test]
