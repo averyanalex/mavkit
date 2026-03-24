@@ -48,7 +48,7 @@ impl TryFrom<&GeoPoint3dMsl> for WireNormalizedGeo {
         Ok(Self {
             latitude_e7: try_latitude_e7(point.latitude_deg)?,
             longitude_e7: try_longitude_e7(point.longitude_deg)?,
-            altitude_mm: quantize_meters_mm(point.altitude_msl_m),
+            altitude_mm: quantize_meters_mm(point.altitude_msl_m)?,
         })
     }
 }
@@ -58,12 +58,23 @@ impl WireNormalizedGeo {
         // observed comes from wire-decoded data — valid by construction.
         self.latitude_e7 == crate::geo::quantize_degrees_e7(observed.latitude_deg)
             && self.longitude_e7 == crate::geo::quantize_degrees_e7(observed.longitude_deg)
-            && self.altitude_mm == quantize_meters_mm(observed.altitude_msl_m)
+            && quantize_meters_mm(observed.altitude_msl_m).is_ok_and(|mm| self.altitude_mm == mm)
     }
 }
 
-fn quantize_meters_mm(value: f64) -> i32 {
-    (value * 1000.0).round() as i32
+fn quantize_meters_mm(value: f64) -> Result<i32, VehicleError> {
+    if !value.is_finite() {
+        return Err(VehicleError::InvalidParameter(format!(
+            "altitude must be finite, got {value}"
+        )));
+    }
+    let scaled = (value * 1000.0).round();
+    if !(i32::MIN as f64..=i32::MAX as f64).contains(&scaled) {
+        return Err(VehicleError::InvalidParameter(format!(
+            "altitude {value} m overflows i32 millimeter range"
+        )));
+    }
+    Ok(scaled as i32)
 }
 
 #[derive(Clone)]
@@ -1795,5 +1806,25 @@ mod tests {
             .disconnect()
             .await
             .expect("disconnect should succeed");
+    }
+
+    #[test]
+    fn quantize_meters_mm_normal() {
+        assert_eq!(quantize_meters_mm(1.5).unwrap(), 1500);
+        assert_eq!(quantize_meters_mm(0.0).unwrap(), 0);
+        assert_eq!(quantize_meters_mm(-100.001).unwrap(), -100_001);
+    }
+
+    #[test]
+    fn quantize_meters_mm_rejects_non_finite() {
+        assert!(quantize_meters_mm(f64::NAN).is_err());
+        assert!(quantize_meters_mm(f64::INFINITY).is_err());
+        assert!(quantize_meters_mm(f64::NEG_INFINITY).is_err());
+    }
+
+    #[test]
+    fn quantize_meters_mm_rejects_overflow() {
+        assert!(quantize_meters_mm(2_147_484.0).is_err());
+        assert!(quantize_meters_mm(-2_147_484.0).is_err());
     }
 }
