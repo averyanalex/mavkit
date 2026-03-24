@@ -71,6 +71,13 @@ impl<T: Send + 'static> MissionOperationHandle<T> {
     }
 }
 
+impl<T: Send + 'static> Drop for MissionOperationHandle<T> {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+        let _ = self.command_tx.try_send(Command::MissionCancelTransfer);
+    }
+}
+
 /// Handle for a mission upload operation.
 pub type MissionUploadOp = MissionOperationHandle<()>;
 /// Handle for a mission download operation.
@@ -79,3 +86,21 @@ pub type MissionDownloadOp = MissionOperationHandle<crate::mission::MissionPlan>
 pub type MissionClearOp = MissionOperationHandle<()>;
 /// Handle for a mission verify operation.
 pub type MissionVerifyOp = MissionOperationHandle<bool>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::observation::ObservationHandle;
+
+    #[tokio::test]
+    async fn mission_op_cancels_on_drop() {
+        let cancel = CancellationToken::new();
+        let (_writer, progress_handle) =
+            ObservationHandle::<MissionOperationProgress>::watch();
+        let (_tx, rx) = oneshot::channel::<Result<(), VehicleError>>();
+        let (cmd_tx, _cmd_rx) = mpsc::channel(1);
+        let handle = MissionOperationHandle::new(progress_handle, rx, cancel.clone(), cmd_tx);
+        drop(handle);
+        assert!(cancel.is_cancelled());
+    }
+}
