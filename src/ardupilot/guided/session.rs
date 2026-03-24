@@ -57,8 +57,8 @@ impl GuidedLeaseScope {
     }
 }
 
-#[derive(Debug, Clone)]
 /// Exclusive ArduPilot GUIDED-mode lease and command session.
+#[derive(Debug, Clone)]
 pub struct ArduGuidedSession {
     inner: Arc<ArduGuidedSessionInner>,
 }

@@ -2,8 +2,8 @@ use std::time::Duration;
 
 pub const TIME_USEC_EPOCH_CUTOFF: u64 = 1_000_000_000_000;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// Message-family identifier used for metric provenance tagging.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TelemetryMessageKind {
     Heartbeat,
     VfrHud,
@@ -42,8 +42,8 @@ impl TelemetryMessageKind {
     ];
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 /// Vehicle-provided timestamp, either boot-relative or Unix epoch.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VehicleTimestamp {
     BootTime(Duration),
     UnixEpochMicros(u64),

@@ -1,18 +1,18 @@
 use crate::mission::RetryPolicy;
 use std::time::Duration;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 /// Startup policy for one initialization domain.
 ///
 /// Use this to bound how aggressively MAVKit probes optional data at connect time.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InitDomainPolicy {
     pub enabled: bool,
     pub max_attempts: u8,
     pub budget: Duration,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 /// Per-domain initialization policy used during connect bootstrap.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InitPolicyConfig {
     pub autopilot_version: InitDomainPolicy,
     pub available_modes: InitDomainPolicy,

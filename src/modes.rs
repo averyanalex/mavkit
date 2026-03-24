@@ -21,16 +21,16 @@ enum VehicleClass {
     Unknown,
 }
 
+/// Source used to build the current mode catalog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// Source used to build the current mode catalog.
 pub enum ModeCatalogSource {
     AvailableModes,
     StaticArduPilotTable,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 /// One flight mode entry users can inspect or request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModeDescriptor {
     pub custom_mode: u32,
     pub name: String,
@@ -38,16 +38,16 @@ pub struct ModeDescriptor {
     pub source: ModeCatalogSource,
 }
 
+/// Source used to determine the currently active mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// Source used to determine the currently active mode.
 pub enum CurrentModeSource {
     Heartbeat,
     CurrentModeMessage,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 /// Current mode snapshot, including optional pending target mode.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CurrentMode {
     pub custom_mode: u32,
     pub name: String,
@@ -55,8 +55,8 @@ pub struct CurrentMode {
     pub source: CurrentModeSource,
 }
 
-#[derive(Clone)]
 /// Accessor for mode support, catalog, and current mode observations.
+#[derive(Clone)]
 pub struct ModesHandle<'a> {
     inner: &'a VehicleInner,
 }

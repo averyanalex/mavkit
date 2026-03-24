@@ -7,8 +7,8 @@ use crate::vehicle::VehicleInner;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-#[derive(Clone)]
 /// Accessor for capability support observations derived at runtime.
+#[derive(Clone)]
 pub struct SupportHandle<'a> {
     inner: &'a VehicleInner,
 }

@@ -2,8 +2,8 @@
 
 use std::fmt;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Normalized command-ack outcome used in high-level errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandResult {
     Denied,
     Failed,

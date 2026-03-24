@@ -83,9 +83,9 @@ impl From<MavCmd> for u16 {
 
 use MavCmd::*;
 
+/// Typed mission command API item used by plan serialization and validation.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-/// Typed mission command API item used by plan serialization and validation.
 pub enum MissionFrame {
     Global,
     GlobalRelativeAlt,
@@ -120,8 +120,8 @@ impl From<MissionItemFrame> for MissionFrame {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct RawMissionCommand {
     pub command: u16,
     pub frame: MissionFrame,
@@ -199,28 +199,28 @@ macro_rules! mission_commands {
             ),+ $(,)?
         }
     ) => {
-        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
         /// Typed mission command API item used by plan serialization and validation.
+        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
         pub enum NavCommand {
             $($nav_variant($nav_ty),)+
             $($nav_unit_variant,)*
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
         /// Typed mission command API item used by plan serialization and validation.
+        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
         pub enum DoCommand {
             $($do_variant($do_ty),)*
             $($do_unit_variant,)*
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
         /// Typed mission command API item used by plan serialization and validation.
+        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
         pub enum ConditionCommand {
             $($condition_variant($condition_ty)),+
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
         /// Typed mission command API item used by plan serialization and validation.
+        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
         pub enum MissionCommand {
             Nav(NavCommand),
             Do(DoCommand),
@@ -396,68 +396,68 @@ macro_rules! mission_commands {
     };
 }
 
+/// Typed mission command API item used by plan serialization and validation.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-/// Typed mission command API item used by plan serialization and validation.
 pub enum LoiterDirection {
     Clockwise,
     CounterClockwise,
 }
 
+/// Typed mission command API item used by plan serialization and validation.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-/// Typed mission command API item used by plan serialization and validation.
 pub enum YawDirection {
     Clockwise,
     CounterClockwise,
 }
 
+/// Typed mission command API item used by plan serialization and validation.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-/// Typed mission command API item used by plan serialization and validation.
 pub enum AltChangeAction {
     Neutral,
     Climb,
     Descend,
 }
 
+/// Typed mission command API item used by plan serialization and validation.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-/// Typed mission command API item used by plan serialization and validation.
 pub enum SpeedType {
     Airspeed,
     Groundspeed,
 }
 
+/// Typed mission command API item used by plan serialization and validation.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-/// Typed mission command API item used by plan serialization and validation.
 pub enum FenceAction {
     Disable,
     Enable,
     DisableFloor,
 }
 
+/// Typed mission command API item used by plan serialization and validation.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-/// Typed mission command API item used by plan serialization and validation.
 pub enum ParachuteAction {
     Disable,
     Enable,
     Release,
 }
 
+/// Typed mission command API item used by plan serialization and validation.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-/// Typed mission command API item used by plan serialization and validation.
 pub enum GripperAction {
     Release,
     Grab,
 }
 
+/// Typed mission command API item used by plan serialization and validation.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-/// Typed mission command API item used by plan serialization and validation.
 pub enum WinchAction {
     Relax,
     LengthControl,
@@ -692,8 +692,8 @@ fn alt_change_action_from_param(value: f32) -> AltChangeAction {
 
 fn empty_unit_from_wire(_frame: MissionFrame, _params: [f32; 4], _x: i32, _y: i32, _z: f32) {}
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavWaypoint {
     pub position: GeoPoint3d,
     pub hold_time_s: f32,
@@ -742,8 +742,8 @@ fn nav_waypoint_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavSplineWaypoint {
     pub position: GeoPoint3d,
     pub hold_time_s: f32,
@@ -777,8 +777,8 @@ fn nav_spline_waypoint_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavArcWaypoint {
     pub position: GeoPoint3d,
     pub arc_angle_deg: f32,
@@ -821,8 +821,8 @@ fn nav_arc_waypoint_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavTakeoff {
     pub position: GeoPoint3d,
     pub pitch_deg: f32,
@@ -854,8 +854,8 @@ fn nav_takeoff_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavLand {
     pub position: GeoPoint3d,
     pub abort_alt_m: f32,
@@ -889,8 +889,8 @@ fn return_to_launch_from_wire(frame: MissionFrame, params: [f32; 4], x: i32, y: 
     empty_unit_from_wire(frame, params, x, y, z);
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavLoiterUnlimited {
     pub position: GeoPoint3d,
     pub radius_m: f32,
@@ -935,8 +935,8 @@ fn nav_loiter_unlimited_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavLoiterTurns {
     pub position: GeoPoint3d,
     pub turns: f32,
@@ -985,8 +985,8 @@ fn nav_loiter_turns_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavLoiterTime {
     pub position: GeoPoint3d,
     pub time_s: f32,
@@ -1032,8 +1032,8 @@ fn nav_loiter_time_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavLoiterToAlt {
     pub position: GeoPoint3d,
     pub radius_m: f32,
@@ -1079,8 +1079,8 @@ fn nav_loiter_to_alt_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavContinueAndChangeAlt {
     pub position: GeoPoint3d,
     pub action: AltChangeAction,
@@ -1117,8 +1117,8 @@ fn nav_continue_and_change_alt_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavDelay {
     pub seconds: f32,
     pub hour_utc: f32,
@@ -1155,8 +1155,8 @@ fn nav_delay_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavGuidedEnable {
     pub enabled: bool,
 }
@@ -1177,8 +1177,8 @@ fn nav_guided_enable_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavAltitudeWait {
     pub altitude_m: f32,
     pub descent_rate_mps: f32,
@@ -1213,8 +1213,8 @@ fn nav_altitude_wait_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavVtolTakeoff {
     pub position: GeoPoint3d,
 }
@@ -1243,8 +1243,8 @@ fn nav_vtol_takeoff_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavVtolLand {
     pub position: GeoPoint3d,
     pub options: u8,
@@ -1279,8 +1279,8 @@ fn nav_vtol_land_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavPayloadPlace {
     pub position: GeoPoint3d,
     pub max_descent_m: f32,
@@ -1312,8 +1312,8 @@ fn nav_payload_place_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavSetYawSpeed {
     pub angle_deg: f32,
     pub speed_mps: f32,
@@ -1348,8 +1348,8 @@ fn nav_set_yaw_speed_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavScriptTime {
     pub command: u16,
     pub timeout_s: f32,
@@ -1391,8 +1391,8 @@ fn nav_script_time_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NavAttitudeTime {
     pub time_s: f32,
     pub roll_deg: f32,
@@ -1433,8 +1433,8 @@ fn nav_attitude_time_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoJump {
     pub target_index: u16,
     pub repeat_count: u16,
@@ -1461,8 +1461,8 @@ fn do_jump_from_wire(_frame: MissionFrame, params: [f32; 4], _x: i32, _y: i32, _
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoJumpTag {
     pub tag: u16,
     pub repeat_count: u16,
@@ -1495,8 +1495,8 @@ fn do_jump_tag_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoTag {
     pub tag: u16,
 }
@@ -1511,8 +1511,8 @@ fn do_tag_from_wire(_frame: MissionFrame, params: [f32; 4], _x: i32, _y: i32, _z
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoPauseContinue {
     pub pause: bool,
 }
@@ -1533,8 +1533,8 @@ fn do_pause_continue_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoChangeSpeed {
     pub speed_type: SpeedType,
     pub speed_mps: f32,
@@ -1569,8 +1569,8 @@ fn do_change_speed_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoSetReverse {
     pub reverse: bool,
 }
@@ -1591,8 +1591,8 @@ fn do_set_reverse_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DoSetHome {
     pub position: GeoPoint3d,
     pub use_current: bool,
@@ -1627,8 +1627,8 @@ fn do_set_home_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DoLandStart {
     pub position: GeoPoint3d,
 }
@@ -1657,8 +1657,8 @@ fn do_land_start_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DoReturnPathStart {
     pub position: GeoPoint3d,
 }
@@ -1689,8 +1689,8 @@ fn do_return_path_start_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DoGoAround {
     pub position: GeoPoint3d,
 }
@@ -1719,8 +1719,8 @@ fn do_go_around_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DoSetRoiLocation {
     pub position: GeoPoint3d,
 }
@@ -1759,8 +1759,8 @@ fn do_set_roi_none_from_wire(frame: MissionFrame, params: [f32; 4], x: i32, y: i
     empty_unit_from_wire(frame, params, x, y, z);
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DoSetRoi {
     pub mode: u8,
     pub position: GeoPoint3d,
@@ -1786,8 +1786,8 @@ fn do_set_roi_from_wire(frame: MissionFrame, params: [f32; 4], x: i32, y: i32, z
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoMountControl {
     pub pitch_deg: f32,
     pub roll_deg: f32,
@@ -1817,8 +1817,8 @@ fn do_mount_control_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoGimbalManagerPitchYaw {
     pub pitch_deg: f32,
     pub yaw_deg: f32,
@@ -1861,8 +1861,8 @@ fn do_gimbal_manager_pitch_yaw_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoCamTriggerDistance {
     pub meters: f32,
     pub trigger_now: bool,
@@ -1892,8 +1892,8 @@ fn do_cam_trigger_distance_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoImageStartCapture {
     pub instance: u8,
     pub interval_s: f32,
@@ -1932,8 +1932,8 @@ fn do_image_start_capture_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoImageStopCapture {
     pub instance: u8,
 }
@@ -1956,8 +1956,8 @@ fn do_image_stop_capture_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoVideoStartCapture {
     pub stream_id: u8,
 }
@@ -1980,8 +1980,8 @@ fn do_video_start_capture_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoVideoStopCapture {
     pub stream_id: u8,
 }
@@ -2004,8 +2004,8 @@ fn do_video_stop_capture_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoSetCameraZoom {
     pub zoom_type: u8,
     pub zoom_value: f32,
@@ -2033,8 +2033,8 @@ fn do_set_camera_zoom_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoSetCameraFocus {
     pub focus_type: u8,
     pub focus_value: f32,
@@ -2064,8 +2064,8 @@ fn do_set_camera_focus_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoSetCameraSource {
     pub instance: u8,
     pub primary: u8,
@@ -2102,8 +2102,8 @@ fn do_set_camera_source_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoDigicamConfigure {
     pub shooting_mode: u8,
     pub shutter_speed: u16,
@@ -2148,8 +2148,8 @@ fn do_digicam_configure_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoDigicamControl {
     pub session: u8,
     pub zoom_pos: u8,
@@ -2192,8 +2192,8 @@ fn do_digicam_control_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoSetServo {
     pub channel: u16,
     pub pwm: u16,
@@ -2221,8 +2221,8 @@ fn do_set_servo_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoSetRelay {
     pub number: u8,
     pub state: bool,
@@ -2255,8 +2255,8 @@ fn do_set_relay_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoRepeatServo {
     pub channel: u16,
     pub pwm: u16,
@@ -2293,8 +2293,8 @@ fn do_repeat_servo_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoRepeatRelay {
     pub number: u8,
     pub count: u16,
@@ -2329,8 +2329,8 @@ fn do_repeat_relay_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoFenceEnable {
     pub action: FenceAction,
 }
@@ -2356,8 +2356,8 @@ fn do_fence_enable_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoParachute {
     pub action: ParachuteAction,
 }
@@ -2383,8 +2383,8 @@ fn do_parachute_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoGripper {
     pub number: u8,
     pub action: GripperAction,
@@ -2417,8 +2417,8 @@ fn do_gripper_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoSprayer {
     pub enabled: bool,
 }
@@ -2439,8 +2439,8 @@ fn do_sprayer_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoWinch {
     pub number: u8,
     pub action: WinchAction,
@@ -2477,8 +2477,8 @@ fn do_winch_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoEngineControl {
     pub start: bool,
     pub cold_start: bool,
@@ -2515,8 +2515,8 @@ fn do_engine_control_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoInvertedFlight {
     pub inverted: bool,
 }
@@ -2539,8 +2539,8 @@ fn do_inverted_flight_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoAutotuneEnable {
     pub enabled: bool,
 }
@@ -2563,8 +2563,8 @@ fn do_autotune_enable_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoVtolTransition {
     pub target_state: u8,
 }
@@ -2587,8 +2587,8 @@ fn do_vtol_transition_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoGuidedLimits {
     pub max_time_s: f32,
     pub min_alt_m: f32,
@@ -2625,8 +2625,8 @@ fn do_guided_limits_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoSetResumeRepeatDist {
     pub distance_m: f32,
 }
@@ -2649,8 +2649,8 @@ fn do_set_resume_repeat_dist_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoAuxFunction {
     pub function: u16,
     pub switch_pos: u8,
@@ -2683,8 +2683,8 @@ fn do_aux_function_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DoSendScriptMessage {
     pub id: u16,
     pub p1: f32,
@@ -2718,8 +2718,8 @@ fn do_send_script_message_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct CondDelay {
     pub delay_s: f32,
 }
@@ -2738,8 +2738,8 @@ fn condition_delay_from_wire(
     CondDelay { delay_s: params[0] }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct CondDistance {
     pub distance_m: f32,
 }
@@ -2760,8 +2760,8 @@ fn condition_distance_from_wire(
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 /// Typed mission command API item used by plan serialization and validation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct CondYaw {
     pub angle_deg: f32,
     pub turn_rate_dps: f32,

@@ -9,8 +9,8 @@ use tokio_stream::Stream;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 /// Decoded `COMMAND_ACK` payload returned from raw command helpers.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CommandAck {
     pub command: u16,
     pub result: u8,
@@ -44,8 +44,8 @@ impl CommandAck {
     }
 }
 
-#[derive(Clone, Debug)]
 /// Raw MAVLink frame payload with sender identity and receive timestamp.
+#[derive(Clone, Debug)]
 pub struct RawMessage {
     pub message_id: u32,
     pub system_id: u8,

@@ -7,15 +7,15 @@ use crate::mission::send_domain_command;
 
 const MAV_DO_REPOSITION_FLAGS_CHANGE_MODE: f32 = 1.0;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Guided plane subtype, fixed wing or VTOL-capable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArduPlaneKind {
     FixedWing,
     Vtol,
 }
 
-#[derive(Debug)]
 /// Guided control surface for ArduPlane sessions.
+#[derive(Debug)]
 pub struct ArduPlaneGuidedHandle<'a> {
     pub(crate) _session: &'a super::ArduGuidedSession,
 }
@@ -61,8 +61,8 @@ impl<'a> ArduPlaneGuidedHandle<'a> {
     }
 }
 
-#[derive(Debug)]
 /// VTOL-specific guided controls for ArduPlane VTOL sessions.
+#[derive(Debug)]
 pub struct ArduPlaneVtolGuidedHandle<'a> {
     pub(crate) _session: &'a super::ArduGuidedSession,
 }

@@ -182,8 +182,8 @@ pub struct ParamWriteResult {
     pub success: bool,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 /// Cached parameter-domain state plus sync and active-operation markers.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ParamState {
     pub store: Option<ParamStore>,
     pub sync: SyncState,

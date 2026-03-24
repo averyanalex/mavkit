@@ -89,8 +89,8 @@ impl HomePosition {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Ordered mission plan payload for upload/download/verify operations.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MissionPlan {
     pub items: Vec<MissionItem>,
 }
@@ -125,16 +125,16 @@ impl FromIterator<MissionItem> for MissionPlan {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Internal wire-level mission plan that carries the MAVLink mission type.
 /// Used by the event loop and fence/rally domain converters.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct WireMissionPlan {
     pub mission_type: MissionType,
     pub items: Vec<MissionItem>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 /// Cached mission-domain state plus sync and active-operation markers.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct MissionState {
     pub plan: Option<MissionPlan>,
     pub current_index: Option<u16>,

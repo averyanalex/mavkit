@@ -280,8 +280,8 @@ fn interval_us_from_hz(hz: f32) -> Result<f32, VehicleError> {
     Ok(1_000_000.0 / hz)
 }
 
-#[derive(Clone)]
 /// Message handle for periodic/requestable MAVLink message families.
+#[derive(Clone)]
 pub struct PeriodicMessageHandle<M: Clone + Send + Sync + 'static> {
     inner: MessageHandle<M>,
     commands: MessageCommandHub,
@@ -364,8 +364,8 @@ impl<M: Clone + Send + Sync + 'static> PeriodicMessageHandle<M> {
     }
 }
 
-#[derive(Clone)]
 /// Message handle for event-style MAVLink message families.
+#[derive(Clone)]
 pub struct EventMessageHandle<M: Clone + Send + Sync + 'static> {
     inner: MessageHandle<M>,
     commands: MessageCommandHub,

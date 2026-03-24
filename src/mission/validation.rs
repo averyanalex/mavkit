@@ -1,8 +1,8 @@
 use super::commands::{DoCommand, MissionCommand, MissionFrame};
 use super::types::{IssueSeverity, MissionIssue, MissionPlan};
 
-#[derive(Debug, Clone, Copy)]
 /// Numeric tolerances used when treating near-identical mission items as equivalent after wire roundtrips.
+#[derive(Debug, Clone, Copy)]
 pub struct CompareTolerance {
     pub param_epsilon: f32,
     pub altitude_epsilon_m: f32,

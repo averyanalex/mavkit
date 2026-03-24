@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 pub(crate) const STATUS_TEXT_BROADCAST_CAPACITY: usize = 256;
 const STATUS_TEXT_FLUSH_TIMEOUT: Duration = Duration::from_secs(2);
 
-#[derive(Clone, Debug, PartialEq)]
 /// Reassembled `STATUSTEXT` event with source identity.
+#[derive(Clone, Debug, PartialEq)]
 pub struct StatusTextEvent {
     pub text: String,
     pub severity: dialect::MavSeverity,

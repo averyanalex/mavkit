@@ -1,39 +1,39 @@
 use crate::error::VehicleError;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 /// WGS84 latitude and longitude in decimal degrees.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GeoPoint2d {
     pub latitude_deg: f64,
     pub longitude_deg: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 /// WGS84 position with altitude above mean sea level.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GeoPoint3dMsl {
     pub latitude_deg: f64,
     pub longitude_deg: f64,
     pub altitude_msl_m: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 /// WGS84 position with altitude relative to home.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GeoPoint3dRelHome {
     pub latitude_deg: f64,
     pub longitude_deg: f64,
     pub relative_alt_m: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 /// WGS84 position with terrain-referenced altitude.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GeoPoint3dTerrain {
     pub latitude_deg: f64,
     pub longitude_deg: f64,
     pub altitude_terrain_m: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 /// Tagged 3D point that preserves the altitude reference frame.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum GeoPoint3d {
     Msl(GeoPoint3dMsl),
     RelHome(GeoPoint3dRelHome),

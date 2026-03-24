@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Write as _;
 use std::sync::{Arc, Mutex};
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 /// Parsed firmware identity details from `AUTOPILOT_VERSION`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FirmwareInfo {
     pub version: Option<String>,
     pub custom_version: Option<[u8; 8]>,
@@ -16,8 +16,8 @@ pub struct FirmwareInfo {
     pub os_version: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 /// Parsed hardware board and USB identity details.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HardwareInfo {
     pub board_vendor_id: Option<u16>,
     pub board_product_id: Option<u16>,
@@ -26,8 +26,8 @@ pub struct HardwareInfo {
     pub board_version: Option<u32>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 /// Stable identifiers MAVKit can use for cross-session correlation.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UniqueIds {
     pub hardware_uid: Option<Vec<u8>>,
     pub uid: Option<u64>,
@@ -35,9 +35,9 @@ pub struct UniqueIds {
     pub board_id: Option<String>,
 }
 
+/// Persistent identity readiness for UI labels and cache keys.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "state")]
-/// Persistent identity readiness for UI labels and cache keys.
 pub enum PersistentIdentity {
     Pending {
         system_id: u8,
@@ -49,8 +49,8 @@ pub enum PersistentIdentity {
     },
 }
 
-#[derive(Clone)]
 /// Accessor for firmware, hardware, and persistent identity observations.
+#[derive(Clone)]
 pub struct InfoHandle<'a> {
     inner: &'a VehicleInner,
 }

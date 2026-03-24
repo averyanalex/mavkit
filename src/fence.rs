@@ -20,44 +20,44 @@ const MAV_CMD_NAV_FENCE_POLYGON_VERTEX_EXCLUSION: u16 = 5002;
 const MAV_CMD_NAV_FENCE_CIRCLE_INCLUSION: u16 = 5003;
 const MAV_CMD_NAV_FENCE_CIRCLE_EXCLUSION: u16 = 5004;
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 /// Full geofence plan with optional return point and region list.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FencePlan {
     pub return_point: Option<GeoPoint2d>,
     pub regions: Vec<FenceRegion>,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 /// Polygon region that marks space where operation is allowed.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FenceInclusionPolygon {
     pub vertices: Vec<GeoPoint2d>,
     pub inclusion_group: u8,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 /// Polygon region that marks space where operation is forbidden.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FenceExclusionPolygon {
     pub vertices: Vec<GeoPoint2d>,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 /// Circular inclusion region.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FenceInclusionCircle {
     pub center: GeoPoint2d,
     pub radius_m: f32,
     pub inclusion_group: u8,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 /// Circular exclusion region.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FenceExclusionCircle {
     pub center: GeoPoint2d,
     pub radius_m: f32,
 }
 
+/// Geofence region union used in upload and download plans.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// Geofence region union used in upload and download plans.
 pub enum FenceRegion {
     InclusionPolygon(FenceInclusionPolygon),
     ExclusionPolygon(FenceExclusionPolygon),
@@ -89,8 +89,8 @@ impl From<FenceExclusionCircle> for FenceRegion {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 /// Cached fence-domain state plus sync and active-operation markers.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FenceState {
     pub plan: Option<FencePlan>,
     pub sync: SyncState,

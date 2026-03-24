@@ -19,14 +19,14 @@ use crate::vehicle::VehicleInner;
 
 const MAV_CMD_NAV_RALLY_POINT: u16 = 5100;
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 /// Rally-point plan used by ArduPilot rally storage.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RallyPlan {
     pub points: Vec<GeoPoint3d>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 /// Cached rally-domain state plus sync and active-operation markers.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RallyState {
     pub plan: Option<RallyPlan>,
     pub sync: SyncState,

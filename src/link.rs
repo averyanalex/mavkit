@@ -2,8 +2,8 @@ use crate::observation::ObservationHandle;
 use crate::state::LinkState;
 use crate::vehicle::VehicleInner;
 
-#[derive(Clone)]
 /// Accessor for connection lifecycle observations.
+#[derive(Clone)]
 pub struct LinkHandle<'a> {
     inner: &'a VehicleInner,
 }

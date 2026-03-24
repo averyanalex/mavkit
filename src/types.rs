@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+/// Capability support status for a feature family.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// Capability support status for a feature family.
 pub enum SupportState {
     #[default]
     Unknown,
@@ -10,9 +10,9 @@ pub enum SupportState {
     Unsupported,
 }
 
+/// Freshness marker for cached domain state.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// Freshness marker for cached domain state.
 pub enum SyncState {
     #[default]
     Unknown,
@@ -20,18 +20,18 @@ pub enum SyncState {
     PossiblyStale,
 }
 
+/// Operation kind used by stored-plan domains such as fence and rally.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// Operation kind used by stored-plan domains such as fence and rally.
 pub enum StoredPlanOperationKind {
     Upload,
     Download,
     Clear,
 }
 
+/// Operation kind used by mission-domain state and conflicts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// Operation kind used by mission-domain state and conflicts.
 pub enum MissionOperationKind {
     Upload,
     Download,
@@ -39,24 +39,24 @@ pub enum MissionOperationKind {
     Verify,
 }
 
+/// Operation kind used by parameter-domain state and conflicts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// Operation kind used by parameter-domain state and conflicts.
 pub enum ParamOperationKind {
     DownloadAll,
     WriteBatch,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 /// Details about an operation rejected because another operation is active.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperationConflict {
     pub conflicting_domain: String,
     pub conflicting_op: String,
 }
 
+/// Health state of one sensor family derived from MAVLink bitmasks.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// Health state of one sensor family derived from MAVLink bitmasks.
 pub enum SensorHealthState {
     #[default]
     NotPresent,
@@ -65,8 +65,8 @@ pub enum SensorHealthState {
     Healthy,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 /// Fixed-shape sensor health snapshot for core pre-arm sensor families.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SensorHealthSummary {
     pub gyro: SensorHealthState,
     pub accel: SensorHealthState,
@@ -80,9 +80,9 @@ pub struct SensorHealthSummary {
     pub geofence: SensorHealthState,
 }
 
+/// Lifecycle phases for one mission operation handle.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// Lifecycle phases for one mission operation handle.
 pub enum MissionOperationProgress {
     RequestCount,
     SendingItem { current: u16, total: u16 },
@@ -94,9 +94,9 @@ pub enum MissionOperationProgress {
     Cancelled,
 }
 
+/// Lifecycle phases for one parameter operation handle.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-/// Lifecycle phases for one parameter operation handle.
 pub enum ParamOperationProgress {
     Downloading {
         received: u16,

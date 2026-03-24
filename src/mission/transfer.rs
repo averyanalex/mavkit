@@ -61,16 +61,16 @@ pub struct TransferError {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// Transfer event emitted by the transfer machine.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TransferEvent {
     Progress { progress: TransferProgress },
     Error { error: TransferError },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
 /// Lightweight mission transfer state machine used by event-loop flows.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MissionTransferMachine {
     direction: TransferDirection,
     mission_type: MissionType,

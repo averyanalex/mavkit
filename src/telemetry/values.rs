@@ -2,8 +2,8 @@ use crate::geo::{GeoPoint2d, GeoPoint3dMsl, GeoPoint3dRelHome};
 use crate::state::GpsFixType;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 /// Global position payload grouped from MAVLink navigation messages.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GlobalPosition {
     pub latitude_deg: f64,
     pub longitude_deg: f64,
@@ -11,44 +11,44 @@ pub struct GlobalPosition {
     pub relative_alt_m: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 /// Euler-angle attitude snapshot in degrees.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EulerAttitude {
     pub roll_deg: f64,
     pub pitch_deg: f64,
     pub yaw_deg: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 /// GPS quality summary from fix type, satellites, and HDOP.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GpsQuality {
     pub fix_type: GpsFixType,
     pub satellites: Option<u8>,
     pub hdop: Option<f64>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 /// Battery cell voltage vector in volts.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CellVoltages {
     pub voltages_v: Vec<f64>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 /// Distance and bearing to current waypoint target.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WaypointProgress {
     pub distance_m: f64,
     pub bearing_deg: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 /// Guidance state from navigation controller outputs.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GuidanceState {
     pub bearing_deg: f64,
     pub cross_track_error_m: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 /// Terrain clearance values from terrain-report telemetry.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TerrainClearance {
     pub terrain_height_m: f64,
     pub height_above_terrain_m: f64,
