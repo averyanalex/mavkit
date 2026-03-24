@@ -99,12 +99,7 @@ pub(super) fn mission_type_matches(
     received: dialect::MavMissionType,
     expected: MissionType,
 ) -> bool {
-    let expected_mav = to_mav_mission_type(expected);
-    if expected == MissionType::Mission {
-        received == expected_mav || received == dialect::MavMissionType::MAV_MISSION_TYPE_MISSION
-    } else {
-        received == expected_mav
-    }
+    received == to_mav_mission_type(expected)
 }
 
 fn transfer_domain(mission_type: MissionType) -> &'static str {
@@ -536,7 +531,11 @@ pub(super) async fn handle_mission_set_current(
     ctx: &mut CommandContext,
 ) -> Result<(), VehicleError> {
     // Semantic → wire: home occupies wire seq 0 for Mission type.
-    let wire_seq = seq + 1;
+    let wire_seq = seq.checked_add(1).ok_or_else(|| {
+        VehicleError::InvalidParameter(format!(
+            "mission seq {seq} overflows wire sequence range"
+        ))
+    })?;
 
     let target = get_target(&ctx.vehicle_target)?;
     let max_retries = ctx.config.retry_policy.max_retries;
