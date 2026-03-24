@@ -29,21 +29,35 @@ impl From<mavkit::LinkState> for PyLinkState {
 #[pyclass(name = "LinkStateSubscription", frozen, skip_from_py_object)]
 pub struct PyLinkStateSubscription {
     inner: Arc<tokio::sync::Mutex<mavkit::ObservationSubscription<mavkit::LinkState>>>,
+    last_error_message: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 #[pymethods]
 impl PyLinkStateSubscription {
     fn recv<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let inner = self.inner.clone();
+        let last_err = self.last_error_message.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut guard = inner.lock().await;
             match guard.recv().await {
-                Some(value) => Ok(PyLinkState::from(value)),
+                Some(value) => {
+                    if let mavkit::LinkState::Error(ref msg) = value {
+                        *last_err.lock().unwrap() = Some(msg.clone());
+                    } else {
+                        *last_err.lock().unwrap() = None;
+                    }
+                    Ok(PyLinkState::from(value))
+                }
                 None => Err(PyStopAsyncIteration::new_err(
                     "link-state subscription closed",
                 )),
             }
         })
+    }
+
+    #[getter]
+    fn last_error_message(&self) -> Option<String> {
+        self.last_error_message.lock().unwrap().clone()
     }
 
     fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
@@ -52,10 +66,18 @@ impl PyLinkStateSubscription {
 
     fn __anext__<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let inner = slf.inner.clone();
+        let last_err = slf.last_error_message.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut guard = inner.lock().await;
             match guard.recv().await {
-                Some(value) => Ok(PyLinkState::from(value)),
+                Some(value) => {
+                    if let mavkit::LinkState::Error(ref msg) = value {
+                        *last_err.lock().unwrap() = Some(msg.clone());
+                    } else {
+                        *last_err.lock().unwrap() = None;
+                    }
+                    Ok(PyLinkState::from(value))
+                }
                 None => Err(PyStopAsyncIteration::new_err(
                     "link-state subscription closed",
                 )),
@@ -102,6 +124,7 @@ impl PyLinkStateHandle {
     fn subscribe(&self) -> PyLinkStateSubscription {
         PyLinkStateSubscription {
             inner: Arc::new(tokio::sync::Mutex::new(self.inner.subscribe())),
+            last_error_message: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 }
