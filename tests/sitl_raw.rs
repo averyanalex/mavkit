@@ -1,0 +1,106 @@
+#[allow(dead_code)]
+mod common;
+
+use std::time::Duration;
+use tokio_stream::StreamExt;
+
+#[tokio::test]
+#[ignore = "requires ArduPilot SITL endpoint"]
+async fn sitl_raw_subscribe_receives_heartbeats() {
+    let vehicle = common::setup_sitl_vehicle().await;
+    let result: Result<(), String> = async {
+        // HEARTBEAT message ID = 0
+        let stream = vehicle.raw().subscribe_filtered(0);
+        tokio::pin!(stream);
+
+        let deadline = tokio::time::sleep(Duration::from_secs(5));
+        tokio::pin!(deadline);
+
+        tokio::select! {
+            _ = &mut deadline => {
+                return Err(String::from("timed out waiting for raw heartbeat"));
+            }
+            msg = stream.next() => {
+                let msg = msg.ok_or_else(|| String::from("raw subscription stream closed"))?;
+                if msg.message_id != 0 {
+                    return Err(format!("expected message_id 0, got {}", msg.message_id));
+                }
+            }
+        }
+
+        Ok(())
+    }
+    .await;
+
+    let _ = vehicle.disconnect().await;
+    if let Err(err) = result {
+        panic!("{err}");
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires ArduPilot SITL endpoint"]
+async fn sitl_raw_request_message_autopilot_version() {
+    let vehicle = common::setup_sitl_vehicle().await;
+    let result: Result<(), String> = async {
+        // AUTOPILOT_VERSION message ID = 148
+        let msg = vehicle
+            .raw()
+            .request_message(148, Duration::from_secs(5))
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if msg.message_id != 148 {
+            return Err(format!("expected message_id 148, got {}", msg.message_id));
+        }
+
+        Ok(())
+    }
+    .await;
+
+    let _ = vehicle.disconnect().await;
+    if let Err(err) = result {
+        panic!("{err}");
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires ArduPilot SITL endpoint"]
+async fn sitl_raw_subscribe_unfiltered_receives_multiple_types() {
+    let vehicle = common::setup_sitl_vehicle().await;
+    let result: Result<(), String> = async {
+        let stream = vehicle.raw().subscribe();
+        tokio::pin!(stream);
+        let mut seen_ids = std::collections::HashSet::new();
+        let deadline = tokio::time::sleep(Duration::from_secs(5));
+        tokio::pin!(deadline);
+
+        loop {
+            tokio::select! {
+                _ = &mut deadline => break,
+                msg = stream.next() => {
+                    let msg = msg.ok_or_else(|| String::from("raw subscription stream closed"))?;
+                    seen_ids.insert(msg.message_id);
+                    if seen_ids.len() >= 5 {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if seen_ids.len() < 3 {
+            return Err(format!(
+                "expected at least 3 distinct message types, got {}",
+                seen_ids.len()
+            ));
+        }
+
+        Ok(())
+    }
+    .await;
+
+    let _ = vehicle.disconnect().await;
+    if let Err(err) = result {
+        panic!("{err}");
+    }
+}
