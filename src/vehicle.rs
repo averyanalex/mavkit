@@ -77,8 +77,8 @@ fn quantize_meters_mm(value: f64) -> Result<i32, VehicleError> {
     Ok(scaled as i32)
 }
 
-#[derive(Clone)]
 /// Root handle for a live MAVLink connection and all MAVKit domains.
+#[derive(Clone)]
 pub struct Vehicle {
     pub(crate) inner: Arc<VehicleInner>,
 }
@@ -184,10 +184,10 @@ impl VehicleInner {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Snapshot identity from the first usable heartbeat.
 ///
 /// This stays stable for a session unless the link switches to a different vehicle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VehicleIdentity {
     pub system_id: u8,
     pub component_id: u8,
@@ -536,6 +536,7 @@ impl Vehicle {
         .map(|_| ())
     }
 
+    // MAVLink crate deprecated this type/variant, but the wire protocol still requires it.
     #[allow(deprecated)]
     pub async fn set_home_current(&self) -> Result<(), VehicleError> {
         self.send_command(|reply| Command::Long {
@@ -1356,6 +1357,7 @@ mod tests {
             .expect("disconnect should succeed");
     }
 
+    // MAVLink crate deprecated this type/variant, but the wire protocol still requires it.
     #[allow(deprecated)]
     #[tokio::test]
     async fn set_home_current_ack_flow() {
@@ -1409,6 +1411,7 @@ mod tests {
             .expect("disconnect should succeed");
     }
 
+    // MAVLink crate deprecated this type/variant, but the wire protocol still requires it.
     #[allow(deprecated)]
     #[tokio::test]
     async fn set_origin_observation() {

@@ -1686,6 +1686,7 @@ fn mission_type_matches_works() {
     ));
 }
 
+// MAVLink crate deprecated this type/variant, but the wire protocol still requires it.
 #[allow(deprecated)]
 #[tokio::test]
 async fn auto_request_home_sends_get_home_position_command() {
@@ -1725,6 +1726,7 @@ async fn auto_request_home_sends_get_home_position_command() {
     handle.await.unwrap();
 }
 
+// MAVLink crate deprecated this type/variant, but the wire protocol still requires it.
 #[allow(deprecated)]
 #[tokio::test]
 async fn auto_request_home_only_sent_once() {

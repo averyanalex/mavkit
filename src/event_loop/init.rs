@@ -372,6 +372,7 @@ fn request_message_command(
     })
 }
 
+// MAVLink crate deprecated this type/variant, but the wire protocol still requires it.
 #[allow(deprecated)]
 fn request_home_position_command(target: &VehicleTarget) -> dialect::MavMessage {
     dialect::MavMessage::COMMAND_LONG(dialect::COMMAND_LONG_DATA {

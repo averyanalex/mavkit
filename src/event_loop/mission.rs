@@ -27,6 +27,7 @@ pub(super) fn to_mav_frame(frame: MissionFrame) -> dialect::MavFrame {
     }
 }
 
+// MAVLink crate deprecated this type/variant, but the wire protocol still requires it.
 #[allow(deprecated)]
 pub(super) fn from_mav_frame(frame: dialect::MavFrame) -> MissionFrame {
     match frame {
@@ -61,6 +62,7 @@ pub(super) fn from_mission_item_int(data: &dialect::MISSION_ITEM_INT_DATA) -> Mi
     }
 }
 
+// MAVLink crate deprecated this type/variant, but the wire protocol still requires it.
 #[allow(deprecated)]
 fn from_mission_item_float(data: &dialect::MISSION_ITEM_DATA) -> MissionItem {
     let is_global = matches!(
@@ -171,6 +173,7 @@ fn send_requested_item_msg(
 // Mission Upload
 // ---------------------------------------------------------------------------
 
+// MAVLink crate deprecated this type/variant, but the wire protocol still requires it.
 #[allow(deprecated)]
 pub(super) async fn handle_mission_upload(
     plan: WireMissionPlan,
@@ -330,6 +333,7 @@ where
 // Mission Download
 // ---------------------------------------------------------------------------
 
+// MAVLink crate deprecated this type/variant, but the wire protocol still requires it.
 #[allow(deprecated)]
 pub(super) async fn handle_mission_download(
     mission_type: MissionType,

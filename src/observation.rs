@@ -9,16 +9,10 @@ use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tokio_stream::wrappers::{BroadcastStream, WatchStream};
 use tokio_stream::{Stream, StreamExt};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-/// Observation-level support status used by metric and message handles.
-pub enum SupportState {
-    Unknown,
-    Supported,
-    Unsupported,
-}
+pub use crate::types::SupportState;
 
-#[derive(Clone, Debug, PartialEq)]
 /// Value plus provenance metadata for coalescing metric streams.
+#[derive(Clone, Debug, PartialEq)]
 pub struct MetricSample<T> {
     pub value: T,
     pub source: TelemetryMessageKind,
@@ -26,8 +20,8 @@ pub struct MetricSample<T> {
     pub received_at: Instant,
 }
 
-#[derive(Clone, Debug, PartialEq)]
 /// Value plus timestamps for event-like telemetry messages.
+#[derive(Clone, Debug, PartialEq)]
 pub struct MessageSample<M> {
     pub value: M,
     pub received_at: Instant,
@@ -48,15 +42,15 @@ enum ObservationBacking<T: Clone + Send + Sync + 'static> {
     Broadcast(BroadcastStore<T>),
 }
 
-#[derive(Clone)]
 /// Generic observation reader over either watch-style or broadcast backing.
+#[derive(Clone)]
 pub struct ObservationHandle<T: Clone + Send + Sync + 'static> {
     backing: Arc<ObservationBacking<T>>,
     close_rx: watch::Receiver<()>,
 }
 
-#[derive(Clone)]
 /// Generic observation writer paired with an [`ObservationHandle`].
+#[derive(Clone)]
 pub struct ObservationWriter<T: Clone + Send + Sync + 'static> {
     backing: Arc<ObservationBacking<T>>,
     _close_tx: Arc<watch::Sender<()>>,
@@ -289,8 +283,8 @@ impl<T: Clone + Send + Sync + 'static> Stream for ObservationSubscription<T> {
     }
 }
 
-#[derive(Clone)]
 /// Typed metric handle with support metadata and wait/subscribe helpers.
+#[derive(Clone)]
 pub struct MetricHandle<T: Clone + Send + Sync + 'static> {
     observation: ObservationHandle<MetricSample<T>>,
     support: ObservationHandle<SupportState>,
@@ -328,8 +322,8 @@ impl<T: Clone + Send + Sync + 'static> MetricHandle<T> {
     }
 }
 
-#[derive(Clone)]
 /// Typed message handle with support metadata and request/stream helpers.
+#[derive(Clone)]
 pub struct MessageHandle<M: Clone + Send + Sync + 'static> {
     observation: ObservationHandle<MessageSample<M>>,
     support: ObservationHandle<SupportState>,
