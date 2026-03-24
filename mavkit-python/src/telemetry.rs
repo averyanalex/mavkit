@@ -478,6 +478,7 @@ impl PyGeoPoint3dMsl {
 #[pymethods]
 impl PyGeoPoint3dMsl {
     #[new]
+    #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_msl_m))]
     fn new(latitude_deg: f64, longitude_deg: f64, altitude_msl_m: f64) -> Self {
         Self {
             latitude_deg,

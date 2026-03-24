@@ -256,7 +256,11 @@ class TerrainClearance:
 
 class GeoPoint3dMsl:
     def __init__(
-        self, latitude_deg: float, longitude_deg: float, altitude_msl_m: float
+        self,
+        *,
+        latitude_deg: float,
+        longitude_deg: float,
+        altitude_msl_m: float,
     ) -> None: ...
     @property
     def latitude_deg(self) -> float: ...
