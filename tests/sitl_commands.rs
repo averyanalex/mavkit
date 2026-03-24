@@ -13,37 +13,6 @@ async fn wait_for_home_position(vehicle: &Vehicle, timeout: Duration) {
         .expect("timed out waiting for home position");
 }
 
-async fn wait_for_mode_name(
-    vehicle: &Vehicle,
-    expected_name: &str,
-    timeout: Duration,
-) -> Result<(), String> {
-    let current_mode = vehicle.available_modes().current();
-    if current_mode
-        .latest()
-        .is_some_and(|mode| mode.name == expected_name)
-    {
-        return Ok(());
-    }
-
-    let mut subscription = current_mode.subscribe();
-    let deadline = tokio::time::sleep(timeout);
-    tokio::pin!(deadline);
-    loop {
-        tokio::select! {
-            _ = &mut deadline => {
-                return Err(format!("timed out waiting for mode {expected_name}"));
-            }
-            observed = subscription.recv() => {
-                let mode = observed.ok_or_else(|| String::from("mode observation stream closed"))?;
-                if mode.name == expected_name {
-                    return Ok(());
-                }
-            }
-        }
-    }
-}
-
 #[tokio::test]
 #[ignore = "requires ArduPilot SITL endpoint"]
 async fn sitl_set_mode_by_name() {
@@ -53,13 +22,13 @@ async fn sitl_set_mode_by_name() {
             .set_mode_by_name("GUIDED", true)
             .await
             .map_err(|e| e.to_string())?;
-        wait_for_mode_name(&vehicle, "GUIDED", Duration::from_secs(10)).await?;
+        common::wait_for_mode_name(&vehicle, "GUIDED", Duration::from_secs(10)).await?;
 
         vehicle
             .set_mode_by_name("LOITER", true)
             .await
             .map_err(|e| e.to_string())?;
-        wait_for_mode_name(&vehicle, "LOITER", Duration::from_secs(10)).await?;
+        common::wait_for_mode_name(&vehicle, "LOITER", Duration::from_secs(10)).await?;
 
         Ok(())
     }

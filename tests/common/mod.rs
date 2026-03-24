@@ -100,6 +100,37 @@ where
     }
 }
 
+pub async fn wait_for_mode_name(
+    vehicle: &Vehicle,
+    expected_name: &str,
+    timeout: Duration,
+) -> Result<(), String> {
+    let current_mode = vehicle.available_modes().current();
+    if current_mode
+        .latest()
+        .is_some_and(|mode| mode.name == expected_name)
+    {
+        return Ok(());
+    }
+
+    let mut subscription = current_mode.subscribe();
+    let deadline = tokio::time::sleep(timeout);
+    tokio::pin!(deadline);
+    loop {
+        tokio::select! {
+            _ = &mut deadline => {
+                return Err(format!("timed out waiting for mode {expected_name}"));
+            }
+            observed = subscription.recv() => {
+                let mode = observed.ok_or_else(|| String::from("mode observation stream closed"))?;
+                if mode.name == expected_name {
+                    return Ok(());
+                }
+            }
+        }
+    }
+}
+
 pub async fn wait_for_telemetry(vehicle: &Vehicle, timeout: Duration) -> Result<(), String> {
     let sample = vehicle
         .telemetry()
