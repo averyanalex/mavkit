@@ -156,7 +156,9 @@ async fn sitl_disconnect_transitions_link_state() {
             .latest()
             .ok_or("link state not available")?;
         if state != LinkState::Connected {
-            return Err(format!("expected Connected before disconnect, got {state:?}"));
+            return Err(format!(
+                "expected Connected before disconnect, got {state:?}"
+            ));
         }
 
         vehicle.disconnect().await.map_err(|e| e.to_string())?;
