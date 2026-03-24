@@ -372,19 +372,28 @@ mod tests {
     use tokio::time::timeout;
 
     #[test]
-    fn download_progress() {
-        let progress = ParamOperationProgress::Downloading {
+    fn download_progress_variants() {
+        let downloading = ParamOperationProgress::Downloading {
             received: 12,
             expected: Some(42),
         };
+        let downloading_unknown = ParamOperationProgress::Downloading {
+            received: 0,
+            expected: None,
+        };
+        let failed = ParamOperationProgress::Failed;
 
-        assert_eq!(
-            progress,
-            ParamOperationProgress::Downloading {
-                received: 12,
-                expected: Some(42),
-            }
-        );
+        assert!(matches!(
+            downloading,
+            ParamOperationProgress::Downloading { received: 12, expected: Some(42) }
+        ));
+        assert!(matches!(
+            downloading_unknown,
+            ParamOperationProgress::Downloading { received: 0, expected: None }
+        ));
+        assert!(matches!(failed, ParamOperationProgress::Failed));
+        assert_ne!(downloading, failed);
+        assert_ne!(downloading, downloading_unknown);
     }
 
     fn default_header() -> MavHeader {
