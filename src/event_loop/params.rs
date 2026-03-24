@@ -174,7 +174,7 @@ pub(super) async fn handle_param_download_all(
                 ctx.writers
                     .param_progress
                     .send_replace(Some(ParamOperationProgress::Failed));
-                return Err(VehicleError::Timeout("parameter write".into()));
+                return Err(VehicleError::Timeout("parameter download".into()));
             }
         } else {
             retries = 0;
