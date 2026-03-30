@@ -55,8 +55,8 @@ pub use raw::{CommandAck, RawHandle, RawMessage};
 pub use state::LinkState;
 pub use support::SupportHandle;
 pub use vehicle::{
-    AutopilotType, FenceHandle, MissionHandle, ParamsHandle, RallyHandle, Vehicle, VehicleIdentity,
-    VehicleType,
+    AutopilotType, FenceHandle, MissionHandle, ParamsHandle, RallyHandle, RcOverride,
+    RcOverrideChannelValue, Vehicle, VehicleIdentity, VehicleType,
 };
 
 pub use mission::commands::{

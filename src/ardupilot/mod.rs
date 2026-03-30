@@ -32,6 +32,9 @@ use tokio_util::sync::CancellationToken;
 
 pub use types::{MagCalProgress, MagCalReport, MagCalStatus};
 
+const SET_SERVO_INSTANCE_RANGE: std::ops::RangeInclusive<u8> = 1..=16;
+const SET_SERVO_PWM_RANGE_US: std::ops::RangeInclusive<u16> = 1000..=2000;
+
 #[derive(Clone)]
 pub(crate) struct ArduPilotDomain {
     inner: Arc<ArduPilotDomainInner>,
@@ -254,6 +257,42 @@ impl<'a> ArduPilotHandle<'a> {
                 throttle_pct,
                 f32::from(duration_s),
                 1.0,
+                0.0,
+                0.0,
+            ],
+        )
+        .await
+    }
+
+    /// Directly sets an ArduPilot servo output on a permissive channel.
+    ///
+    /// ArduPilot only applies `MAV_CMD_DO_SET_SERVO` on outputs and in modes that allow
+    /// direct servo control, so callers should treat acceptance as transport-level success,
+    /// not a guarantee that the output actually moved.
+    pub async fn set_servo(&self, instance: u8, pwm_us: u16) -> Result<(), VehicleError> {
+        if !SET_SERVO_INSTANCE_RANGE.contains(&instance) {
+            return Err(VehicleError::InvalidParameter(format!(
+                "set_servo instance must be in {}..={}, got {instance}",
+                SET_SERVO_INSTANCE_RANGE.start(),
+                SET_SERVO_INSTANCE_RANGE.end(),
+            )));
+        }
+        if !SET_SERVO_PWM_RANGE_US.contains(&pwm_us) {
+            return Err(VehicleError::InvalidParameter(format!(
+                "set_servo pwm_us must be in {}..={} microseconds, got {pwm_us}",
+                SET_SERVO_PWM_RANGE_US.start(),
+                SET_SERVO_PWM_RANGE_US.end(),
+            )));
+        }
+
+        self.send_long(
+            dialect::MavCmd::MAV_CMD_DO_SET_SERVO,
+            [
+                f32::from(instance),
+                f32::from(pwm_us),
+                0.0,
+                0.0,
+                0.0,
                 0.0,
                 0.0,
             ],
@@ -1429,6 +1468,216 @@ mod tests {
         assert_eq!(motor_test.param5, 1.0);
         assert_eq!(motor_test.param6, 0.0);
         assert_eq!(motor_test.param7, 0.0);
+
+        vehicle
+            .disconnect()
+            .await
+            .expect("disconnect should succeed");
+    }
+
+    #[tokio::test]
+    async fn ardupilot_set_servo_rejects_invalid_ranges() {
+        let (vehicle, _msg_tx, sent) = connect_mock_vehicle_with_sent().await;
+
+        let sent_before = sent
+            .lock()
+            .expect("sent messages lock should not poison")
+            .len();
+
+        assert!(matches!(
+            vehicle
+                .ardupilot()
+                .set_servo(
+                    *SET_SERVO_INSTANCE_RANGE.start() - 1,
+                    *SET_SERVO_PWM_RANGE_US.start()
+                )
+                .await,
+            Err(VehicleError::InvalidParameter(_))
+        ));
+        assert!(matches!(
+            vehicle
+                .ardupilot()
+                .set_servo(
+                    *SET_SERVO_INSTANCE_RANGE.end() + 1,
+                    *SET_SERVO_PWM_RANGE_US.start()
+                )
+                .await,
+            Err(VehicleError::InvalidParameter(_))
+        ));
+        assert!(matches!(
+            vehicle
+                .ardupilot()
+                .set_servo(
+                    *SET_SERVO_INSTANCE_RANGE.start(),
+                    *SET_SERVO_PWM_RANGE_US.start() - 1
+                )
+                .await,
+            Err(VehicleError::InvalidParameter(_))
+        ));
+        assert!(matches!(
+            vehicle
+                .ardupilot()
+                .set_servo(
+                    *SET_SERVO_INSTANCE_RANGE.start(),
+                    *SET_SERVO_PWM_RANGE_US.end() + 1
+                )
+                .await,
+            Err(VehicleError::InvalidParameter(_))
+        ));
+        assert_eq!(
+            sent.lock()
+                .expect("sent messages lock should not poison")
+                .len(),
+            sent_before,
+            "invalid set_servo calls must reject before any new COMMAND_LONG is sent"
+        );
+
+        vehicle
+            .disconnect()
+            .await
+            .expect("disconnect should succeed");
+    }
+
+    #[tokio::test]
+    async fn ardupilot_set_servo_sends_expected_command_long_shape() {
+        let (vehicle, msg_tx, sent) = connect_mock_vehicle_with_sent().await;
+
+        let first_boundary = {
+            let vehicle = vehicle.clone();
+            tokio::spawn(async move {
+                vehicle
+                    .ardupilot()
+                    .set_servo(
+                        *SET_SERVO_INSTANCE_RANGE.start(),
+                        *SET_SERVO_PWM_RANGE_US.start(),
+                    )
+                    .await
+            })
+        };
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        msg_tx
+            .send((
+                default_header(),
+                ack_msg(
+                    dialect::MavCmd::MAV_CMD_DO_SET_SERVO,
+                    dialect::MavResult::MAV_RESULT_ACCEPTED,
+                ),
+            ))
+            .await
+            .expect("first set_servo ack should be delivered");
+
+        assert!(
+            first_boundary
+                .await
+                .expect("first set_servo task should join")
+                .is_ok()
+        );
+
+        let last_boundary = {
+            let vehicle = vehicle.clone();
+            tokio::spawn(async move {
+                vehicle
+                    .ardupilot()
+                    .set_servo(
+                        *SET_SERVO_INSTANCE_RANGE.end(),
+                        *SET_SERVO_PWM_RANGE_US.end(),
+                    )
+                    .await
+            })
+        };
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        msg_tx
+            .send((
+                default_header(),
+                ack_msg(
+                    dialect::MavCmd::MAV_CMD_DO_SET_SERVO,
+                    dialect::MavResult::MAV_RESULT_ACCEPTED,
+                ),
+            ))
+            .await
+            .expect("second set_servo ack should be delivered");
+
+        assert!(
+            last_boundary
+                .await
+                .expect("second set_servo task should join")
+                .is_ok()
+        );
+
+        let commands: Vec<_> = {
+            let sent = sent.lock().expect("sent messages lock should not poison");
+            sent.iter()
+                .filter_map(|(_, msg)| match msg {
+                    dialect::MavMessage::COMMAND_LONG(data)
+                        if data.command == dialect::MavCmd::MAV_CMD_DO_SET_SERVO =>
+                    {
+                        Some(data.clone())
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(
+            commands.len(),
+            2,
+            "set_servo should send one command per request"
+        );
+
+        let first = &commands[0];
+        assert_eq!(first.param1, f32::from(*SET_SERVO_INSTANCE_RANGE.start()));
+        assert_eq!(first.param2, f32::from(*SET_SERVO_PWM_RANGE_US.start()));
+        assert_eq!(first.param3, 0.0);
+        assert_eq!(first.param4, 0.0);
+        assert_eq!(first.param5, 0.0);
+        assert_eq!(first.param6, 0.0);
+        assert_eq!(first.param7, 0.0);
+
+        let last = &commands[1];
+        assert_eq!(last.param1, f32::from(*SET_SERVO_INSTANCE_RANGE.end()));
+        assert_eq!(last.param2, f32::from(*SET_SERVO_PWM_RANGE_US.end()));
+        assert_eq!(last.param3, 0.0);
+        assert_eq!(last.param4, 0.0);
+        assert_eq!(last.param5, 0.0);
+        assert_eq!(last.param6, 0.0);
+        assert_eq!(last.param7, 0.0);
+        vehicle
+            .disconnect()
+            .await
+            .expect("disconnect should succeed");
+    }
+
+    #[tokio::test]
+    async fn ardupilot_set_servo_surfaces_ack_rejection() {
+        let (vehicle, msg_tx, _sent) = connect_mock_vehicle_with_sent().await;
+
+        let set_servo_task = {
+            let vehicle = vehicle.clone();
+            tokio::spawn(async move { vehicle.ardupilot().set_servo(3, 1500).await })
+        };
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        msg_tx
+            .send((
+                default_header(),
+                ack_msg(
+                    dialect::MavCmd::MAV_CMD_DO_SET_SERVO,
+                    dialect::MavResult::MAV_RESULT_DENIED,
+                ),
+            ))
+            .await
+            .expect("set_servo rejection ack should be delivered");
+
+        assert!(matches!(
+            set_servo_task
+                .await
+                .expect("set_servo rejection task should join"),
+            Err(VehicleError::CommandRejected {
+                command,
+                result: crate::error::CommandResult::Denied,
+            }) if command == dialect::MavCmd::MAV_CMD_DO_SET_SERVO as u16
+        ));
 
         vehicle
             .disconnect()

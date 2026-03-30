@@ -195,6 +195,108 @@ pub struct VehicleIdentity {
     pub vehicle_type: VehicleType,
 }
 
+const RC_OVERRIDE_CHANNEL_COUNT: usize = 18;
+const RC_OVERRIDE_IGNORE_RAW: u16 = u16::MAX;
+const RC_OVERRIDE_RELEASE_RAW: u16 = 0;
+
+/// A single RC override slot inside [`RcOverride`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RcOverrideChannelValue {
+    /// Leave this channel untouched by encoding MAVLink's ignore sentinel (`65535`).
+    Ignore,
+    /// Hand control back to the vehicle by encoding MAVLink's release sentinel (`0`).
+    Release,
+    /// Override the channel with an explicit raw PWM/microsecond value.
+    Pwm(u16),
+}
+
+impl RcOverrideChannelValue {
+    pub fn pwm(pwm_us: u16) -> Result<Self, VehicleError> {
+        match pwm_us {
+            RC_OVERRIDE_RELEASE_RAW => Err(VehicleError::InvalidParameter(
+                "rc override pwm 0 is reserved for release; use RcOverrideChannelValue::Release or RcOverride::release()".into(),
+            )),
+            RC_OVERRIDE_IGNORE_RAW => Err(VehicleError::InvalidParameter(
+                "rc override pwm 65535 is reserved for ignore; use RcOverrideChannelValue::Ignore or RcOverride::ignore()".into(),
+            )),
+            _ => Ok(Self::Pwm(pwm_us)),
+        }
+    }
+
+    fn to_wire(self) -> u16 {
+        match self {
+            Self::Ignore => RC_OVERRIDE_IGNORE_RAW,
+            Self::Release => RC_OVERRIDE_RELEASE_RAW,
+            Self::Pwm(pwm_us) => pwm_us,
+        }
+    }
+}
+
+/// Typed builder for one `RC_CHANNELS_OVERRIDE` frame.
+///
+/// Channels default to MAVLink's ignore sentinel (`65535`). Use [`RcOverride::release`] to
+/// encode an explicit release (`0`) for a channel, or [`RcOverride::set_pwm`] for a concrete raw
+/// override. MAVLink treats RC overrides as transient inputs, so callers must keep resending the
+/// returned frame shape at their required control cadence; mavkit does not own a refresh loop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RcOverride {
+    channels: [RcOverrideChannelValue; RC_OVERRIDE_CHANNEL_COUNT],
+}
+
+impl Default for RcOverride {
+    fn default() -> Self {
+        Self {
+            channels: [RcOverrideChannelValue::Ignore; RC_OVERRIDE_CHANNEL_COUNT],
+        }
+    }
+}
+
+impl RcOverride {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn channel(&self, channel: u8) -> Result<RcOverrideChannelValue, VehicleError> {
+        Ok(self.channels[rc_override_channel_index(channel)?])
+    }
+
+    pub fn set(
+        &mut self,
+        channel: u8,
+        value: RcOverrideChannelValue,
+    ) -> Result<&mut Self, VehicleError> {
+        self.channels[rc_override_channel_index(channel)?] = value;
+        Ok(self)
+    }
+
+    pub fn set_pwm(&mut self, channel: u8, pwm_us: u16) -> Result<&mut Self, VehicleError> {
+        self.set(channel, RcOverrideChannelValue::pwm(pwm_us)?)
+    }
+
+    pub fn release(&mut self, channel: u8) -> Result<&mut Self, VehicleError> {
+        self.set(channel, RcOverrideChannelValue::Release)
+    }
+
+    pub fn ignore(&mut self, channel: u8) -> Result<&mut Self, VehicleError> {
+        self.set(channel, RcOverrideChannelValue::Ignore)
+    }
+
+    fn to_wire_channels(self) -> [u16; RC_OVERRIDE_CHANNEL_COUNT] {
+        self.channels.map(RcOverrideChannelValue::to_wire)
+    }
+}
+
+fn rc_override_channel_index(channel: u8) -> Result<usize, VehicleError> {
+    if (1..=RC_OVERRIDE_CHANNEL_COUNT as u8).contains(&channel) {
+        Ok((channel - 1) as usize)
+    } else {
+        Err(VehicleError::InvalidParameter(format!(
+            "rc override channel must be 1..={}, got {channel}",
+            RC_OVERRIDE_CHANNEL_COUNT
+        )))
+    }
+}
+
 trait DomainHandle<'a>: Sized {
     fn from_inner(inner: &'a VehicleInner) -> Self;
 }
@@ -470,6 +572,63 @@ impl Vehicle {
 
     pub fn ardupilot(&self) -> ArduPilotHandle<'_> {
         self.handle()
+    }
+
+    /// Send one `RC_CHANNELS_OVERRIDE` frame to the connected vehicle.
+    ///
+    /// Callers must keep resending overrides at their required control rate; mavkit does not own
+    /// a continuous-send loop and does not wait for any ACK.
+    pub async fn rc_override(&self, overrides: RcOverride) -> Result<(), VehicleError> {
+        let target = self.identity();
+        let [
+            chan1_raw,
+            chan2_raw,
+            chan3_raw,
+            chan4_raw,
+            chan5_raw,
+            chan6_raw,
+            chan7_raw,
+            chan8_raw,
+            chan9_raw,
+            chan10_raw,
+            chan11_raw,
+            chan12_raw,
+            chan13_raw,
+            chan14_raw,
+            chan15_raw,
+            chan16_raw,
+            chan17_raw,
+            chan18_raw,
+        ] = overrides.to_wire_channels();
+
+        self.send_command(|reply| Command::RawSend {
+            message: Box::new(dialect::MavMessage::RC_CHANNELS_OVERRIDE(
+                dialect::RC_CHANNELS_OVERRIDE_DATA {
+                    target_system: target.system_id,
+                    target_component: target.component_id,
+                    chan1_raw,
+                    chan2_raw,
+                    chan3_raw,
+                    chan4_raw,
+                    chan5_raw,
+                    chan6_raw,
+                    chan7_raw,
+                    chan8_raw,
+                    chan9_raw,
+                    chan10_raw,
+                    chan11_raw,
+                    chan12_raw,
+                    chan13_raw,
+                    chan14_raw,
+                    chan15_raw,
+                    chan16_raw,
+                    chan17_raw,
+                    chan18_raw,
+                },
+            )),
+            reply,
+        })
+        .await
     }
 
     /// Shortcut for `vehicle.available_modes().current()`.
@@ -749,6 +908,34 @@ mod tests {
 
         msg_tx
             .send((default_header(), heartbeat_msg(false, 7)))
+            .await
+            .expect("heartbeat should be delivered to the mock connection");
+
+        let vehicle = timeout(Duration::from_millis(250), connect_task)
+            .await
+            .expect("connect should complete after first heartbeat")
+            .expect("connect task should join")
+            .expect("mock vehicle should connect");
+
+        (vehicle, msg_tx, sent)
+    }
+
+    async fn connect_mock_vehicle_with_header_and_sent(
+        header: MavHeader,
+    ) -> (
+        Vehicle,
+        mpsc::Sender<(MavHeader, dialect::MavMessage)>,
+        SentMessages,
+    ) {
+        let (msg_tx, msg_rx) = mpsc::channel(16);
+        let (conn, sent) = MockConnection::new(msg_rx);
+        let connect_task =
+            tokio::spawn(
+                async move { Vehicle::from_connection(Box::new(conn), fast_config()).await },
+            );
+
+        msg_tx
+            .send((header, heartbeat_msg(false, 7)))
             .await
             .expect("heartbeat should be delivered to the mock connection");
 
@@ -1589,6 +1776,203 @@ mod tests {
         assert!(
             matches!(err, VehicleError::ConnectionFailed(message) if message.contains("mock connection closed"))
         );
+    }
+
+    #[tokio::test]
+    async fn rc_override_sends_expected_override_message() {
+        let target_header = MavHeader {
+            system_id: 42,
+            component_id: 17,
+            sequence: 9,
+        };
+        let (vehicle, msg_tx, sent) =
+            connect_mock_vehicle_with_header_and_sent(target_header).await;
+        let mut overrides = RcOverride::new();
+        overrides
+            .set_pwm(1, 1001)
+            .expect("channel 1 should accept a PWM override")
+            .set_pwm(2, 1002)
+            .expect("channel 2 should accept a PWM override")
+            .set_pwm(3, 1003)
+            .expect("channel 3 should accept a PWM override")
+            .set_pwm(4, 1004)
+            .expect("channel 4 should accept a PWM override")
+            .set_pwm(5, 1005)
+            .expect("channel 5 should accept a PWM override")
+            .set_pwm(6, 1006)
+            .expect("channel 6 should accept a PWM override")
+            .release(7)
+            .expect("channel 7 should encode an explicit release")
+            .ignore(8)
+            .expect("channel 8 should encode an explicit ignore")
+            .set_pwm(9, 1009)
+            .expect("channel 9 should accept a PWM override")
+            .set_pwm(10, 1010)
+            .expect("channel 10 should accept a PWM override")
+            .set_pwm(11, 1011)
+            .expect("channel 11 should accept a PWM override")
+            .set_pwm(12, 1012)
+            .expect("channel 12 should accept a PWM override")
+            .set_pwm(13, 1013)
+            .expect("channel 13 should accept a PWM override")
+            .set_pwm(14, 1014)
+            .expect("channel 14 should accept a PWM override")
+            .set_pwm(15, 1015)
+            .expect("channel 15 should accept a PWM override")
+            .set_pwm(16, 1016)
+            .expect("channel 16 should accept a PWM override")
+            .set_pwm(17, 1017)
+            .expect("channel 17 should accept a PWM override")
+            .set_pwm(18, 1018)
+            .expect("channel 18 should accept a PWM override");
+
+        vehicle
+            .rc_override(overrides)
+            .await
+            .expect("rc_override should enqueue one raw send without waiting for an ACK");
+
+        let sent_override = sent
+            .lock()
+            .expect("sent messages lock should not poison")
+            .iter()
+            .find_map(|(_, msg)| match msg {
+                dialect::MavMessage::RC_CHANNELS_OVERRIDE(data) => Some(data.clone()),
+                _ => None,
+            })
+            .expect("rc override message should be sent");
+
+        assert_eq!(sent_override.target_system, 42);
+        assert_eq!(sent_override.target_component, 17);
+        assert_eq!(sent_override.chan1_raw, 1001);
+        assert_eq!(sent_override.chan2_raw, 1002);
+        assert_eq!(sent_override.chan3_raw, 1003);
+        assert_eq!(sent_override.chan4_raw, 1004);
+        assert_eq!(sent_override.chan5_raw, 1005);
+        assert_eq!(sent_override.chan6_raw, 1006);
+        assert_eq!(sent_override.chan7_raw, 0);
+        assert_eq!(sent_override.chan8_raw, u16::MAX);
+        assert_eq!(sent_override.chan9_raw, 1009);
+        assert_eq!(sent_override.chan10_raw, 1010);
+        assert_eq!(sent_override.chan11_raw, 1011);
+        assert_eq!(sent_override.chan12_raw, 1012);
+        assert_eq!(sent_override.chan13_raw, 1013);
+        assert_eq!(sent_override.chan14_raw, 1014);
+        assert_eq!(sent_override.chan15_raw, 1015);
+        assert_eq!(sent_override.chan16_raw, 1016);
+        assert_eq!(sent_override.chan17_raw, 1017);
+        assert_eq!(sent_override.chan18_raw, 1018);
+
+        vehicle
+            .disconnect()
+            .await
+            .expect("disconnect should succeed");
+        drop(msg_tx);
+    }
+
+    #[tokio::test]
+    async fn rc_override_defaults_unspecified_channels_to_ignore() {
+        let (vehicle, msg_tx, sent) = connect_mock_vehicle_with_sent().await;
+        let mut overrides = RcOverride::new();
+        overrides
+            .set_pwm(1, 1500)
+            .expect("channel 1 should accept a PWM override")
+            .release(18)
+            .expect("channel 18 should encode an explicit release");
+
+        assert_eq!(
+            overrides.channel(1).expect("channel 1 should exist"),
+            RcOverrideChannelValue::Pwm(1500)
+        );
+        assert_eq!(
+            overrides.channel(18).expect("channel 18 should exist"),
+            RcOverrideChannelValue::Release
+        );
+        assert_eq!(
+            overrides.channel(2).expect("channel 2 should exist"),
+            RcOverrideChannelValue::Ignore
+        );
+
+        vehicle
+            .rc_override(overrides)
+            .await
+            .expect("rc_override should send the frame");
+
+        let sent_override = sent
+            .lock()
+            .expect("sent messages lock should not poison")
+            .iter()
+            .find_map(|(_, msg)| match msg {
+                dialect::MavMessage::RC_CHANNELS_OVERRIDE(data) => Some(data.clone()),
+                _ => None,
+            })
+            .expect("rc override message should be sent");
+
+        assert_eq!(sent_override.chan1_raw, 1500);
+        assert_eq!(sent_override.chan18_raw, 0);
+        assert_eq!(sent_override.chan2_raw, u16::MAX);
+        assert_eq!(sent_override.chan3_raw, u16::MAX);
+        assert_eq!(sent_override.chan4_raw, u16::MAX);
+        assert_eq!(sent_override.chan5_raw, u16::MAX);
+        assert_eq!(sent_override.chan6_raw, u16::MAX);
+        assert_eq!(sent_override.chan7_raw, u16::MAX);
+        assert_eq!(sent_override.chan8_raw, u16::MAX);
+        assert_eq!(sent_override.chan9_raw, u16::MAX);
+        assert_eq!(sent_override.chan10_raw, u16::MAX);
+        assert_eq!(sent_override.chan11_raw, u16::MAX);
+        assert_eq!(sent_override.chan12_raw, u16::MAX);
+        assert_eq!(sent_override.chan13_raw, u16::MAX);
+        assert_eq!(sent_override.chan14_raw, u16::MAX);
+        assert_eq!(sent_override.chan15_raw, u16::MAX);
+        assert_eq!(sent_override.chan16_raw, u16::MAX);
+        assert_eq!(sent_override.chan17_raw, u16::MAX);
+
+        vehicle
+            .disconnect()
+            .await
+            .expect("disconnect should succeed");
+        drop(msg_tx);
+    }
+
+    #[test]
+    fn rc_override_rejects_invalid_channels_and_reserved_pwm_sentinels() {
+        let mut overrides = RcOverride::new();
+
+        assert!(matches!(
+            overrides.set_pwm(0, 1500),
+            Err(VehicleError::InvalidParameter(message))
+                if message == "rc override channel must be 1..=18, got 0"
+        ));
+        assert!(matches!(
+            overrides.release(19),
+            Err(VehicleError::InvalidParameter(message))
+                if message == "rc override channel must be 1..=18, got 19"
+        ));
+        assert!(matches!(
+            RcOverrideChannelValue::pwm(0),
+            Err(VehicleError::InvalidParameter(message))
+                if message.contains("reserved for release")
+        ));
+        assert!(matches!(
+            RcOverrideChannelValue::pwm(u16::MAX),
+            Err(VehicleError::InvalidParameter(message))
+                if message.contains("reserved for ignore")
+        ));
+    }
+
+    #[tokio::test]
+    async fn rc_override_surfaces_disconnected_send_failures() {
+        let (vehicle, command_rx) = test_vehicle_with_command_rx();
+        drop(command_rx);
+
+        let mut overrides = RcOverride::new();
+        overrides
+            .set_pwm(1, 1500)
+            .expect("channel 1 should accept a PWM override");
+
+        assert!(matches!(
+            vehicle.rc_override(overrides).await,
+            Err(VehicleError::Disconnected)
+        ));
     }
 
     #[cfg(feature = "stream")]
