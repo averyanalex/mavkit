@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use crate::command::Command;
 use crate::error::VehicleError;
 use crate::geo::{
     GeoPoint3d, GeoPoint3dMsl, GeoPoint3dRelHome, GeoPoint3dTerrain, try_latitude_e7,
@@ -9,11 +8,10 @@ use crate::geo::{
 use crate::mission::commands::MissionFrame as WireMissionFrame;
 use crate::mission::operations::MissionOperationHandle;
 use crate::mission::{
-    MissionCommand, MissionItem, MissionProtocolScope, MissionType, OperationReservation,
-    RawMissionCommand, WireMissionPlan, run_domain_operation,
+    MissionCommand, MissionItem, MissionType, RawMissionCommand, WireMissionPlan,
 };
 use crate::observation::{ObservationHandle, ObservationSubscription};
-use crate::stored_plan::{StoredPlanDomain, StoredPlanState};
+use crate::stored_plan::{StoredPlanAccess, StoredPlanDomain, StoredPlanHandle, StoredPlanState};
 use crate::types::{StoredPlanOperationKind, SupportState, SyncState};
 use crate::vehicle::VehicleInner;
 
@@ -40,10 +38,8 @@ pub type RallyDownloadOp = MissionOperationHandle<RallyPlan>;
 /// Handle for a rally clear operation.
 pub type RallyClearOp = MissionOperationHandle<()>;
 
-#[derive(Clone)]
-pub(crate) struct RallyDomain {
-    inner: StoredPlanDomain<RallyState>,
-}
+/// Shared rally-domain state stored on `VehicleInner`.
+pub(crate) type RallyDomain = StoredPlanDomain<RallyState>;
 
 impl StoredPlanState for RallyState {
     type Plan = RallyPlan;
@@ -66,182 +62,73 @@ impl StoredPlanState for RallyState {
     }
 }
 
-impl RallyDomain {
-    pub(crate) fn new() -> Self {
-        Self {
-            inner: StoredPlanDomain::new(),
-        }
+impl StoredPlanAccess for RallyState {
+    const DOMAIN_NAME: &'static str = "rally";
+    const MISSION_TYPE: MissionType = MissionType::Rally;
+
+    fn domain(inner: &VehicleInner) -> &StoredPlanDomain<Self> {
+        &inner.rally
     }
 
-    pub(crate) fn state(&self) -> ObservationHandle<RallyState> {
-        self.inner.state()
+    fn support(inner: &VehicleInner) -> ObservationHandle<SupportState> {
+        let vehicle_state = inner.stores.vehicle_state.borrow().clone();
+        inner.support.seed_from_vehicle_state(&vehicle_state);
+        inner.support.mission_rally()
     }
 
-    pub(crate) fn begin_operation(
-        &self,
-        scope: &MissionProtocolScope,
-        kind: StoredPlanOperationKind,
-        op_name: &'static str,
-    ) -> Result<OperationReservation, VehicleError> {
-        self.inner.begin_operation(scope, "rally", kind, op_name)
+    fn plan_to_wire(plan: &RallyPlan) -> Result<WireMissionPlan, VehicleError> {
+        mission_plan_from_rally_plan(plan)
     }
 
-    pub(crate) fn finish_operation(&self, scope: &MissionProtocolScope, op_id: u64) {
-        self.inner.finish_operation(scope, op_id);
-    }
-
-    fn note_operation_error(&self) {
-        self.inner.note_operation_error();
-    }
-
-    fn note_upload_success(&self, plan: RallyPlan) {
-        self.inner.note_upload_success(plan);
-    }
-
-    fn note_download_success(&self, plan: RallyPlan) {
-        self.inner.note_download_success(plan);
-    }
-
-    fn note_clear_success(&self) {
-        self.inner.note_clear_success();
+    fn plan_from_wire(plan: WireMissionPlan) -> Result<RallyPlan, VehicleError> {
+        rally_plan_from_mission_plan(plan)
     }
 }
 
 /// Accessor for rally state and transfer operations.
 pub struct RallyHandle<'a> {
-    inner: &'a VehicleInner,
+    handle: StoredPlanHandle<'a, RallyState>,
 }
 
 impl<'a> RallyHandle<'a> {
     pub(crate) fn new(inner: &'a VehicleInner) -> Self {
-        Self { inner }
+        Self {
+            handle: StoredPlanHandle::new(inner),
+        }
     }
 
     pub fn support(&self) -> ObservationHandle<SupportState> {
-        let vehicle_state = self.inner.stores.vehicle_state.borrow().clone();
-        self.inner.support.seed_from_vehicle_state(&vehicle_state);
-        self.inner.support.mission_rally()
+        self.handle.support()
     }
 
     pub fn latest(&self) -> Option<RallyState> {
-        self.inner.rally.state().latest()
+        self.handle.latest()
     }
 
     pub async fn wait(&self) -> RallyState {
-        self.inner.rally.state().wait().await.unwrap_or_default()
+        self.handle.wait().await
     }
 
     /// Like [`wait`](Self::wait), but returns [`VehicleError::Timeout`] if no
     /// state update arrives within `timeout`.
     pub async fn wait_timeout(&self, timeout: Duration) -> Result<RallyState, VehicleError> {
-        self.inner.rally.state().wait_timeout(timeout).await
+        self.handle.wait_timeout(timeout).await
     }
 
     pub fn subscribe(&self) -> ObservationSubscription<RallyState> {
-        self.inner.rally.state().subscribe()
+        self.handle.subscribe()
     }
 
     pub fn upload(&self, plan: RallyPlan) -> Result<RallyUploadOp, VehicleError> {
-        let wire_plan = mission_plan_from_rally_plan(&plan)?;
-        let domain = self.inner.rally.clone();
-        let reservation = domain.begin_operation(
-            &self.inner.mission_protocol,
-            StoredPlanOperationKind::Upload,
-            "upload",
-        )?;
-        let protocol = self.inner.mission_protocol.clone();
-        let op_id = reservation.id;
-
-        Ok(run_domain_operation(
-            self.inner.command_tx.clone(),
-            self.inner.stores.mission_progress.clone(),
-            reservation,
-            |reply, cancel| Command::MissionUpload {
-                plan: wire_plan,
-                reply,
-                cancel,
-            },
-            move |result, _| {
-                match &result {
-                    Ok(()) => domain.note_upload_success(plan),
-                    Err(_) => domain.note_operation_error(),
-                }
-                domain.finish_operation(&protocol, op_id);
-                result
-            },
-        ))
+        self.handle.upload(plan)
     }
 
     pub fn download(&self) -> Result<RallyDownloadOp, VehicleError> {
-        let domain = self.inner.rally.clone();
-        let reservation = domain.begin_operation(
-            &self.inner.mission_protocol,
-            StoredPlanOperationKind::Download,
-            "download",
-        )?;
-        let protocol = self.inner.mission_protocol.clone();
-        let op_id = reservation.id;
-
-        Ok(run_domain_operation(
-            self.inner.command_tx.clone(),
-            self.inner.stores.mission_progress.clone(),
-            reservation,
-            |reply, cancel| Command::MissionDownload {
-                mission_type: MissionType::Rally,
-                reply,
-                cancel,
-            },
-            move |result, _| {
-                let r = match result {
-                    Ok(plan) => match rally_plan_from_mission_plan(plan) {
-                        Ok(rally_plan) => {
-                            domain.note_download_success(rally_plan.clone());
-                            Ok(rally_plan)
-                        }
-                        Err(err) => {
-                            domain.note_operation_error();
-                            Err(err)
-                        }
-                    },
-                    Err(err) => {
-                        domain.note_operation_error();
-                        Err(err)
-                    }
-                };
-                domain.finish_operation(&protocol, op_id);
-                r
-            },
-        ))
+        self.handle.download()
     }
 
     pub fn clear(&self) -> Result<RallyClearOp, VehicleError> {
-        let domain = self.inner.rally.clone();
-        let reservation = domain.begin_operation(
-            &self.inner.mission_protocol,
-            StoredPlanOperationKind::Clear,
-            "clear",
-        )?;
-        let protocol = self.inner.mission_protocol.clone();
-        let op_id = reservation.id;
-
-        Ok(run_domain_operation(
-            self.inner.command_tx.clone(),
-            self.inner.stores.mission_progress.clone(),
-            reservation,
-            |reply, cancel| Command::MissionClear {
-                mission_type: MissionType::Rally,
-                reply,
-                cancel,
-            },
-            move |result, _| {
-                match &result {
-                    Ok(()) => domain.note_clear_success(),
-                    Err(_) => domain.note_operation_error(),
-                }
-                domain.finish_operation(&protocol, op_id);
-                result
-            },
-        ))
+        self.handle.clear()
     }
 }
 
@@ -377,7 +264,7 @@ fn rally_decode_error(detail: &str) -> VehicleError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mission::MissionDomain;
+    use crate::mission::{MissionDomain, MissionProtocolScope};
 
     fn sample_plan() -> RallyPlan {
         RallyPlan {
@@ -444,6 +331,7 @@ mod tests {
 
         let conflict = match rally.begin_operation(
             &mission_protocol,
+            "rally",
             StoredPlanOperationKind::Download,
             "download",
         ) {

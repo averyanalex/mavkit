@@ -1,7 +1,13 @@
+use std::time::Duration;
+
+use crate::command::Command;
 use crate::error::VehicleError;
-use crate::mission::{MissionProtocolScope, OperationReservation};
-use crate::observation::{ObservationHandle, ObservationWriter};
-use crate::types::SyncState;
+use crate::mission::{
+    MissionProtocolScope, MissionType, OperationReservation, WireMissionPlan, run_domain_operation,
+};
+use crate::observation::{ObservationHandle, ObservationSubscription, ObservationWriter};
+use crate::types::{StoredPlanOperationKind, SupportState, SyncState};
+use crate::vehicle::VehicleInner;
 use std::sync::{Arc, Mutex};
 
 pub(crate) trait StoredPlanState:
@@ -102,6 +108,221 @@ impl<S: StoredPlanState> StoredPlanDomain<S> {
             *latest = next.clone();
             let _ = self.inner.state_writer.publish(next);
         }
+    }
+}
+
+/// Domain-specific wiring that `StoredPlanHandle` needs but cannot infer from `StoredPlanState`.
+///
+/// Implement this on the state type (e.g. `FenceState`, `RallyState`) to get a fully-working
+/// `StoredPlanHandle<S>` for free.  The handle's `upload`, `download`, `clear`, `support`,
+/// and all observation accessors are derived entirely from this trait.
+pub(crate) trait StoredPlanAccess:
+    StoredPlanState<OperationKind = StoredPlanOperationKind>
+where
+    Self::Plan: Clone + Send + 'static,
+{
+    /// Human-readable domain name forwarded to `begin_operation` (e.g. `"fence"`, `"rally"`).
+    const DOMAIN_NAME: &'static str;
+
+    /// The MAVLink `MissionType` used for download and clear wire commands.
+    const MISSION_TYPE: MissionType;
+
+    /// Binds `S` to the correct domain field on `VehicleInner` (e.g. `inner.fence`
+    /// for `FenceState`, `inner.rally` for `RallyState`).
+    fn domain(inner: &VehicleInner) -> &StoredPlanDomain<Self>;
+
+    /// Seeds support state from the current vehicle observation, then returns the
+    /// domain-specific support handle.
+    fn support(inner: &VehicleInner) -> ObservationHandle<SupportState>;
+
+    /// Converts a typed plan into the wire format for upload.
+    fn plan_to_wire(plan: &Self::Plan) -> Result<WireMissionPlan, VehicleError>;
+
+    /// Converts a downloaded wire plan back into the typed plan.
+    fn plan_from_wire(plan: WireMissionPlan) -> Result<Self::Plan, VehicleError>;
+}
+
+/// Common handle over fence/rally stored-plan domains.
+///
+/// Provides observation accessors and upload/download/clear operations that work identically for
+/// every `StoredPlanAccess` implementor.  Concrete handles (`FenceHandle`, `RallyHandle`) wrap
+/// this with explicit forwarding methods to keep the public API surface unchanged.
+pub(crate) struct StoredPlanHandle<'a, S: StoredPlanAccess>
+where
+    S::Plan: Clone + Send + 'static,
+{
+    inner: &'a VehicleInner,
+    _marker: std::marker::PhantomData<S>,
+}
+
+impl<'a, S: StoredPlanAccess> StoredPlanHandle<'a, S>
+where
+    S::Plan: Clone + Send + 'static,
+{
+    pub(crate) fn new(inner: &'a VehicleInner) -> Self {
+        Self {
+            inner,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    /// Returns the capability-support observation for this domain.
+    ///
+    /// Seeds derived state from the current vehicle identity before returning so the caller
+    /// gets a non-stale initial value even before the event loop has had a chance to push
+    /// an update.
+    pub fn support(&self) -> ObservationHandle<SupportState> {
+        S::support(self.inner)
+    }
+
+    /// Returns the most recently observed state, or `None` if no update has arrived yet.
+    pub fn latest(&self) -> Option<S> {
+        S::domain(self.inner).state().latest()
+    }
+
+    /// Waits for the next state update and returns it.
+    ///
+    /// Returns the default state if the vehicle disconnects before an update arrives.
+    pub async fn wait(&self) -> S {
+        S::domain(self.inner)
+            .state()
+            .wait()
+            .await
+            .unwrap_or_default()
+    }
+
+    /// Like [`wait`](Self::wait), but returns [`VehicleError::Timeout`] if no state update
+    /// arrives within `timeout`.
+    pub async fn wait_timeout(&self, timeout: Duration) -> Result<S, VehicleError> {
+        S::domain(self.inner).state().wait_timeout(timeout).await
+    }
+
+    /// Subscribes to an async stream of state updates.
+    pub fn subscribe(&self) -> ObservationSubscription<S> {
+        S::domain(self.inner).state().subscribe()
+    }
+
+    /// Begins a plan upload.  Returns a handle that can be awaited for the operation result.
+    ///
+    /// Fails immediately if another mission-protocol operation is already active.
+    pub fn upload(
+        &self,
+        plan: S::Plan,
+    ) -> Result<crate::mission::operations::MissionOperationHandle<()>, VehicleError> {
+        let wire_plan = S::plan_to_wire(&plan)?;
+        let domain = S::domain(self.inner).clone();
+        let reservation = domain.begin_operation(
+            &self.inner.mission_protocol,
+            S::DOMAIN_NAME,
+            StoredPlanOperationKind::Upload,
+            "upload",
+        )?;
+        let protocol = self.inner.mission_protocol.clone();
+        let op_id = reservation.id;
+
+        Ok(run_domain_operation(
+            self.inner.command_tx.clone(),
+            self.inner.stores.mission_progress.clone(),
+            reservation,
+            |reply, cancel| Command::MissionUpload {
+                plan: wire_plan,
+                reply,
+                cancel,
+            },
+            move |result, _| {
+                match &result {
+                    Ok(()) => domain.note_upload_success(plan),
+                    Err(_) => domain.note_operation_error(),
+                }
+                domain.finish_operation(&protocol, op_id);
+                result
+            },
+        ))
+    }
+
+    /// Begins a plan download from the vehicle.  Returns a handle that resolves to the plan.
+    ///
+    /// Fails immediately if another mission-protocol operation is already active.
+    pub fn download(
+        &self,
+    ) -> Result<crate::mission::operations::MissionOperationHandle<S::Plan>, VehicleError> {
+        let domain = S::domain(self.inner).clone();
+        let reservation = domain.begin_operation(
+            &self.inner.mission_protocol,
+            S::DOMAIN_NAME,
+            StoredPlanOperationKind::Download,
+            "download",
+        )?;
+        let protocol = self.inner.mission_protocol.clone();
+        let op_id = reservation.id;
+
+        Ok(run_domain_operation(
+            self.inner.command_tx.clone(),
+            self.inner.stores.mission_progress.clone(),
+            reservation,
+            |reply, cancel| Command::MissionDownload {
+                mission_type: S::MISSION_TYPE,
+                reply,
+                cancel,
+            },
+            move |result, _| {
+                let r = match result {
+                    Ok(wire) => match S::plan_from_wire(wire) {
+                        Ok(typed_plan) => {
+                            let result = Ok(typed_plan.clone());
+                            domain.note_download_success(typed_plan);
+                            result
+                        }
+                        Err(err) => {
+                            domain.note_operation_error();
+                            Err(err)
+                        }
+                    },
+                    Err(err) => {
+                        domain.note_operation_error();
+                        Err(err)
+                    }
+                };
+                domain.finish_operation(&protocol, op_id);
+                r
+            },
+        ))
+    }
+
+    /// Clears all stored items for this domain on the vehicle.
+    ///
+    /// Fails immediately if another mission-protocol operation is already active.
+    pub fn clear(
+        &self,
+    ) -> Result<crate::mission::operations::MissionOperationHandle<()>, VehicleError> {
+        let domain = S::domain(self.inner).clone();
+        let reservation = domain.begin_operation(
+            &self.inner.mission_protocol,
+            S::DOMAIN_NAME,
+            StoredPlanOperationKind::Clear,
+            "clear",
+        )?;
+        let protocol = self.inner.mission_protocol.clone();
+        let op_id = reservation.id;
+
+        Ok(run_domain_operation(
+            self.inner.command_tx.clone(),
+            self.inner.stores.mission_progress.clone(),
+            reservation,
+            |reply, cancel| Command::MissionClear {
+                mission_type: S::MISSION_TYPE,
+                reply,
+                cancel,
+            },
+            move |result, _| {
+                match &result {
+                    Ok(()) => domain.note_clear_success(),
+                    Err(_) => domain.note_operation_error(),
+                }
+                domain.finish_operation(&protocol, op_id);
+                result
+            },
+        ))
     }
 }
 

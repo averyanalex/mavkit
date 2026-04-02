@@ -1,16 +1,14 @@
 use std::time::Duration;
 
-use crate::command::Command;
 use crate::error::VehicleError;
 use crate::geo::{GeoPoint2d, try_latitude_e7, try_longitude_e7};
 use crate::mission::commands::MissionFrame as WireMissionFrame;
 use crate::mission::operations::MissionOperationHandle;
 use crate::mission::{
-    MissionCommand, MissionItem, MissionProtocolScope, MissionType, OperationReservation,
-    RawMissionCommand, WireMissionPlan, run_domain_operation,
+    MissionCommand, MissionItem, MissionType, RawMissionCommand, WireMissionPlan,
 };
 use crate::observation::{ObservationHandle, ObservationSubscription};
-use crate::stored_plan::{StoredPlanDomain, StoredPlanState};
+use crate::stored_plan::{StoredPlanAccess, StoredPlanDomain, StoredPlanHandle, StoredPlanState};
 use crate::types::{StoredPlanOperationKind, SupportState, SyncState};
 use crate::vehicle::VehicleInner;
 
@@ -104,10 +102,8 @@ pub type FenceDownloadOp = MissionOperationHandle<FencePlan>;
 /// Handle for a fence clear operation.
 pub type FenceClearOp = MissionOperationHandle<()>;
 
-#[derive(Clone)]
-pub(crate) struct FenceDomain {
-    inner: StoredPlanDomain<FenceState>,
-}
+/// Shared fence-domain state stored on `VehicleInner`.
+pub(crate) type FenceDomain = StoredPlanDomain<FenceState>;
 
 impl StoredPlanState for FenceState {
     type Plan = FencePlan;
@@ -133,182 +129,73 @@ impl StoredPlanState for FenceState {
     }
 }
 
-impl FenceDomain {
-    pub(crate) fn new() -> Self {
-        Self {
-            inner: StoredPlanDomain::new(),
-        }
+impl StoredPlanAccess for FenceState {
+    const DOMAIN_NAME: &'static str = "fence";
+    const MISSION_TYPE: MissionType = MissionType::Fence;
+
+    fn domain(inner: &VehicleInner) -> &StoredPlanDomain<Self> {
+        &inner.fence
     }
 
-    pub(crate) fn state(&self) -> ObservationHandle<FenceState> {
-        self.inner.state()
+    fn support(inner: &VehicleInner) -> ObservationHandle<SupportState> {
+        let vehicle_state = inner.stores.vehicle_state.borrow().clone();
+        inner.support.seed_from_vehicle_state(&vehicle_state);
+        inner.support.mission_fence()
     }
 
-    pub(crate) fn begin_operation(
-        &self,
-        scope: &MissionProtocolScope,
-        kind: StoredPlanOperationKind,
-        op_name: &'static str,
-    ) -> Result<OperationReservation, VehicleError> {
-        self.inner.begin_operation(scope, "fence", kind, op_name)
+    fn plan_to_wire(plan: &FencePlan) -> Result<WireMissionPlan, VehicleError> {
+        mission_plan_from_fence_plan(plan)
     }
 
-    pub(crate) fn finish_operation(&self, scope: &MissionProtocolScope, op_id: u64) {
-        self.inner.finish_operation(scope, op_id);
-    }
-
-    fn note_operation_error(&self) {
-        self.inner.note_operation_error();
-    }
-
-    fn note_upload_success(&self, plan: FencePlan) {
-        self.inner.note_upload_success(plan);
-    }
-
-    fn note_download_success(&self, plan: FencePlan) {
-        self.inner.note_download_success(plan);
-    }
-
-    fn note_clear_success(&self) {
-        self.inner.note_clear_success();
+    fn plan_from_wire(plan: WireMissionPlan) -> Result<FencePlan, VehicleError> {
+        fence_plan_from_mission_plan(plan)
     }
 }
 
 /// Accessor for fence state and transfer operations.
 pub struct FenceHandle<'a> {
-    inner: &'a VehicleInner,
+    handle: StoredPlanHandle<'a, FenceState>,
 }
 
 impl<'a> FenceHandle<'a> {
     pub(crate) fn new(inner: &'a VehicleInner) -> Self {
-        Self { inner }
+        Self {
+            handle: StoredPlanHandle::new(inner),
+        }
     }
 
     pub fn support(&self) -> ObservationHandle<SupportState> {
-        let vehicle_state = self.inner.stores.vehicle_state.borrow().clone();
-        self.inner.support.seed_from_vehicle_state(&vehicle_state);
-        self.inner.support.mission_fence()
+        self.handle.support()
     }
 
     pub fn latest(&self) -> Option<FenceState> {
-        self.inner.fence.state().latest()
+        self.handle.latest()
     }
 
     pub async fn wait(&self) -> FenceState {
-        self.inner.fence.state().wait().await.unwrap_or_default()
+        self.handle.wait().await
     }
 
     /// Like [`wait`](Self::wait), but returns [`VehicleError::Timeout`] if no
     /// state update arrives within `timeout`.
     pub async fn wait_timeout(&self, timeout: Duration) -> Result<FenceState, VehicleError> {
-        self.inner.fence.state().wait_timeout(timeout).await
+        self.handle.wait_timeout(timeout).await
     }
 
     pub fn subscribe(&self) -> ObservationSubscription<FenceState> {
-        self.inner.fence.state().subscribe()
+        self.handle.subscribe()
     }
 
     pub fn upload(&self, plan: FencePlan) -> Result<FenceUploadOp, VehicleError> {
-        let wire_plan = mission_plan_from_fence_plan(&plan)?;
-        let domain = self.inner.fence.clone();
-        let reservation = domain.begin_operation(
-            &self.inner.mission_protocol,
-            StoredPlanOperationKind::Upload,
-            "upload",
-        )?;
-        let protocol = self.inner.mission_protocol.clone();
-        let op_id = reservation.id;
-
-        Ok(run_domain_operation(
-            self.inner.command_tx.clone(),
-            self.inner.stores.mission_progress.clone(),
-            reservation,
-            |reply, cancel| Command::MissionUpload {
-                plan: wire_plan,
-                reply,
-                cancel,
-            },
-            move |result, _| {
-                match &result {
-                    Ok(()) => domain.note_upload_success(plan),
-                    Err(_) => domain.note_operation_error(),
-                }
-                domain.finish_operation(&protocol, op_id);
-                result
-            },
-        ))
+        self.handle.upload(plan)
     }
 
     pub fn download(&self) -> Result<FenceDownloadOp, VehicleError> {
-        let domain = self.inner.fence.clone();
-        let reservation = domain.begin_operation(
-            &self.inner.mission_protocol,
-            StoredPlanOperationKind::Download,
-            "download",
-        )?;
-        let protocol = self.inner.mission_protocol.clone();
-        let op_id = reservation.id;
-
-        Ok(run_domain_operation(
-            self.inner.command_tx.clone(),
-            self.inner.stores.mission_progress.clone(),
-            reservation,
-            |reply, cancel| Command::MissionDownload {
-                mission_type: MissionType::Fence,
-                reply,
-                cancel,
-            },
-            move |result, _| {
-                let r = match result {
-                    Ok(plan) => match fence_plan_from_mission_plan(plan) {
-                        Ok(fence_plan) => {
-                            domain.note_download_success(fence_plan.clone());
-                            Ok(fence_plan)
-                        }
-                        Err(err) => {
-                            domain.note_operation_error();
-                            Err(err)
-                        }
-                    },
-                    Err(err) => {
-                        domain.note_operation_error();
-                        Err(err)
-                    }
-                };
-                domain.finish_operation(&protocol, op_id);
-                r
-            },
-        ))
+        self.handle.download()
     }
 
     pub fn clear(&self) -> Result<FenceClearOp, VehicleError> {
-        let domain = self.inner.fence.clone();
-        let reservation = domain.begin_operation(
-            &self.inner.mission_protocol,
-            StoredPlanOperationKind::Clear,
-            "clear",
-        )?;
-        let protocol = self.inner.mission_protocol.clone();
-        let op_id = reservation.id;
-
-        Ok(run_domain_operation(
-            self.inner.command_tx.clone(),
-            self.inner.stores.mission_progress.clone(),
-            reservation,
-            |reply, cancel| Command::MissionClear {
-                mission_type: MissionType::Fence,
-                reply,
-                cancel,
-            },
-            move |result, _| {
-                match &result {
-                    Ok(()) => domain.note_clear_success(),
-                    Err(_) => domain.note_operation_error(),
-                }
-                domain.finish_operation(&protocol, op_id);
-                result
-            },
-        ))
+        self.handle.clear()
     }
 }
 
@@ -605,7 +492,7 @@ fn fence_decode_error(detail: &str) -> VehicleError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mission::MissionDomain;
+    use crate::mission::{MissionDomain, MissionProtocolScope};
 
     fn point(latitude_deg: f64, longitude_deg: f64) -> GeoPoint2d {
         GeoPoint2d {
@@ -691,6 +578,7 @@ mod tests {
 
         let conflict = match fence.begin_operation(
             &mission_protocol,
+            "fence",
             StoredPlanOperationKind::Download,
             "download",
         ) {
