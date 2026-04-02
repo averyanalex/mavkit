@@ -4,9 +4,9 @@ use mavkit::dialect;
 use mavlink::{
     AsyncMavConnection, MAVLinkMessageRaw, MAVLinkV2MessageRaw, MavHeader, MavlinkVersion,
 };
+use pyo3::exceptions::PyTypeError;
 #[cfg(feature = "test-support")]
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
-use pyo3::exceptions::{PyStopAsyncIteration, PyTypeError};
 use pyo3::prelude::*;
 use std::sync::Arc;
 #[cfg(feature = "test-support")]
@@ -24,6 +24,7 @@ use crate::enums::{PyAutopilotType, PyVehicleType};
 use crate::error::{duration_from_secs, to_py_err};
 use crate::info::PyInfoHandle;
 use crate::link::PyLinkHandle;
+use crate::macros::py_subscription;
 use crate::mission::PyMissionPlan;
 use crate::modes::{PyCurrentModeHandle, PyModesHandle};
 use crate::params::{PyParamsHandle, PySyncState};
@@ -534,6 +535,12 @@ pub struct PyFenceState {
     inner: mavkit::FenceState,
 }
 
+impl From<mavkit::FenceState> for PyFenceState {
+    fn from(inner: mavkit::FenceState) -> Self {
+        Self { inner }
+    }
+}
+
 #[pymethods]
 impl PyFenceState {
     #[getter]
@@ -560,6 +567,12 @@ pub struct PyRallyState {
     inner: mavkit::RallyState,
 }
 
+impl From<mavkit::RallyState> for PyRallyState {
+    fn from(inner: mavkit::RallyState) -> Self {
+        Self { inner }
+    }
+}
+
 #[pymethods]
 impl PyRallyState {
     #[getter]
@@ -584,6 +597,12 @@ impl PyRallyState {
 #[derive(Clone)]
 pub struct PyMissionState {
     pub(crate) inner: mavkit::mission::MissionState,
+}
+
+impl From<mavkit::mission::MissionState> for PyMissionState {
+    fn from(inner: mavkit::mission::MissionState) -> Self {
+        Self { inner }
+    }
 }
 
 #[pymethods]
@@ -679,97 +698,40 @@ impl PyVehicleIdentity {
     }
 }
 
-#[pyclass(name = "MissionStateSubscription", frozen, skip_from_py_object)]
-pub struct PyMissionStateSubscription {
-    inner: Arc<tokio::sync::Mutex<mavkit::ObservationSubscription<mavkit::mission::MissionState>>>,
-}
+py_subscription!(
+    PyMissionStateSubscription,
+    mavkit::mission::MissionState,
+    PyMissionState,
+    "MissionStateSubscription",
+    "mission-state subscription closed"
+);
 
-#[pymethods]
-impl PyMissionStateSubscription {
-    fn recv<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            match guard.recv().await {
-                Some(value) => Ok(PyMissionState { inner: value }),
-                None => Err(PyStopAsyncIteration::new_err(
-                    "mission-state subscription closed",
-                )),
-            }
-        })
-    }
+py_subscription!(
+    PyFenceStateSubscription,
+    mavkit::FenceState,
+    PyFenceState,
+    "FenceStateSubscription",
+    "fence-state subscription closed"
+);
 
-    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    fn __anext__<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        slf.recv(py)
-    }
-}
-
-#[pyclass(name = "FenceStateSubscription", frozen, skip_from_py_object)]
-pub struct PyFenceStateSubscription {
-    inner: Arc<tokio::sync::Mutex<mavkit::ObservationSubscription<mavkit::FenceState>>>,
-}
-
-#[pymethods]
-impl PyFenceStateSubscription {
-    fn recv<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            match guard.recv().await {
-                Some(value) => Ok(PyFenceState { inner: value }),
-                None => Err(PyStopAsyncIteration::new_err(
-                    "fence-state subscription closed",
-                )),
-            }
-        })
-    }
-
-    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    fn __anext__<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        slf.recv(py)
-    }
-}
-
-#[pyclass(name = "RallyStateSubscription", frozen, skip_from_py_object)]
-pub struct PyRallyStateSubscription {
-    inner: Arc<tokio::sync::Mutex<mavkit::ObservationSubscription<mavkit::RallyState>>>,
-}
-
-#[pymethods]
-impl PyRallyStateSubscription {
-    fn recv<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            match guard.recv().await {
-                Some(value) => Ok(PyRallyState { inner: value }),
-                None => Err(PyStopAsyncIteration::new_err(
-                    "rally-state subscription closed",
-                )),
-            }
-        })
-    }
-
-    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    fn __anext__<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        slf.recv(py)
-    }
-}
+py_subscription!(
+    PyRallyStateSubscription,
+    mavkit::RallyState,
+    PyRallyState,
+    "RallyStateSubscription",
+    "rally-state subscription closed"
+);
 
 #[pyclass(name = "MissionOperationProgress", frozen, skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyMissionOperationProgress {
     inner: mavkit::MissionOperationProgress,
+}
+
+impl From<mavkit::MissionOperationProgress> for PyMissionOperationProgress {
+    fn from(inner: mavkit::MissionOperationProgress) -> Self {
+        Self { inner }
+    }
 }
 
 #[pymethods]
@@ -798,35 +760,13 @@ impl PyMissionOperationProgress {
     }
 }
 
-#[pyclass(name = "MissionProgressSubscription", frozen, skip_from_py_object)]
-pub struct PyMissionProgressSubscription {
-    inner:
-        Arc<tokio::sync::Mutex<mavkit::ObservationSubscription<mavkit::MissionOperationProgress>>>,
-}
-
-#[pymethods]
-impl PyMissionProgressSubscription {
-    fn recv<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            match guard.recv().await {
-                Some(value) => Ok(PyMissionOperationProgress { inner: value }),
-                None => Err(PyStopAsyncIteration::new_err(
-                    "mission-progress subscription closed",
-                )),
-            }
-        })
-    }
-
-    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    fn __anext__<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        slf.recv(py)
-    }
-}
+py_subscription!(
+    PyMissionProgressSubscription,
+    mavkit::MissionOperationProgress,
+    PyMissionOperationProgress,
+    "MissionProgressSubscription",
+    "mission-progress subscription closed"
+);
 
 macro_rules! define_progress_op {
     ($rust_name:ident, $py_name:literal, $inner:ty, $map:expr) => {

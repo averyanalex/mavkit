@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use pyo3::exceptions::PyStopAsyncIteration;
 use pyo3::prelude::*;
 
 use crate::error::{duration_from_secs, to_py_err};
+use crate::macros::py_subscription;
 use crate::vehicle::vehicle_label;
 
 #[pyclass(name = "SupportState", eq, frozen, from_py_object)]
@@ -24,43 +24,13 @@ impl From<mavkit::SupportState> for PySupportState {
     }
 }
 
-#[pyclass(name = "SupportStateSubscription", frozen, skip_from_py_object)]
-pub struct PySupportStateSubscription {
-    inner: Arc<tokio::sync::Mutex<mavkit::ObservationSubscription<mavkit::SupportState>>>,
-}
-
-#[pymethods]
-impl PySupportStateSubscription {
-    fn recv<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            match guard.recv().await {
-                Some(value) => Ok(PySupportState::from(value)),
-                None => Err(PyStopAsyncIteration::new_err(
-                    "support-state subscription closed",
-                )),
-            }
-        })
-    }
-
-    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    fn __anext__<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = slf.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            match guard.recv().await {
-                Some(value) => Ok(PySupportState::from(value)),
-                None => Err(PyStopAsyncIteration::new_err(
-                    "support-state subscription closed",
-                )),
-            }
-        })
-    }
-}
+py_subscription!(
+    PySupportStateSubscription,
+    mavkit::SupportState,
+    PySupportState,
+    "SupportStateSubscription",
+    "support-state subscription closed"
+);
 
 #[pyclass(name = "SupportStateHandle", frozen, skip_from_py_object)]
 #[derive(Clone)]

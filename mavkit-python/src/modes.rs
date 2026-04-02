@@ -4,6 +4,7 @@ use pyo3::exceptions::PyStopAsyncIteration;
 use pyo3::prelude::*;
 
 use crate::error::{duration_from_secs, to_py_err};
+use crate::macros::py_subscription;
 use crate::support::PySupportStateHandle;
 use crate::vehicle::vehicle_label;
 
@@ -199,19 +200,7 @@ impl PyModeCatalogSubscription {
     }
 
     fn __anext__<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = slf.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            match guard.recv().await {
-                Some(value) => Ok(value
-                    .into_iter()
-                    .map(PyModeDescriptor::from)
-                    .collect::<Vec<_>>()),
-                None => Err(PyStopAsyncIteration::new_err(
-                    "mode-catalog subscription closed",
-                )),
-            }
-        })
+        slf.recv(py)
     }
 }
 
@@ -268,43 +257,13 @@ impl PyModeCatalogHandle {
     }
 }
 
-#[pyclass(name = "CurrentModeSubscription", frozen, skip_from_py_object)]
-pub struct PyCurrentModeSubscription {
-    inner: Arc<tokio::sync::Mutex<mavkit::ObservationSubscription<mavkit::CurrentMode>>>,
-}
-
-#[pymethods]
-impl PyCurrentModeSubscription {
-    fn recv<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            match guard.recv().await {
-                Some(value) => Ok(PyCurrentMode::from(value)),
-                None => Err(PyStopAsyncIteration::new_err(
-                    "current-mode subscription closed",
-                )),
-            }
-        })
-    }
-
-    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    fn __anext__<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = slf.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            match guard.recv().await {
-                Some(value) => Ok(PyCurrentMode::from(value)),
-                None => Err(PyStopAsyncIteration::new_err(
-                    "current-mode subscription closed",
-                )),
-            }
-        })
-    }
-}
+py_subscription!(
+    PyCurrentModeSubscription,
+    mavkit::CurrentMode,
+    PyCurrentMode,
+    "CurrentModeSubscription",
+    "current-mode subscription closed"
+);
 
 #[pyclass(name = "CurrentModeHandle", frozen, skip_from_py_object)]
 #[derive(Clone)]

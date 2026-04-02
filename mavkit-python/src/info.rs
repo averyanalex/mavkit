@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use pyo3::exceptions::PyStopAsyncIteration;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
 use crate::error::{duration_from_secs, to_py_err};
+use crate::macros::py_subscription;
 use crate::vehicle::vehicle_label;
 
 #[pyclass(name = "FirmwareInfo", frozen, skip_from_py_object)]
@@ -332,42 +332,13 @@ macro_rules! define_observation_wrapper {
         $subscription_py_name:literal,
         $closed_message:literal
     ) => {
-        #[pyclass(name = $subscription_py_name, frozen, skip_from_py_object)]
-        pub struct $subscription_name {
-            inner: Arc<tokio::sync::Mutex<mavkit::ObservationSubscription<$rust_ty>>>,
-        }
-
-        #[pymethods]
-        impl $subscription_name {
-            fn recv<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-                let inner = self.inner.clone();
-                pyo3_async_runtimes::tokio::future_into_py(py, async move {
-                    let mut guard = inner.lock().await;
-                    match guard.recv().await {
-                        Some(value) => Ok(<$py_ty>::from(value)),
-                        None => Err(PyStopAsyncIteration::new_err($closed_message)),
-                    }
-                })
-            }
-
-            fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-                slf
-            }
-
-            fn __anext__<'py>(
-                slf: PyRef<'py, Self>,
-                py: Python<'py>,
-            ) -> PyResult<Bound<'py, PyAny>> {
-                let inner = slf.inner.clone();
-                pyo3_async_runtimes::tokio::future_into_py(py, async move {
-                    let mut guard = inner.lock().await;
-                    match guard.recv().await {
-                        Some(value) => Ok(<$py_ty>::from(value)),
-                        None => Err(PyStopAsyncIteration::new_err($closed_message)),
-                    }
-                })
-            }
-        }
+        py_subscription!(
+            $subscription_name,
+            $rust_ty,
+            $py_ty,
+            $subscription_py_name,
+            $closed_message
+        );
 
         #[pyclass(name = $py_name, frozen, skip_from_py_object)]
         #[derive(Clone)]

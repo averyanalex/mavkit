@@ -5,6 +5,7 @@ mod error;
 mod guided;
 mod info;
 mod link;
+mod macros;
 mod mission;
 mod modes;
 mod params;

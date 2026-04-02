@@ -1,10 +1,11 @@
-use pyo3::exceptions::{PyKeyError, PyStopAsyncIteration};
+use pyo3::exceptions::PyKeyError;
 use pyo3::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::enums::*;
 use crate::error::{duration_from_secs, to_py_err};
+use crate::macros::py_subscription;
 use crate::vehicle::vehicle_label;
 
 #[pyclass(name = "SyncState", eq, frozen, from_py_object)]
@@ -163,6 +164,12 @@ pub struct PyParamProgress {
     pub(crate) inner: mavkit::ParamOperationProgress,
 }
 
+impl From<mavkit::ParamOperationProgress> for PyParamProgress {
+    fn from(inner: mavkit::ParamOperationProgress) -> Self {
+        Self { inner }
+    }
+}
+
 #[pymethods]
 impl PyParamProgress {
     #[getter]
@@ -265,10 +272,17 @@ impl PyParamWriteResult {
     }
 }
 
+/// Wraps `mavkit::ParamState` for Python exposure.
 #[pyclass(name = "ParamState", frozen, skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyParamState {
     inner: mavkit::ParamState,
+}
+
+impl From<mavkit::ParamState> for PyParamState {
+    fn from(inner: mavkit::ParamState) -> Self {
+        Self { inner }
+    }
 }
 
 #[pymethods]
@@ -298,81 +312,21 @@ impl PyParamState {
     }
 }
 
-#[pyclass(name = "ParamStateSubscription", frozen, skip_from_py_object)]
-pub struct PyParamStateSubscription {
-    inner: Arc<tokio::sync::Mutex<mavkit::ObservationSubscription<mavkit::ParamState>>>,
-}
+py_subscription!(
+    PyParamStateSubscription,
+    mavkit::ParamState,
+    PyParamState,
+    "ParamStateSubscription",
+    "param-state subscription closed"
+);
 
-#[pymethods]
-impl PyParamStateSubscription {
-    fn recv<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            match guard.recv().await {
-                Some(value) => Ok(PyParamState { inner: value }),
-                None => Err(PyStopAsyncIteration::new_err(
-                    "param-state subscription closed",
-                )),
-            }
-        })
-    }
-
-    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    fn __anext__<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = slf.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            match guard.recv().await {
-                Some(value) => Ok(PyParamState { inner: value }),
-                None => Err(PyStopAsyncIteration::new_err(
-                    "param-state subscription closed",
-                )),
-            }
-        })
-    }
-}
-
-#[pyclass(name = "ParamProgressSubscription", frozen, skip_from_py_object)]
-pub struct PyParamProgressSubscription {
-    inner: Arc<tokio::sync::Mutex<mavkit::ObservationSubscription<mavkit::ParamOperationProgress>>>,
-}
-
-#[pymethods]
-impl PyParamProgressSubscription {
-    fn recv<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            match guard.recv().await {
-                Some(value) => Ok(PyParamProgress { inner: value }),
-                None => Err(PyStopAsyncIteration::new_err(
-                    "param-progress subscription closed",
-                )),
-            }
-        })
-    }
-
-    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    fn __anext__<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = slf.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            match guard.recv().await {
-                Some(value) => Ok(PyParamProgress { inner: value }),
-                None => Err(PyStopAsyncIteration::new_err(
-                    "param-progress subscription closed",
-                )),
-            }
-        })
-    }
-}
+py_subscription!(
+    PyParamProgressSubscription,
+    mavkit::ParamOperationProgress,
+    PyParamProgress,
+    "ParamProgressSubscription",
+    "param-progress subscription closed"
+);
 
 #[pyclass(name = "ParamDownloadOp", frozen, skip_from_py_object)]
 #[derive(Clone)]

@@ -65,24 +65,7 @@ impl PyLinkStateSubscription {
     }
 
     fn __anext__<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = slf.inner.clone();
-        let last_err = slf.last_error_message.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            match guard.recv().await {
-                Some(value) => {
-                    if let mavkit::LinkState::Error(ref msg) = value {
-                        *last_err.lock().unwrap() = Some(msg.clone());
-                    } else {
-                        *last_err.lock().unwrap() = None;
-                    }
-                    Ok(PyLinkState::from(value))
-                }
-                None => Err(PyStopAsyncIteration::new_err(
-                    "link-state subscription closed",
-                )),
-            }
-        })
+        slf.recv(py)
     }
 }
 
