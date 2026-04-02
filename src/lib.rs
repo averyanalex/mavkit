@@ -1,8 +1,6 @@
 #![doc = include_str!("../README.md")]
 
 pub mod ardupilot;
-#[cfg(feature = "stream")]
-pub mod ble_transport;
 pub(crate) mod command;
 pub mod config;
 pub mod error;
@@ -20,7 +18,7 @@ pub mod raw;
 mod state;
 mod stored_plan;
 #[cfg(feature = "stream")]
-pub mod stream_connection;
+pub mod stream;
 pub mod support;
 pub mod telemetry;
 #[cfg(test)]

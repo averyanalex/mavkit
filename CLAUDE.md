@@ -61,7 +61,7 @@ cd mavkit-python && uv run python -c "import mavkit" # Smoke test
 - **`src/params/`** — Parameter types and param-file parsing
 - **`src/modes.rs`** — ArduPilot mode-name mapping
 - **`src/tlog/`** — TLOG file parser: timestamped MAVLink message reader (behind `tlog` feature)
-- **`src/ble_transport.rs`**, **`src/stream_connection.rs`** — Stream adapters (behind `stream` feature)
+- **`src/stream.rs`** — Async stream connection + channel bridge adapters (behind `stream` feature)
 
 ### Python Bindings (`mavkit-python/`)
 

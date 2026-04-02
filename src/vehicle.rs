@@ -16,7 +16,7 @@ use crate::rally::RallyDomain;
 use crate::raw::RawHandle;
 use crate::state::{StateChannels, VehicleState, create_channels};
 #[cfg(feature = "stream")]
-use crate::stream_connection::StreamConnection;
+use crate::stream::StreamConnection;
 use crate::support::{SupportDomain, SupportHandle};
 use crate::telemetry::TelemetryHandle;
 use std::sync::Arc;
@@ -415,7 +415,9 @@ impl Vehicle {
     /// Constructs a vehicle from async stream halves for custom byte-stream transports.
     ///
     /// This is a `stream`-feature convenience wrapper around
-    /// [`StreamConnection`] and [`Vehicle::from_connection`].
+    /// [`StreamConnection`] and [`Vehicle::from_connection`]. For callback-driven
+    /// transports, [`crate::stream::ChannelBridge`] provides channel-backed stream
+    /// halves.
     #[cfg(feature = "stream")]
     pub async fn from_stream_parts<R, W>(
         reader: R,
