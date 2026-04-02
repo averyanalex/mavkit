@@ -18,6 +18,7 @@ def main() -> int:
 
     manifests = {
         "Cargo.toml": ("package", "version"),
+        "mavkit-macros/Cargo.toml": ("package", "version"),
         "mavkit-python/Cargo.toml": ("package", "version"),
         "mavkit-python/pyproject.toml": ("project", "version"),
     }
