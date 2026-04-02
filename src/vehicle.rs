@@ -9,8 +9,8 @@ use crate::geo::{GeoPoint3dMsl, try_latitude_e7, try_longitude_e7};
 use crate::info::{InfoDomain, InfoHandle};
 use crate::link::LinkHandle;
 use crate::mission::{MissionDomain, MissionProtocolScope, send_domain_command};
-use crate::modes::{CurrentMode, ModeDomain, ModesHandle, mode_number};
-use crate::observation::{MetricHandle, MetricSample, ObservationHandle, ObservationSubscription};
+use crate::modes::{ModeDomain, ModesHandle, mode_number};
+use crate::observation::{MetricHandle, MetricSample, ObservationSubscription};
 use crate::params::ParamsDomain;
 use crate::rally::RallyDomain;
 use crate::raw::RawHandle;
@@ -631,21 +631,6 @@ impl Vehicle {
         .await
     }
 
-    /// Shortcut for `vehicle.available_modes().current()`.
-    pub fn current_mode(&self) -> ObservationHandle<CurrentMode> {
-        self.available_modes().current()
-    }
-
-    /// Shortcut for `vehicle.telemetry().home()`.
-    pub fn home(&self) -> MetricHandle<GeoPoint3dMsl> {
-        self.telemetry().home()
-    }
-
-    /// Shortcut for `vehicle.telemetry().origin()`.
-    pub fn origin(&self) -> MetricHandle<GeoPoint3dMsl> {
-        self.telemetry().origin()
-    }
-
     pub async fn arm(&self, force: bool) -> Result<(), VehicleError> {
         self.send_command(|reply| Command::Arm { force, reply })
             .await
@@ -1046,29 +1031,6 @@ mod tests {
             vehicle.link().state().latest(),
             Some(crate::LinkState::Connected)
         );
-    }
-
-    #[test]
-    fn current_mode_shortcut_matches_handle_path() {
-        let vehicle = dummy_vehicle();
-        // Both paths should compile and return the same observation type.
-        let via_shortcut = vehicle.current_mode();
-        let via_handle = vehicle.available_modes().current();
-        // No data yet — both should be None on a bare vehicle.
-        assert_eq!(
-            via_shortcut.latest().is_none(),
-            via_handle.latest().is_none()
-        );
-    }
-
-    #[test]
-    fn home_and_origin_shortcuts_compile() {
-        let vehicle = dummy_vehicle();
-        let _home = vehicle.home();
-        let _origin = vehicle.origin();
-        // Metric handles on a bare vehicle have no data.
-        assert!(vehicle.home().latest().is_none());
-        assert!(vehicle.origin().latest().is_none());
     }
 
     #[test]

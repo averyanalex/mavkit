@@ -1873,21 +1873,6 @@ impl PyVehicle {
         PyArduPilotHandle::new(self.inner.clone())
     }
 
-    /// Shortcut for ``vehicle.available_modes().current()``.
-    fn current_mode(&self) -> PyCurrentModeHandle {
-        PyCurrentModeHandle::from_observation(self.inner.current_mode())
-    }
-
-    /// Shortcut for ``vehicle.telemetry().home()``.
-    fn home(&self) -> PyMetricHandle {
-        PyMetricHandle::geo_point_3d_msl(self.inner.home())
-    }
-
-    /// Shortcut for ``vehicle.telemetry().origin()``.
-    fn origin(&self) -> PyMetricHandle {
-        PyMetricHandle::geo_point_3d_msl(self.inner.origin())
-    }
-
     fn identity(&self) -> PyVehicleIdentity {
         PyVehicleIdentity {
             inner: self.inner.identity(),
