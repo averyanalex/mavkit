@@ -153,5 +153,50 @@ macro_rules! define_observation_wrapper {
     };
 }
 
+/// Generates a frozen pyclass wrapper with keyword-only constructor, getters, and `__repr__`.
+///
+/// Covers the common case where every field is a scalar passed straight through to the
+/// inner Rust struct. Wrappers with custom transforms (enum fields, GeoPoint3d, defaults,
+/// fallible constructors) should remain hand-written.
+macro_rules! py_frozen_wrapper {
+    (
+        $py_struct:ident wraps $($inner_seg:ident)::+ as $py_name:literal {
+            $($field:ident : $field_ty:ty),+ $(,)?
+        }
+    ) => {
+        #[pyo3::pyclass(name = $py_name, frozen, from_py_object)]
+        #[derive(Clone)]
+        pub struct $py_struct {
+            pub(crate) inner: $($inner_seg)::+,
+        }
+
+        #[pyo3::pymethods]
+        impl $py_struct {
+            #[new]
+            #[pyo3(signature = (*, $($field),+))]
+            fn new($($field: $field_ty),+) -> Self {
+                Self {
+                    inner: $($inner_seg)::+ { $($field),+ },
+                }
+            }
+
+            $(
+                #[getter]
+                fn $field(&self) -> $field_ty {
+                    self.inner.$field
+                }
+            )+
+
+            fn __repr__(&self) -> String {
+                format!(
+                    concat!($py_name, "({})"),
+                    [$(format!(concat!(stringify!($field), "={:?}"), self.inner.$field)),+].join(", ")
+                )
+            }
+        }
+    };
+}
+
 pub(crate) use define_observation_wrapper;
+pub(crate) use py_frozen_wrapper;
 pub(crate) use py_subscription;

@@ -3,6 +3,7 @@ use pyo3::types::PyAny;
 
 use crate::enums::*;
 use crate::geo::{PyGeoPoint3d, position_components};
+use crate::macros::py_frozen_wrapper;
 
 fn command_frame_from_py(frame: PyMissionFrame) -> mavkit::mission::commands::MissionFrame {
     command_frame_from_py_raw(frame, None)
@@ -261,34 +262,6 @@ fn winch_action_name(action: mavkit::mission::commands::WinchAction) -> &'static
         mavkit::mission::commands::WinchAction::LengthControl => "length_control",
         mavkit::mission::commands::WinchAction::RateControl => "rate_control",
     }
-}
-
-macro_rules! define_scalar_command_pyclass {
-    ($py_struct:ident, $py_name:literal, $inner_ty:ty, $inner_ctor:expr, { $($field:ident : $ty:ty),+ $(,)? }) => {
-        #[pyclass(name = $py_name, frozen, from_py_object)]
-        #[derive(Clone)]
-        pub struct $py_struct {
-            pub(crate) inner: $inner_ty,
-        }
-
-        #[pymethods]
-        impl $py_struct {
-            #[new]
-            #[pyo3(signature = (*, $($field),+))]
-            fn new($($field: $ty),+) -> Self {
-                Self {
-                    inner: $inner_ctor,
-                }
-            }
-
-            $(
-                #[getter]
-                fn $field(&self) -> $ty {
-                    self.inner.$field
-                }
-            )+
-        }
-    };
 }
 
 #[pyclass(name = "RawMissionCommand", frozen, from_py_object)]
@@ -683,27 +656,9 @@ impl PyNavLoiterTime {
     }
 }
 
-#[pyclass(name = "NavGuidedEnable", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct PyNavGuidedEnable {
-    pub(crate) inner: mavkit::mission::commands::NavGuidedEnable,
-}
-
-#[pymethods]
-impl PyNavGuidedEnable {
-    #[new]
-    #[pyo3(signature = (*, enabled))]
-    fn new(enabled: bool) -> Self {
-        Self {
-            inner: mavkit::mission::commands::NavGuidedEnable { enabled },
-        }
-    }
-
-    #[getter]
-    fn enabled(&self) -> bool {
-        self.inner.enabled
-    }
-}
+py_frozen_wrapper!(PyNavGuidedEnable wraps mavkit::mission::commands::NavGuidedEnable as "NavGuidedEnable" {
+    enabled: bool,
+});
 
 #[pyclass(name = "NavReturnToLaunch", frozen, from_py_object)]
 #[derive(Clone, Default)]
@@ -1157,39 +1112,18 @@ impl PyNavContinueAndChangeAlt {
     }
 }
 
-define_scalar_command_pyclass!(
-    PyNavDelay,
-    "NavDelay",
-    mavkit::mission::commands::NavDelay,
-    mavkit::mission::commands::NavDelay {
-        seconds,
-        hour_utc,
-        min_utc,
-        sec_utc,
-    },
-    {
-        seconds: f32,
-        hour_utc: f32,
-        min_utc: f32,
-        sec_utc: f32
-    }
-);
+py_frozen_wrapper!(PyNavDelay wraps mavkit::mission::commands::NavDelay as "NavDelay" {
+    seconds: f32,
+    hour_utc: f32,
+    min_utc: f32,
+    sec_utc: f32,
+});
 
-define_scalar_command_pyclass!(
-    PyNavAltitudeWait,
-    "NavAltitudeWait",
-    mavkit::mission::commands::NavAltitudeWait,
-    mavkit::mission::commands::NavAltitudeWait {
-        altitude_m,
-        descent_rate_mps,
-        wiggle_time_s,
-    },
-    {
-        altitude_m: f32,
-        descent_rate_mps: f32,
-        wiggle_time_s: f32
-    }
-);
+py_frozen_wrapper!(PyNavAltitudeWait wraps mavkit::mission::commands::NavAltitudeWait as "NavAltitudeWait" {
+    altitude_m: f32,
+    descent_rate_mps: f32,
+    wiggle_time_s: f32,
+});
 
 #[pyclass(name = "NavVtolTakeoff", frozen, from_py_object)]
 #[derive(Clone)]
@@ -1364,63 +1298,28 @@ impl PyNavPayloadPlace {
     }
 }
 
-define_scalar_command_pyclass!(
-    PyNavSetYawSpeed,
-    "NavSetYawSpeed",
-    mavkit::mission::commands::NavSetYawSpeed,
-    mavkit::mission::commands::NavSetYawSpeed {
-        angle_deg,
-        speed_mps,
-        relative,
-    },
-    {
-        angle_deg: f32,
-        speed_mps: f32,
-        relative: bool
-    }
-);
+py_frozen_wrapper!(PyNavSetYawSpeed wraps mavkit::mission::commands::NavSetYawSpeed as "NavSetYawSpeed" {
+    angle_deg: f32,
+    speed_mps: f32,
+    relative: bool,
+});
 
-define_scalar_command_pyclass!(
-    PyNavScriptTime,
-    "NavScriptTime",
-    mavkit::mission::commands::NavScriptTime,
-    mavkit::mission::commands::NavScriptTime {
-        command,
-        timeout_s,
-        arg1,
-        arg2,
-        arg3,
-        arg4,
-    },
-    {
-        command: u16,
-        timeout_s: f32,
-        arg1: f32,
-        arg2: f32,
-        arg3: i16,
-        arg4: i16
-    }
-);
+py_frozen_wrapper!(PyNavScriptTime wraps mavkit::mission::commands::NavScriptTime as "NavScriptTime" {
+    command: u16,
+    timeout_s: f32,
+    arg1: f32,
+    arg2: f32,
+    arg3: i16,
+    arg4: i16,
+});
 
-define_scalar_command_pyclass!(
-    PyNavAttitudeTime,
-    "NavAttitudeTime",
-    mavkit::mission::commands::NavAttitudeTime,
-    mavkit::mission::commands::NavAttitudeTime {
-        time_s,
-        roll_deg,
-        pitch_deg,
-        yaw_deg,
-        climb_rate_mps,
-    },
-    {
-        time_s: f32,
-        roll_deg: f32,
-        pitch_deg: f32,
-        yaw_deg: f32,
-        climb_rate_mps: f32
-    }
-);
+py_frozen_wrapper!(PyNavAttitudeTime wraps mavkit::mission::commands::NavAttitudeTime as "NavAttitudeTime" {
+    time_s: f32,
+    roll_deg: f32,
+    pitch_deg: f32,
+    yaw_deg: f32,
+    climb_rate_mps: f32,
+});
 
 #[pyclass(name = "DoChangeSpeed", frozen, from_py_object)]
 #[derive(Clone)]
@@ -1520,32 +1419,10 @@ impl PyDoSetHome {
     }
 }
 
-#[pyclass(name = "DoSetRelay", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct PyDoSetRelay {
-    pub(crate) inner: mavkit::mission::commands::DoSetRelay,
-}
-
-#[pymethods]
-impl PyDoSetRelay {
-    #[new]
-    #[pyo3(signature = (*, number, state))]
-    fn new(number: u8, state: bool) -> Self {
-        Self {
-            inner: mavkit::mission::commands::DoSetRelay { number, state },
-        }
-    }
-
-    #[getter]
-    fn number(&self) -> u8 {
-        self.inner.number
-    }
-
-    #[getter]
-    fn state(&self) -> bool {
-        self.inner.state
-    }
-}
+py_frozen_wrapper!(PyDoSetRelay wraps mavkit::mission::commands::DoSetRelay as "DoSetRelay" {
+    number: u8,
+    state: bool,
+});
 
 #[pyclass(name = "DoSetRoiNone", frozen, from_py_object)]
 #[derive(Clone, Default)]
@@ -1559,54 +1436,27 @@ impl PyDoSetRoiNone {
     }
 }
 
-define_scalar_command_pyclass!(
-    PyDoJump,
-    "DoJump",
-    mavkit::mission::commands::DoJump,
-    mavkit::mission::commands::DoJump {
-        target_index,
-        repeat_count,
-    },
-    {
-        target_index: u16,
-        repeat_count: u16
-    }
-);
+py_frozen_wrapper!(PyDoJump wraps mavkit::mission::commands::DoJump as "DoJump" {
+    target_index: u16,
+    repeat_count: u16,
+});
 
-define_scalar_command_pyclass!(
-    PyDoJumpTag,
-    "DoJumpTag",
-    mavkit::mission::commands::DoJumpTag,
-    mavkit::mission::commands::DoJumpTag { tag, repeat_count },
-    {
-        tag: u16,
-        repeat_count: u16
-    }
-);
+py_frozen_wrapper!(PyDoJumpTag wraps mavkit::mission::commands::DoJumpTag as "DoJumpTag" {
+    tag: u16,
+    repeat_count: u16,
+});
 
-define_scalar_command_pyclass!(
-    PyDoTag,
-    "DoTag",
-    mavkit::mission::commands::DoTag,
-    mavkit::mission::commands::DoTag { tag },
-    { tag: u16 }
-);
+py_frozen_wrapper!(PyDoTag wraps mavkit::mission::commands::DoTag as "DoTag" {
+    tag: u16,
+});
 
-define_scalar_command_pyclass!(
-    PyDoPauseContinue,
-    "DoPauseContinue",
-    mavkit::mission::commands::DoPauseContinue,
-    mavkit::mission::commands::DoPauseContinue { pause },
-    { pause: bool }
-);
+py_frozen_wrapper!(PyDoPauseContinue wraps mavkit::mission::commands::DoPauseContinue as "DoPauseContinue" {
+    pause: bool,
+});
 
-define_scalar_command_pyclass!(
-    PyDoSetReverse,
-    "DoSetReverse",
-    mavkit::mission::commands::DoSetReverse,
-    mavkit::mission::commands::DoSetReverse { reverse },
-    { reverse: bool }
-);
+py_frozen_wrapper!(PyDoSetReverse wraps mavkit::mission::commands::DoSetReverse as "DoSetReverse" {
+    reverse: bool,
+});
 
 #[pyclass(name = "DoLandStart", frozen, from_py_object)]
 #[derive(Clone)]
@@ -1866,103 +1716,44 @@ impl PyDoSetRoi {
     }
 }
 
-define_scalar_command_pyclass!(
-    PyDoMountControl,
-    "DoMountControl",
-    mavkit::mission::commands::DoMountControl,
-    mavkit::mission::commands::DoMountControl {
-        pitch_deg,
-        roll_deg,
-        yaw_deg,
-    },
-    {
-        pitch_deg: f32,
-        roll_deg: f32,
-        yaw_deg: f32
-    }
-);
+py_frozen_wrapper!(PyDoMountControl wraps mavkit::mission::commands::DoMountControl as "DoMountControl" {
+    pitch_deg: f32,
+    roll_deg: f32,
+    yaw_deg: f32,
+});
 
-define_scalar_command_pyclass!(
-    PyDoGimbalManagerPitchYaw,
-    "DoGimbalManagerPitchYaw",
-    mavkit::mission::commands::DoGimbalManagerPitchYaw,
-    mavkit::mission::commands::DoGimbalManagerPitchYaw {
-        pitch_deg,
-        yaw_deg,
-        pitch_rate_dps,
-        yaw_rate_dps,
-        flags,
-        gimbal_id,
-    },
-    {
-        pitch_deg: f32,
-        yaw_deg: f32,
-        pitch_rate_dps: f32,
-        yaw_rate_dps: f32,
-        flags: u32,
-        gimbal_id: u8
-    }
-);
+py_frozen_wrapper!(PyDoGimbalManagerPitchYaw wraps mavkit::mission::commands::DoGimbalManagerPitchYaw as "DoGimbalManagerPitchYaw" {
+    pitch_deg: f32,
+    yaw_deg: f32,
+    pitch_rate_dps: f32,
+    yaw_rate_dps: f32,
+    flags: u32,
+    gimbal_id: u8,
+});
 
-define_scalar_command_pyclass!(
-    PyDoCamTriggerDistance,
-    "DoCamTriggerDistance",
-    mavkit::mission::commands::DoCamTriggerDistance,
-    mavkit::mission::commands::DoCamTriggerDistance {
-        meters,
-        trigger_now,
-    },
-    {
-        meters: f32,
-        trigger_now: bool
-    }
-);
+py_frozen_wrapper!(PyDoCamTriggerDistance wraps mavkit::mission::commands::DoCamTriggerDistance as "DoCamTriggerDistance" {
+    meters: f32,
+    trigger_now: bool,
+});
 
-define_scalar_command_pyclass!(
-    PyDoDigicamConfigure,
-    "DoDigicamConfigure",
-    mavkit::mission::commands::DoDigicamConfigure,
-    mavkit::mission::commands::DoDigicamConfigure {
-        shooting_mode,
-        shutter_speed,
-        aperture,
-        iso,
-        exposure_type,
-        cmd_id,
-        cutoff_time,
-    },
-    {
-        shooting_mode: u8,
-        shutter_speed: u16,
-        aperture: f32,
-        iso: u16,
-        exposure_type: u8,
-        cmd_id: u8,
-        cutoff_time: f32
-    }
-);
+py_frozen_wrapper!(PyDoDigicamConfigure wraps mavkit::mission::commands::DoDigicamConfigure as "DoDigicamConfigure" {
+    shooting_mode: u8,
+    shutter_speed: u16,
+    aperture: f32,
+    iso: u16,
+    exposure_type: u8,
+    cmd_id: u8,
+    cutoff_time: f32,
+});
 
-define_scalar_command_pyclass!(
-    PyDoDigicamControl,
-    "DoDigicamControl",
-    mavkit::mission::commands::DoDigicamControl,
-    mavkit::mission::commands::DoDigicamControl {
-        session,
-        zoom_pos,
-        zoom_step,
-        focus_lock,
-        shooting_cmd,
-        cmd_id,
-    },
-    {
-        session: u8,
-        zoom_pos: u8,
-        zoom_step: i8,
-        focus_lock: u8,
-        shooting_cmd: u8,
-        cmd_id: u8
-    }
-);
+py_frozen_wrapper!(PyDoDigicamControl wraps mavkit::mission::commands::DoDigicamControl as "DoDigicamControl" {
+    session: u8,
+    zoom_pos: u8,
+    zoom_step: i8,
+    focus_lock: u8,
+    shooting_cmd: u8,
+    cmd_id: u8,
+});
 
 #[pyclass(name = "DoFenceEnable", frozen, from_py_object)]
 #[derive(Clone)]
@@ -2042,13 +1833,9 @@ impl PyDoGripper {
     }
 }
 
-define_scalar_command_pyclass!(
-    PyDoSprayer,
-    "DoSprayer",
-    mavkit::mission::commands::DoSprayer,
-    mavkit::mission::commands::DoSprayer { enabled },
-    { enabled: bool }
-);
+py_frozen_wrapper!(PyDoSprayer wraps mavkit::mission::commands::DoSprayer as "DoSprayer" {
+    enabled: bool,
+});
 
 #[pyclass(name = "DoWinch", frozen, from_py_object)]
 #[derive(Clone)]
@@ -2097,275 +1884,108 @@ impl PyDoWinch {
     }
 }
 
-define_scalar_command_pyclass!(
-    PyDoEngineControl,
-    "DoEngineControl",
-    mavkit::mission::commands::DoEngineControl,
-    mavkit::mission::commands::DoEngineControl {
-        start,
-        cold_start,
-        height_delay_m,
-        allow_disarmed,
-    },
-    {
-        start: bool,
-        cold_start: bool,
-        height_delay_m: f32,
-        allow_disarmed: bool
-    }
-);
+py_frozen_wrapper!(PyDoEngineControl wraps mavkit::mission::commands::DoEngineControl as "DoEngineControl" {
+    start: bool,
+    cold_start: bool,
+    height_delay_m: f32,
+    allow_disarmed: bool,
+});
 
-define_scalar_command_pyclass!(
-    PyDoInvertedFlight,
-    "DoInvertedFlight",
-    mavkit::mission::commands::DoInvertedFlight,
-    mavkit::mission::commands::DoInvertedFlight { inverted },
-    { inverted: bool }
-);
+py_frozen_wrapper!(PyDoInvertedFlight wraps mavkit::mission::commands::DoInvertedFlight as "DoInvertedFlight" {
+    inverted: bool,
+});
 
-define_scalar_command_pyclass!(
-    PyDoAutotuneEnable,
-    "DoAutotuneEnable",
-    mavkit::mission::commands::DoAutotuneEnable,
-    mavkit::mission::commands::DoAutotuneEnable { enabled },
-    { enabled: bool }
-);
+py_frozen_wrapper!(PyDoAutotuneEnable wraps mavkit::mission::commands::DoAutotuneEnable as "DoAutotuneEnable" {
+    enabled: bool,
+});
 
-define_scalar_command_pyclass!(
-    PyDoSetServo,
-    "DoSetServo",
-    mavkit::mission::commands::DoSetServo,
-    mavkit::mission::commands::DoSetServo { channel, pwm },
-    {
-        channel: u16,
-        pwm: u16
-    }
-);
+py_frozen_wrapper!(PyDoSetServo wraps mavkit::mission::commands::DoSetServo as "DoSetServo" {
+    channel: u16,
+    pwm: u16,
+});
 
-define_scalar_command_pyclass!(
-    PyDoRepeatServo,
-    "DoRepeatServo",
-    mavkit::mission::commands::DoRepeatServo,
-    mavkit::mission::commands::DoRepeatServo {
-        channel,
-        pwm,
-        count,
-        cycle_time_s,
-    },
-    {
-        channel: u16,
-        pwm: u16,
-        count: u16,
-        cycle_time_s: f32
-    }
-);
+py_frozen_wrapper!(PyDoRepeatServo wraps mavkit::mission::commands::DoRepeatServo as "DoRepeatServo" {
+    channel: u16,
+    pwm: u16,
+    count: u16,
+    cycle_time_s: f32,
+});
 
-define_scalar_command_pyclass!(
-    PyDoRepeatRelay,
-    "DoRepeatRelay",
-    mavkit::mission::commands::DoRepeatRelay,
-    mavkit::mission::commands::DoRepeatRelay {
-        number,
-        count,
-        cycle_time_s,
-    },
-    {
-        number: u8,
-        count: u16,
-        cycle_time_s: f32
-    }
-);
+py_frozen_wrapper!(PyDoRepeatRelay wraps mavkit::mission::commands::DoRepeatRelay as "DoRepeatRelay" {
+    number: u8,
+    count: u16,
+    cycle_time_s: f32,
+});
 
-define_scalar_command_pyclass!(
-    PyDoSetResumeRepeatDist,
-    "DoSetResumeRepeatDist",
-    mavkit::mission::commands::DoSetResumeRepeatDist,
-    mavkit::mission::commands::DoSetResumeRepeatDist { distance_m },
-    { distance_m: f32 }
-);
+py_frozen_wrapper!(PyDoSetResumeRepeatDist wraps mavkit::mission::commands::DoSetResumeRepeatDist as "DoSetResumeRepeatDist" {
+    distance_m: f32,
+});
 
-define_scalar_command_pyclass!(
-    PyDoAuxFunction,
-    "DoAuxFunction",
-    mavkit::mission::commands::DoAuxFunction,
-    mavkit::mission::commands::DoAuxFunction {
-        function,
-        switch_pos,
-    },
-    {
-        function: u16,
-        switch_pos: u8
-    }
-);
+py_frozen_wrapper!(PyDoAuxFunction wraps mavkit::mission::commands::DoAuxFunction as "DoAuxFunction" {
+    function: u16,
+    switch_pos: u8,
+});
 
-define_scalar_command_pyclass!(
-    PyDoSendScriptMessage,
-    "DoSendScriptMessage",
-    mavkit::mission::commands::DoSendScriptMessage,
-    mavkit::mission::commands::DoSendScriptMessage { id, p1, p2, p3 },
-    {
-        id: u16,
-        p1: f32,
-        p2: f32,
-        p3: f32
-    }
-);
+py_frozen_wrapper!(PyDoSendScriptMessage wraps mavkit::mission::commands::DoSendScriptMessage as "DoSendScriptMessage" {
+    id: u16,
+    p1: f32,
+    p2: f32,
+    p3: f32,
+});
 
-define_scalar_command_pyclass!(
-    PyDoImageStartCapture,
-    "DoImageStartCapture",
-    mavkit::mission::commands::DoImageStartCapture,
-    mavkit::mission::commands::DoImageStartCapture {
-        instance,
-        interval_s,
-        total_images,
-        start_number,
-    },
-    {
-        instance: u8,
-        interval_s: f32,
-        total_images: u32,
-        start_number: u32
-    }
-);
+py_frozen_wrapper!(PyDoImageStartCapture wraps mavkit::mission::commands::DoImageStartCapture as "DoImageStartCapture" {
+    instance: u8,
+    interval_s: f32,
+    total_images: u32,
+    start_number: u32,
+});
 
-define_scalar_command_pyclass!(
-    PyDoImageStopCapture,
-    "DoImageStopCapture",
-    mavkit::mission::commands::DoImageStopCapture,
-    mavkit::mission::commands::DoImageStopCapture { instance },
-    { instance: u8 }
-);
+py_frozen_wrapper!(PyDoImageStopCapture wraps mavkit::mission::commands::DoImageStopCapture as "DoImageStopCapture" {
+    instance: u8,
+});
 
-define_scalar_command_pyclass!(
-    PyDoVideoStartCapture,
-    "DoVideoStartCapture",
-    mavkit::mission::commands::DoVideoStartCapture,
-    mavkit::mission::commands::DoVideoStartCapture { stream_id },
-    { stream_id: u8 }
-);
+py_frozen_wrapper!(PyDoVideoStartCapture wraps mavkit::mission::commands::DoVideoStartCapture as "DoVideoStartCapture" {
+    stream_id: u8,
+});
 
-define_scalar_command_pyclass!(
-    PyDoVideoStopCapture,
-    "DoVideoStopCapture",
-    mavkit::mission::commands::DoVideoStopCapture,
-    mavkit::mission::commands::DoVideoStopCapture { stream_id },
-    { stream_id: u8 }
-);
+py_frozen_wrapper!(PyDoVideoStopCapture wraps mavkit::mission::commands::DoVideoStopCapture as "DoVideoStopCapture" {
+    stream_id: u8,
+});
 
-define_scalar_command_pyclass!(
-    PyDoSetCameraZoom,
-    "DoSetCameraZoom",
-    mavkit::mission::commands::DoSetCameraZoom,
-    mavkit::mission::commands::DoSetCameraZoom {
-        zoom_type,
-        zoom_value,
-    },
-    {
-        zoom_type: u8,
-        zoom_value: f32
-    }
-);
+py_frozen_wrapper!(PyDoSetCameraZoom wraps mavkit::mission::commands::DoSetCameraZoom as "DoSetCameraZoom" {
+    zoom_type: u8,
+    zoom_value: f32,
+});
 
-define_scalar_command_pyclass!(
-    PyDoSetCameraFocus,
-    "DoSetCameraFocus",
-    mavkit::mission::commands::DoSetCameraFocus,
-    mavkit::mission::commands::DoSetCameraFocus {
-        focus_type,
-        focus_value,
-    },
-    {
-        focus_type: u8,
-        focus_value: f32
-    }
-);
+py_frozen_wrapper!(PyDoSetCameraFocus wraps mavkit::mission::commands::DoSetCameraFocus as "DoSetCameraFocus" {
+    focus_type: u8,
+    focus_value: f32,
+});
 
-define_scalar_command_pyclass!(
-    PyDoSetCameraSource,
-    "DoSetCameraSource",
-    mavkit::mission::commands::DoSetCameraSource,
-    mavkit::mission::commands::DoSetCameraSource {
-        instance,
-        primary,
-        secondary,
-    },
-    {
-        instance: u8,
-        primary: u8,
-        secondary: u8
-    }
-);
+py_frozen_wrapper!(PyDoSetCameraSource wraps mavkit::mission::commands::DoSetCameraSource as "DoSetCameraSource" {
+    instance: u8,
+    primary: u8,
+    secondary: u8,
+});
 
-define_scalar_command_pyclass!(
-    PyDoGuidedLimits,
-    "DoGuidedLimits",
-    mavkit::mission::commands::DoGuidedLimits,
-    mavkit::mission::commands::DoGuidedLimits {
-        max_time_s,
-        min_alt_m,
-        max_alt_m,
-        max_horiz_m,
-    },
-    {
-        max_time_s: f32,
-        min_alt_m: f32,
-        max_alt_m: f32,
-        max_horiz_m: f32
-    }
-);
+py_frozen_wrapper!(PyDoGuidedLimits wraps mavkit::mission::commands::DoGuidedLimits as "DoGuidedLimits" {
+    max_time_s: f32,
+    min_alt_m: f32,
+    max_alt_m: f32,
+    max_horiz_m: f32,
+});
 
-define_scalar_command_pyclass!(
-    PyDoVtolTransition,
-    "DoVtolTransition",
-    mavkit::mission::commands::DoVtolTransition,
-    mavkit::mission::commands::DoVtolTransition { target_state },
-    { target_state: u8 }
-);
+py_frozen_wrapper!(PyDoVtolTransition wraps mavkit::mission::commands::DoVtolTransition as "DoVtolTransition" {
+    target_state: u8,
+});
 
-#[pyclass(name = "CondDelay", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct PyCondDelay {
-    pub(crate) inner: mavkit::mission::commands::CondDelay,
-}
+py_frozen_wrapper!(PyCondDelay wraps mavkit::mission::commands::CondDelay as "CondDelay" {
+    delay_s: f32,
+});
 
-#[pymethods]
-impl PyCondDelay {
-    #[new]
-    #[pyo3(signature = (*, delay_s))]
-    fn new(delay_s: f32) -> Self {
-        Self {
-            inner: mavkit::mission::commands::CondDelay { delay_s },
-        }
-    }
-
-    #[getter]
-    fn delay_s(&self) -> f32 {
-        self.inner.delay_s
-    }
-}
-
-#[pyclass(name = "CondDistance", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct PyCondDistance {
-    pub(crate) inner: mavkit::mission::commands::CondDistance,
-}
-
-#[pymethods]
-impl PyCondDistance {
-    #[new]
-    #[pyo3(signature = (*, distance_m))]
-    fn new(distance_m: f32) -> Self {
-        Self {
-            inner: mavkit::mission::commands::CondDistance { distance_m },
-        }
-    }
-
-    #[getter]
-    fn distance_m(&self) -> f32 {
-        self.inner.distance_m
-    }
-}
+py_frozen_wrapper!(PyCondDistance wraps mavkit::mission::commands::CondDistance as "CondDistance" {
+    distance_m: f32,
+});
 
 #[pyclass(name = "CondYaw", frozen, from_py_object)]
 #[derive(Clone)]
