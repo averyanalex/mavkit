@@ -90,6 +90,16 @@ impl RawMessage {
 }
 
 /// Low-level MAVLink escape hatch for commands and raw message streaming.
+///
+/// Obtained from [`Vehicle::raw`](crate::Vehicle::raw). All high-level vehicle actions use the
+/// typed `Vehicle` API; this handle is intended for one-off protocol exploration, debugging, and
+/// capabilities not yet exposed through the typed API.
+///
+/// # Conflict model
+///
+/// `command_long` and `command_int` share the same command-ack scope as the typed vehicle
+/// commands (e.g., `Vehicle::arm`). Sending a raw command while any typed command is awaiting
+/// its ack returns [`VehicleError::OperationConflict`] immediately.
 pub struct RawHandle<'a> {
     vehicle: &'a Vehicle,
 }
@@ -99,6 +109,13 @@ impl<'a> RawHandle<'a> {
         Self { vehicle }
     }
 
+    /// Sends a `COMMAND_LONG` and waits for a `COMMAND_ACK`.
+    ///
+    /// `command` must be a valid `MAV_CMD` numeric value; an unknown value returns
+    /// [`VehicleError::InvalidParameter`] immediately without sending anything.
+    ///
+    /// Returns [`VehicleError::OperationConflict`] if a typed command is already awaiting an ack.
+    /// Returns [`VehicleError::Timeout`] if no ack arrives within the configured command timeout.
     pub async fn command_long(
         &self,
         command: u16,
@@ -114,6 +131,13 @@ impl<'a> RawHandle<'a> {
             .await
     }
 
+    /// Sends a `COMMAND_INT` and waits for a `COMMAND_ACK`.
+    ///
+    /// `command` must be a valid `MAV_CMD` numeric value; `frame` must be a valid `MAV_FRAME`
+    /// numeric value. Unknown values return [`VehicleError::InvalidParameter`] immediately.
+    ///
+    /// Returns [`VehicleError::OperationConflict`] if a typed command is already awaiting an ack.
+    /// Returns [`VehicleError::Timeout`] if no ack arrives within the configured command timeout.
     #[allow(
         clippy::too_many_arguments,
         reason = "public RawHandle::command_int signature is required by the Task 21 design contract"
@@ -149,6 +173,11 @@ impl<'a> RawHandle<'a> {
             .await
     }
 
+    /// Sends `MAV_CMD_REQUEST_MESSAGE` for `message_id` and returns the first matching message.
+    ///
+    /// Subscribes to the raw message stream before issuing the request to avoid missing the
+    /// response. Returns [`VehicleError::Timeout`] if no matching message arrives within
+    /// `timeout`.
     pub async fn request_message(
         &self,
         message_id: u32,
@@ -172,6 +201,10 @@ impl<'a> RawHandle<'a> {
         .map_err(|_| VehicleError::Timeout("raw command".into()))?
     }
 
+    /// Requests the vehicle to stream `message_id` at the specified interval.
+    ///
+    /// `interval_us` is microseconds between messages; 0 disables the stream, -1 requests the
+    /// default rate. Sends `MAV_CMD_SET_MESSAGE_INTERVAL` without waiting for an ack.
     pub async fn set_message_interval(
         &self,
         message_id: u32,
@@ -194,6 +227,11 @@ impl<'a> RawHandle<'a> {
             .await
     }
 
+    /// Sends a raw MAVLink message to the vehicle without waiting for any ack.
+    ///
+    /// The `RawMessage` payload is re-parsed before sending to ensure it is a valid MAVLink
+    /// message for the active dialect. Returns [`VehicleError::InvalidParameter`] if the payload
+    /// cannot be re-parsed.
     pub async fn send(&self, message: RawMessage) -> Result<(), VehicleError> {
         let message = message.to_mavlink()?;
         self.vehicle
@@ -204,10 +242,18 @@ impl<'a> RawHandle<'a> {
             .await
     }
 
+    /// Returns a stream of all incoming MAVLink messages as raw frames.
+    ///
+    /// Messages may be lagged if the consumer is slow — lagged items are silently dropped
+    /// by the underlying broadcast channel.
     pub fn subscribe(&self) -> impl Stream<Item = RawMessage> + Send + 'static {
         self.subscription_stream(None)
     }
 
+    /// Returns a stream of incoming MAVLink messages filtered to the given `message_id`.
+    ///
+    /// Equivalent to [`subscribe`](Self::subscribe) with a client-side filter. Useful when
+    /// polling for a specific response without allocating a full message fanout.
     pub fn subscribe_filtered(
         &self,
         message_id: u32,

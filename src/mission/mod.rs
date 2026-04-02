@@ -314,6 +314,15 @@ where
 }
 
 /// Accessor for mission state and mission transfer operations.
+///
+/// Obtained from [`Vehicle::mission`](crate::Vehicle::mission). The handle is borrowed from the
+/// vehicle and is valid until the owning borrow ends.
+///
+/// # Mission protocol exclusivity
+///
+/// ArduPilot's MAVLink mission protocol is single-threaded on the vehicle side — only one
+/// transfer can run at a time across all domains (mission, fence, rally, params). Starting a
+/// second transfer while one is active returns [`VehicleError::OperationConflict`] immediately.
 pub struct MissionHandle<'a> {
     inner: &'a VehicleInner,
 }
@@ -323,22 +332,41 @@ impl<'a> MissionHandle<'a> {
         Self { inner }
     }
 
+    /// Returns the most recently observed mission state, or `None` if no update has arrived yet.
     pub fn latest(&self) -> Option<MissionState> {
         self.inner.mission.state().latest()
     }
 
+    /// Waits for the next mission state update and returns it.
+    ///
+    /// Returns the default state if the vehicle disconnects before an update arrives.
     pub async fn wait(&self) -> MissionState {
         self.inner.mission.state().wait().await.unwrap_or_default()
     }
 
+    /// Like [`wait`](Self::wait), but returns [`VehicleError::Timeout`] if no state update
+    /// arrives within `timeout`.
     pub async fn wait_timeout(&self, timeout: Duration) -> Result<MissionState, VehicleError> {
         self.inner.mission.state().wait_timeout(timeout).await
     }
 
+    /// Subscribes to an async stream of mission state updates.
     pub fn subscribe(&self) -> ObservationSubscription<MissionState> {
         self.inner.mission.state().subscribe()
     }
 
+    /// Begins uploading a mission plan to the vehicle.
+    ///
+    /// The plan is validated before the transfer starts — any validation error with
+    /// [`IssueSeverity::Error`] returns immediately as [`VehicleError::InvalidMissionItem`] or
+    /// [`VehicleError::InvalidMissionPlan`].
+    ///
+    /// Returns a [`MissionUploadOp`] handle that can be awaited for the final result, observed for
+    /// progress, or cancelled. The operation completes only when the vehicle acknowledges the full
+    /// transfer. On success, the local plan cache is updated; on failure or cancellation it is
+    /// marked as [`SyncState::PossiblyStale`](crate::types::SyncState::PossiblyStale).
+    ///
+    /// Returns [`VehicleError::OperationConflict`] immediately if a transfer is already active.
     pub fn upload(&self, plan: MissionPlan) -> Result<MissionUploadOp, VehicleError> {
         let issues = validate_plan(&plan);
         if let Some(issue) = issues.iter().find(|i| i.severity == IssueSeverity::Error) {
@@ -392,6 +420,13 @@ impl<'a> MissionHandle<'a> {
         ))
     }
 
+    /// Begins downloading the vehicle's active mission plan.
+    ///
+    /// Returns a [`MissionDownloadOp`] handle. On success, the local plan cache is updated and
+    /// the resolved `MissionPlan` is the operation result. On failure or cancellation the cache is
+    /// marked as [`SyncState::PossiblyStale`](crate::types::SyncState::PossiblyStale).
+    ///
+    /// Returns [`VehicleError::OperationConflict`] immediately if a transfer is already active.
     pub fn download(&self) -> Result<MissionDownloadOp, VehicleError> {
         let domain = self.inner.mission.clone();
         let reservation = domain.begin_operation(
@@ -431,6 +466,13 @@ impl<'a> MissionHandle<'a> {
         ))
     }
 
+    /// Clears the vehicle's mission storage.
+    ///
+    /// Returns a [`MissionClearOp`] handle. On success, the local plan cache is set to an empty
+    /// plan and marked current. On failure or cancellation it is marked as
+    /// [`SyncState::PossiblyStale`](crate::types::SyncState::PossiblyStale).
+    ///
+    /// Returns [`VehicleError::OperationConflict`] immediately if a transfer is already active.
     pub fn clear(&self) -> Result<MissionClearOp, VehicleError> {
         let domain = self.inner.mission.clone();
         let reservation = domain.begin_operation(
@@ -461,6 +503,14 @@ impl<'a> MissionHandle<'a> {
         ))
     }
 
+    /// Downloads the vehicle's active mission and compares it to `plan`.
+    ///
+    /// The resolved `bool` is `true` if the downloaded plan is equivalent to the supplied one
+    /// (within the default floating-point tolerance used by [`plans_equivalent`]), `false`
+    /// otherwise.  The local cache is updated with the downloaded plan regardless of whether
+    /// the comparison succeeds.
+    ///
+    /// Returns [`VehicleError::OperationConflict`] immediately if a transfer is already active.
     pub fn verify(&self, plan: MissionPlan) -> Result<MissionVerifyOp, VehicleError> {
         let domain = self.inner.mission.clone();
         let reservation = domain.begin_operation(
@@ -502,6 +552,12 @@ impl<'a> MissionHandle<'a> {
         ))
     }
 
+    /// Jumps to mission item `index` and waits until the vehicle reports that item as current.
+    ///
+    /// First sends `MAV_CMD_DO_SET_MISSION_CURRENT`, then polls the MAVLink `MISSION_CURRENT`
+    /// stream until the vehicle echoes back the expected sequence number. Returns
+    /// [`VehicleError::Timeout`] if the echo does not arrive within
+    /// `VehicleConfig::command_completion_timeout`.
     pub async fn set_current(&self, index: u16) -> Result<(), VehicleError> {
         send_domain_command(self.inner.command_tx.clone(), |reply| {
             Command::MissionSetCurrent { seq: index, reply }

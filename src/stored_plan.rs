@@ -142,11 +142,18 @@ where
     fn plan_from_wire(plan: WireMissionPlan) -> Result<Self::Plan, VehicleError>;
 }
 
-/// Common handle over fence/rally stored-plan domains.
+/// Generic handle shared by `FenceHandle` and `RallyHandle`.
 ///
-/// Provides observation accessors and upload/download/clear operations that work identically for
-/// every `StoredPlanAccess` implementor.  Concrete handles (`FenceHandle`, `RallyHandle`) wrap
-/// this with explicit forwarding methods to keep the public API surface unchanged.
+/// All stored-plan domains (fence, rally) share identical observation + transfer semantics, so
+/// the implementation lives here and the concrete handles forward to it.  This keeps the public
+/// API surface concrete and stable while avoiding code duplication.
+///
+/// # Conflict model
+///
+/// The fence and rally domains share the same [`MissionProtocolScope`] as the mission domain.
+/// ArduPilot's MAVLink mission protocol permits only one transfer at a time across all domains,
+/// so starting a transfer while another is active (for any domain) returns
+/// [`VehicleError::OperationConflict`] immediately.
 pub(crate) struct StoredPlanHandle<'a, S: StoredPlanAccess>
 where
     S::Plan: Clone + Send + 'static,

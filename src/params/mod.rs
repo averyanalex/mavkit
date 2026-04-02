@@ -139,6 +139,19 @@ pub(crate) fn spawn_param_progress_bridge(
 }
 
 /// Accessor for parameter cache state and parameter operations.
+///
+/// Obtained from [`Vehicle::params`](crate::Vehicle::params).
+///
+/// Parameter names follow ArduPilot's convention: uppercase ASCII, up to 16 characters
+/// (e.g. `"ARMING_CHECK"`, `"ATC_RAT_PIT_P"`). Names are matched exactly and are
+/// case-sensitive on the wire.
+///
+/// # Conflict model
+///
+/// Parameter operations (`download_all`, `write_batch`, `write`) share the same
+/// [`MissionProtocolScope`](crate::mission::MissionProtocolScope) as mission/fence/rally
+/// transfers. Starting a param operation while any other protocol operation is active
+/// returns [`VehicleError::OperationConflict`] immediately.
 pub struct ParamsHandle<'a> {
     inner: &'a VehicleInner,
 }
@@ -148,9 +161,10 @@ impl<'a> ParamsHandle<'a> {
         Self { inner }
     }
 
-    /// Look up a single cached parameter by name from the last download.
+    /// Look up a single cached parameter by name from the last completed download.
     ///
-    /// Returns `None` if no download has completed or if the name is absent.
+    /// Returns `None` if no download has completed yet or if the name is absent.
+    /// The value is stored as `f32` regardless of the underlying MAVLink parameter type.
     pub fn get(&self, name: &str) -> Option<Param> {
         self.inner
             .params
@@ -160,22 +174,40 @@ impl<'a> ParamsHandle<'a> {
             .and_then(|store| store.get(name).cloned())
     }
 
+    /// Returns the most recently observed parameter state, or `None` if no update has arrived.
     pub fn latest(&self) -> Option<ParamState> {
         self.inner.params.state().latest()
     }
 
+    /// Waits for the next parameter state update and returns it.
+    ///
+    /// Returns the default state if the vehicle disconnects before an update arrives.
     pub async fn wait(&self) -> ParamState {
         self.inner.params.state().wait().await.unwrap_or_default()
     }
 
+    /// Like [`wait`](Self::wait), but returns [`VehicleError::Timeout`] if no state update
+    /// arrives within `timeout`.
     pub async fn wait_timeout(&self, timeout: Duration) -> Result<ParamState, VehicleError> {
         self.inner.params.state().wait_timeout(timeout).await
     }
 
+    /// Subscribes to an async stream of parameter state updates.
     pub fn subscribe(&self) -> ObservationSubscription<ParamState> {
         self.inner.params.state().subscribe()
     }
 
+    /// Begins downloading all parameters from the vehicle.
+    ///
+    /// Returns a [`ParamDownloadOp`] handle. On success, the resolved [`ParamStore`] contains all
+    /// parameters indexed by name. On failure the previous cache is preserved but marked as
+    /// [`SyncState::PossiblyStale`](crate::types::SyncState::PossiblyStale).
+    ///
+    /// The download can time out if the vehicle stops sending `PARAM_VALUE` messages before the
+    /// expected count is reached.
+    ///
+    /// Returns [`VehicleError::OperationConflict`] immediately if any protocol operation is
+    /// already active.
     pub fn download_all(&self) -> Result<ParamDownloadOp, VehicleError> {
         let domain = self.inner.params.clone();
         let reservation = domain.begin_operation(
@@ -240,6 +272,18 @@ impl<'a> ParamsHandle<'a> {
         Ok(op)
     }
 
+    /// Writes multiple parameters in a single operation.
+    ///
+    /// Each entry is `(name, value)`. The vehicle processes writes sequentially and returns a
+    /// `PARAM_VALUE` echo for each. The resolved `Vec<ParamWriteResult>` has one entry per input
+    /// parameter in the same order. If any write fails, the overall sync state is marked
+    /// [`SyncState::PossiblyStale`](crate::types::SyncState::PossiblyStale).
+    ///
+    /// Returns [`VehicleError::InvalidParameter`] if the batch is empty or exceeds the
+    /// `u16::MAX` protocol limit.
+    ///
+    /// Returns [`VehicleError::OperationConflict`] immediately if any protocol operation is
+    /// already active.
     pub fn write_batch(
         &self,
         batch: Vec<(String, f32)>,
@@ -330,6 +374,11 @@ impl<'a> ParamsHandle<'a> {
         Ok(op)
     }
 
+    /// Writes a single parameter and waits for the vehicle's `PARAM_VALUE` echo.
+    ///
+    /// Returns [`VehicleError::OperationConflict`] immediately if any protocol operation is
+    /// already active. Unlike `write_batch`, this method does not require a prior download
+    /// and does not return an operation handle — it awaits completion directly.
     pub async fn write(&self, name: &str, value: f32) -> Result<ParamWriteResult, VehicleError> {
         let reservation = self
             .inner

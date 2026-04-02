@@ -7,7 +7,15 @@ use crate::vehicle::VehicleInner;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-/// Accessor for capability support observations derived at runtime.
+/// Accessor for capability support observations derived from the vehicle's protocol capabilities.
+///
+/// Obtained from [`Vehicle::support`](crate::Vehicle::support). Capability flags are extracted
+/// from the `AUTOPILOT_VERSION` message (`capabilities` bitmask). Each observation starts as
+/// [`SupportState::Unknown`](crate::types::SupportState::Unknown) and is updated once the init
+/// sequence completes or the first heartbeat arrives.
+///
+/// All observation handles have their initial value seeded from the current vehicle state, so
+/// callers get a non-stale result even before the async loop pushes an update.
 #[derive(Clone)]
 pub struct SupportHandle<'a> {
     inner: &'a VehicleInner,
@@ -18,31 +26,43 @@ impl<'a> SupportHandle<'a> {
         Self { inner }
     }
 
+    /// Whether the vehicle supports `COMMAND_INT` (`MAV_PROTOCOL_CAPABILITY_COMMAND_INT`).
     pub fn command_int(&self) -> ObservationHandle<SupportState> {
         self.seed_from_vehicle_state();
         self.inner.support.command_int()
     }
 
+    /// Whether the vehicle supports MAVLink FTP (`MAV_PROTOCOL_CAPABILITY_FTP`).
     pub fn ftp(&self) -> ObservationHandle<SupportState> {
         self.seed_from_vehicle_state();
         self.inner.support.ftp()
     }
 
+    /// Whether the vehicle supports terrain following (`MAV_PROTOCOL_CAPABILITY_TERRAIN`).
     pub fn terrain(&self) -> ObservationHandle<SupportState> {
         self.seed_from_vehicle_state();
         self.inner.support.terrain()
     }
 
+    /// Whether the vehicle supports the geofence mission protocol
+    /// (`MAV_PROTOCOL_CAPABILITY_MISSION_FENCE`).
     pub fn mission_fence(&self) -> ObservationHandle<SupportState> {
         self.seed_from_vehicle_state();
         self.inner.support.mission_fence()
     }
 
+    /// Whether the vehicle supports the rally-point mission protocol
+    /// (`MAV_PROTOCOL_CAPABILITY_MISSION_RALLY`).
     pub fn mission_rally(&self) -> ObservationHandle<SupportState> {
         self.seed_from_vehicle_state();
         self.inner.support.mission_rally()
     }
 
+    /// Whether the connected autopilot is ArduPilot.
+    ///
+    /// Derived from the `autopilot` field in the heartbeat, not from capability bits. Returns
+    /// [`SupportState::Unsupported`](crate::types::SupportState::Unsupported) for any non-ArduPilot
+    /// autopilot once a heartbeat is received.
     pub fn ardupilot(&self) -> ObservationHandle<SupportState> {
         self.seed_from_vehicle_state();
         self.inner.support.ardupilot()
