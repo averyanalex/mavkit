@@ -494,7 +494,7 @@ mod tests {
 
         let arm_task = {
             let vehicle = vehicle.clone();
-            tokio::spawn(async move { vehicle.arm(false).await })
+            tokio::spawn(async move { vehicle.arm().await })
         };
 
         tokio::time::sleep(Duration::from_millis(10)).await;

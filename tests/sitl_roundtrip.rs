@@ -147,13 +147,13 @@ async fn sitl_force_arm_disarm_cycle() {
     let vehicle = setup_sitl_vehicle().await;
 
     let result: Result<(), String> = async {
-        vehicle.set_mode(0, true).await.map_err(|e| e.to_string())?;
+        vehicle.set_mode(0).await.map_err(|e| e.to_string())?;
         common::wait_for_mode(&vehicle, 0, Duration::from_secs(10)).await;
 
         common::arm_with_retries(&vehicle, false, Duration::from_secs(30)).await?;
         common::wait_for_armed(&vehicle, true, Duration::from_secs(10)).await;
 
-        vehicle.disarm(false).await.map_err(|e| e.to_string())?;
+        vehicle.disarm().await.map_err(|e| e.to_string())?;
         common::wait_for_armed(&vehicle, false, Duration::from_secs(10)).await;
 
         Ok(())
@@ -172,7 +172,7 @@ async fn sitl_set_flight_mode() {
     let vehicle = setup_sitl_vehicle().await;
 
     let result: Result<(), String> = async {
-        vehicle.set_mode(4, true).await.map_err(|e| e.to_string())?;
+        vehicle.set_mode(4).await.map_err(|e| e.to_string())?;
         common::wait_for_mode(&vehicle, 4, Duration::from_secs(10)).await;
         {
             let mode = vehicle
@@ -185,7 +185,7 @@ async fn sitl_set_flight_mode() {
             }
         }
 
-        vehicle.set_mode(5, true).await.map_err(|e| e.to_string())?;
+        vehicle.set_mode(5).await.map_err(|e| e.to_string())?;
         common::wait_for_mode(&vehicle, 5, Duration::from_secs(10)).await;
         {
             let mode = vehicle

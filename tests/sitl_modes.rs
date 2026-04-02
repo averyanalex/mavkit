@@ -57,19 +57,19 @@ async fn sitl_modes_current_mode_stream_updates_on_switch() {
 
     let result: Result<(), String> = async {
         vehicle
-            .set_mode_by_name("STABILIZE", true)
+            .set_mode_by_name("STABILIZE")
             .await
             .map_err(|e| e.to_string())?;
         common::wait_for_mode_name(&vehicle, "STABILIZE", Duration::from_secs(10)).await?;
 
         vehicle
-            .set_mode_by_name("GUIDED", true)
+            .set_mode_by_name("GUIDED")
             .await
             .map_err(|e| e.to_string())?;
         common::wait_for_mode_name(&vehicle, "GUIDED", Duration::from_secs(10)).await?;
 
         vehicle
-            .set_mode_by_name("LOITER", true)
+            .set_mode_by_name("LOITER")
             .await
             .map_err(|e| e.to_string())?;
         common::wait_for_mode_name(&vehicle, "LOITER", Duration::from_secs(10)).await?;
@@ -90,7 +90,7 @@ async fn sitl_modes_set_invalid_name_returns_error() {
     let vehicle = common::setup_sitl_vehicle().await;
 
     let result: Result<(), String> = async {
-        let res = vehicle.set_mode_by_name("NONEXISTENT_MODE_XYZ", true).await;
+        let res = vehicle.set_mode_by_name("NONEXISTENT_MODE_XYZ").await;
         if res.is_ok() {
             return Err(String::from(
                 "expected set_mode_by_name with invalid name to return Err, but got Ok",

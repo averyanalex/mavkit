@@ -19,13 +19,13 @@ async fn sitl_set_mode_by_name() {
     let vehicle = common::setup_sitl_vehicle().await;
     let result: Result<(), String> = async {
         vehicle
-            .set_mode_by_name("GUIDED", true)
+            .set_mode_by_name("GUIDED")
             .await
             .map_err(|e| e.to_string())?;
         common::wait_for_mode_name(&vehicle, "GUIDED", Duration::from_secs(10)).await?;
 
         vehicle
-            .set_mode_by_name("LOITER", true)
+            .set_mode_by_name("LOITER")
             .await
             .map_err(|e| e.to_string())?;
         common::wait_for_mode_name(&vehicle, "LOITER", Duration::from_secs(10)).await?;

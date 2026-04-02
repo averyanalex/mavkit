@@ -631,32 +631,100 @@ impl Vehicle {
         .await
     }
 
-    pub async fn arm(&self, force: bool) -> Result<(), VehicleError> {
-        self.send_command(|reply| Command::Arm { force, reply })
+    /// Send the arm command and wait for acknowledgment.
+    ///
+    /// In future versions this may also confirm the armed state via telemetry.
+    pub async fn arm(&self) -> Result<(), VehicleError> {
+        self.send_command(|reply| Command::Arm {
+            force: false,
+            reply,
+        })
+        .await
+    }
+
+    /// Send the arm command and wait for acknowledgment (identical to [`arm`](Self::arm) today;
+    /// exists for API clarity and future no-wait semantics).
+    ///
+    /// In future versions this may return immediately after the ACK without waiting for telemetry
+    /// confirmation.
+    pub async fn arm_no_wait(&self) -> Result<(), VehicleError> {
+        self.send_command(|reply| Command::Arm {
+            force: false,
+            reply,
+        })
+        .await
+    }
+
+    /// Send the arm command with `force=true` and wait for acknowledgment.
+    ///
+    /// Forces arming even when pre-arm checks fail. Use with care.
+    pub async fn force_arm(&self) -> Result<(), VehicleError> {
+        self.send_command(|reply| Command::Arm { force: true, reply })
             .await
     }
 
-    pub async fn disarm(&self, force: bool) -> Result<(), VehicleError> {
-        self.send_command(|reply| Command::Disarm { force, reply })
+    /// Send the arm command with `force=true` and wait for acknowledgment (identical to
+    /// [`force_arm`](Self::force_arm) today; exists for API clarity and future no-wait semantics).
+    pub async fn force_arm_no_wait(&self) -> Result<(), VehicleError> {
+        self.send_command(|reply| Command::Arm { force: true, reply })
             .await
     }
 
-    pub async fn set_mode(
-        &self,
-        custom_mode: u32,
-        wait_for_observation: bool,
-    ) -> Result<(), VehicleError> {
-        self.inner.set_mode(custom_mode, wait_for_observation).await
+    /// Send the disarm command and wait for acknowledgment.
+    pub async fn disarm(&self) -> Result<(), VehicleError> {
+        self.send_command(|reply| Command::Disarm {
+            force: false,
+            reply,
+        })
+        .await
     }
 
-    pub async fn set_mode_by_name(
-        &self,
-        name: &str,
-        wait_for_observation: bool,
-    ) -> Result<(), VehicleError> {
-        self.inner
-            .set_mode_by_name(name, wait_for_observation)
+    /// Send the disarm command and wait for acknowledgment (identical to
+    /// [`disarm`](Self::disarm) today; exists for API clarity and future no-wait semantics).
+    pub async fn disarm_no_wait(&self) -> Result<(), VehicleError> {
+        self.send_command(|reply| Command::Disarm {
+            force: false,
+            reply,
+        })
+        .await
+    }
+
+    /// Send the disarm command with `force=true` and wait for acknowledgment.
+    ///
+    /// Forces disarming even when the vehicle is in-flight. Use with care.
+    pub async fn force_disarm(&self) -> Result<(), VehicleError> {
+        self.send_command(|reply| Command::Disarm { force: true, reply })
             .await
+    }
+
+    /// Send the disarm command with `force=true` and wait for acknowledgment (identical to
+    /// [`force_disarm`](Self::force_disarm) today; exists for API clarity and future no-wait
+    /// semantics).
+    pub async fn force_disarm_no_wait(&self) -> Result<(), VehicleError> {
+        self.send_command(|reply| Command::Disarm { force: true, reply })
+            .await
+    }
+
+    /// Set the flight mode and wait for the mode change to be observed in telemetry.
+    pub async fn set_mode(&self, custom_mode: u32) -> Result<(), VehicleError> {
+        self.inner.set_mode(custom_mode, true).await
+    }
+
+    /// Set the flight mode and return immediately after the command ACK, without waiting for
+    /// telemetry confirmation.
+    pub async fn set_mode_no_wait(&self, custom_mode: u32) -> Result<(), VehicleError> {
+        self.inner.set_mode(custom_mode, false).await
+    }
+
+    /// Set the flight mode by name and wait for the mode change to be observed in telemetry.
+    pub async fn set_mode_by_name(&self, name: &str) -> Result<(), VehicleError> {
+        self.inner.set_mode_by_name(name, true).await
+    }
+
+    /// Set the flight mode by name and return immediately after the command ACK, without waiting
+    /// for telemetry confirmation.
+    pub async fn set_mode_by_name_no_wait(&self, name: &str) -> Result<(), VehicleError> {
+        self.inner.set_mode_by_name(name, false).await
     }
 
     pub async fn set_home(&self, position: GeoPoint3dMsl) -> Result<(), VehicleError> {
@@ -1185,7 +1253,7 @@ mod tests {
 
         let arm_task = {
             let vehicle = vehicle.clone();
-            tokio::spawn(async move { vehicle.arm(false).await })
+            tokio::spawn(async move { vehicle.arm().await })
         };
 
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -1221,7 +1289,7 @@ mod tests {
 
         let disarm_task = {
             let vehicle = vehicle.clone();
-            tokio::spawn(async move { vehicle.disarm(false).await })
+            tokio::spawn(async move { vehicle.disarm().await })
         };
 
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -1256,7 +1324,7 @@ mod tests {
 
         let set_mode_ack_only = {
             let vehicle = vehicle.clone();
-            tokio::spawn(async move { vehicle.set_mode(4, false).await })
+            tokio::spawn(async move { vehicle.set_mode_no_wait(4).await })
         };
 
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -1280,7 +1348,7 @@ mod tests {
 
         let set_mode_waiting = {
             let vehicle = vehicle.clone();
-            tokio::spawn(async move { vehicle.set_mode(6, true).await })
+            tokio::spawn(async move { vehicle.set_mode(6).await })
         };
 
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -1315,7 +1383,7 @@ mod tests {
 
         let rejected = {
             let vehicle = vehicle.clone();
-            tokio::spawn(async move { vehicle.set_mode(5, false).await })
+            tokio::spawn(async move { vehicle.set_mode_no_wait(5).await })
         };
 
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -1347,7 +1415,7 @@ mod tests {
     #[tokio::test]
     async fn set_mode_rejects_large_custom_mode() {
         let (vehicle, _rx) = connect_mock_vehicle().await;
-        let result = vehicle.set_mode(16_777_217, false).await;
+        let result = vehicle.set_mode_no_wait(16_777_217).await;
         assert!(matches!(result, Err(VehicleError::InvalidParameter(_))));
     }
 
@@ -1357,7 +1425,7 @@ mod tests {
 
         let static_lookup = {
             let vehicle = vehicle.clone();
-            tokio::spawn(async move { vehicle.set_mode_by_name("guided", false).await })
+            tokio::spawn(async move { vehicle.set_mode_by_name_no_wait("guided").await })
         };
 
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -1403,7 +1471,7 @@ mod tests {
 
         let dynamic_lookup = {
             let vehicle = vehicle.clone();
-            tokio::spawn(async move { vehicle.set_mode_by_name("AUTO_RTL", false).await })
+            tokio::spawn(async move { vehicle.set_mode_by_name_no_wait("AUTO_RTL").await })
         };
 
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -1442,7 +1510,7 @@ mod tests {
         assert_eq!(dynamic_mode, 27);
 
         assert!(matches!(
-            vehicle.set_mode_by_name("NOT_A_MODE", false).await,
+            vehicle.set_mode_by_name_no_wait("NOT_A_MODE").await,
             Err(VehicleError::ModeNotAvailable(name)) if name == "NOT_A_MODE"
         ));
 
@@ -2015,7 +2083,7 @@ mod tests {
 
         let arm_task = {
             let vehicle = vehicle.clone();
-            tokio::spawn(async move { vehicle.arm(false).await })
+            tokio::spawn(async move { vehicle.arm().await })
         };
 
         let arm_command = timeout(Duration::from_millis(250), async {

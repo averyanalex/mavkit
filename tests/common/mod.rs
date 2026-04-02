@@ -210,7 +210,11 @@ pub async fn arm_with_retries(
         if tokio::time::Instant::now() > deadline {
             return Err(last_err);
         }
-        match vehicle.arm(force).await {
+        match if force {
+            vehicle.force_arm().await
+        } else {
+            vehicle.arm().await
+        } {
             Ok(()) => return Ok(()),
             Err(err) => {
                 last_err = err.to_string();

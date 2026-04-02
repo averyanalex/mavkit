@@ -24,7 +24,7 @@ async def main():
         await vehicle.set_mode_by_name(mode)
 
         print("arming...")
-        await vehicle.arm(force=False)
+        await vehicle.arm()
 
         after_mode = current_mode_handle.latest()
         after_armed = armed_handle.latest()

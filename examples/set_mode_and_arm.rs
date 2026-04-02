@@ -15,10 +15,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("before: mode={} armed={}", before_mode, before_armed);
 
     println!("setting mode to {mode}...");
-    vehicle.set_mode_by_name(&mode, true).await?;
+    vehicle.set_mode_by_name(&mode).await?;
 
     println!("arming...");
-    vehicle.arm(false).await?;
+    vehicle.arm().await?;
 
     let after_mode = current_mode.wait().await?;
     let after_armed = armed.wait().await?.value;

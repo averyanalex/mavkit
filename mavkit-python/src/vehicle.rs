@@ -1879,51 +1879,115 @@ impl PyVehicle {
         }
     }
 
-    fn arm<'py>(&self, py: Python<'py>, force: bool) -> PyResult<Bound<'py, PyAny>> {
+    fn arm<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let vehicle = self.inner.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle.arm(force).await.map_err(to_py_err)?;
+            vehicle.arm().await.map_err(to_py_err)?;
             Ok(())
         })
     }
 
-    fn disarm<'py>(&self, py: Python<'py>, force: bool) -> PyResult<Bound<'py, PyAny>> {
+    fn arm_no_wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let vehicle = self.inner.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle.disarm(force).await.map_err(to_py_err)?;
+            vehicle.arm_no_wait().await.map_err(to_py_err)?;
             Ok(())
         })
     }
 
-    #[pyo3(signature = (custom_mode, wait_for_observation=true))]
-    fn set_mode<'py>(
+    fn force_arm<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            vehicle.force_arm().await.map_err(to_py_err)?;
+            Ok(())
+        })
+    }
+
+    fn force_arm_no_wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            vehicle.force_arm_no_wait().await.map_err(to_py_err)?;
+            Ok(())
+        })
+    }
+
+    fn disarm<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            vehicle.disarm().await.map_err(to_py_err)?;
+            Ok(())
+        })
+    }
+
+    fn disarm_no_wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            vehicle.disarm_no_wait().await.map_err(to_py_err)?;
+            Ok(())
+        })
+    }
+
+    fn force_disarm<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            vehicle.force_disarm().await.map_err(to_py_err)?;
+            Ok(())
+        })
+    }
+
+    fn force_disarm_no_wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            vehicle.force_disarm_no_wait().await.map_err(to_py_err)?;
+            Ok(())
+        })
+    }
+
+    fn set_mode<'py>(&self, py: Python<'py>, custom_mode: u32) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            vehicle.set_mode(custom_mode).await.map_err(to_py_err)?;
+            Ok(())
+        })
+    }
+
+    fn set_mode_no_wait<'py>(
         &self,
         py: Python<'py>,
         custom_mode: u32,
-        wait_for_observation: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let vehicle = self.inner.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             vehicle
-                .set_mode(custom_mode, wait_for_observation)
+                .set_mode_no_wait(custom_mode)
                 .await
                 .map_err(to_py_err)?;
             Ok(())
         })
     }
 
-    #[pyo3(signature = (name, wait_for_observation=true))]
-    fn set_mode_by_name<'py>(
+    fn set_mode_by_name<'py>(&self, py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
+        let vehicle = self.inner.clone();
+        let mode_name = name.to_string();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            vehicle
+                .set_mode_by_name(&mode_name)
+                .await
+                .map_err(to_py_err)?;
+            Ok(())
+        })
+    }
+
+    fn set_mode_by_name_no_wait<'py>(
         &self,
         py: Python<'py>,
         name: &str,
-        wait_for_observation: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let vehicle = self.inner.clone();
         let mode_name = name.to_string();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             vehicle
-                .set_mode_by_name(&mode_name, wait_for_observation)
+                .set_mode_by_name_no_wait(&mode_name)
                 .await
                 .map_err(to_py_err)?;
             Ok(())
