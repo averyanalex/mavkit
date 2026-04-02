@@ -2139,34 +2139,113 @@ impl PyTelemetryHandle {
     }
 }
 
-macro_rules! define_telemetry_namespace {
-    ($rust_name:ident, $py_name:literal) => {
-        #[pyclass(name = $py_name, frozen, skip_from_py_object)]
-        #[derive(Clone)]
-        pub struct $rust_name {
-            inner: mavkit::Vehicle,
-        }
-
-        impl $rust_name {
-            fn new(inner: mavkit::Vehicle) -> Self {
-                Self { inner }
-            }
-        }
-    };
+#[pyclass(name = "TelemetryPositionNamespace", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyTelemetryPositionNamespace {
+    inner: mavkit::Vehicle,
 }
 
-define_telemetry_namespace!(PyTelemetryPositionNamespace, "TelemetryPositionNamespace");
-define_telemetry_namespace!(PyTelemetryAttitudeNamespace, "TelemetryAttitudeNamespace");
-define_telemetry_namespace!(PyTelemetryBatteryNamespace, "TelemetryBatteryNamespace");
-define_telemetry_namespace!(PyTelemetryGpsNamespace, "TelemetryGpsNamespace");
-define_telemetry_namespace!(
-    PyTelemetryNavigationNamespace,
-    "TelemetryNavigationNamespace"
-);
-define_telemetry_namespace!(PyTelemetryTerrainNamespace, "TelemetryTerrainNamespace");
-define_telemetry_namespace!(PyTelemetryRcNamespace, "TelemetryRcNamespace");
-define_telemetry_namespace!(PyTelemetryActuatorsNamespace, "TelemetryActuatorsNamespace");
-define_telemetry_namespace!(PyTelemetryMessagesHandle, "TelemetryMessagesHandle");
+impl PyTelemetryPositionNamespace {
+    fn new(inner: mavkit::Vehicle) -> Self {
+        Self { inner }
+    }
+}
+
+#[pyclass(name = "TelemetryAttitudeNamespace", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyTelemetryAttitudeNamespace {
+    inner: mavkit::Vehicle,
+}
+
+impl PyTelemetryAttitudeNamespace {
+    fn new(inner: mavkit::Vehicle) -> Self {
+        Self { inner }
+    }
+}
+
+#[pyclass(name = "TelemetryBatteryNamespace", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyTelemetryBatteryNamespace {
+    inner: mavkit::Vehicle,
+}
+
+impl PyTelemetryBatteryNamespace {
+    fn new(inner: mavkit::Vehicle) -> Self {
+        Self { inner }
+    }
+}
+
+#[pyclass(name = "TelemetryGpsNamespace", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyTelemetryGpsNamespace {
+    inner: mavkit::Vehicle,
+}
+
+impl PyTelemetryGpsNamespace {
+    fn new(inner: mavkit::Vehicle) -> Self {
+        Self { inner }
+    }
+}
+
+#[pyclass(name = "TelemetryNavigationNamespace", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyTelemetryNavigationNamespace {
+    inner: mavkit::Vehicle,
+}
+
+impl PyTelemetryNavigationNamespace {
+    fn new(inner: mavkit::Vehicle) -> Self {
+        Self { inner }
+    }
+}
+
+#[pyclass(name = "TelemetryTerrainNamespace", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyTelemetryTerrainNamespace {
+    inner: mavkit::Vehicle,
+}
+
+impl PyTelemetryTerrainNamespace {
+    fn new(inner: mavkit::Vehicle) -> Self {
+        Self { inner }
+    }
+}
+
+#[pyclass(name = "TelemetryRcNamespace", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyTelemetryRcNamespace {
+    inner: mavkit::Vehicle,
+}
+
+impl PyTelemetryRcNamespace {
+    fn new(inner: mavkit::Vehicle) -> Self {
+        Self { inner }
+    }
+}
+
+#[pyclass(name = "TelemetryActuatorsNamespace", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyTelemetryActuatorsNamespace {
+    inner: mavkit::Vehicle,
+}
+
+impl PyTelemetryActuatorsNamespace {
+    fn new(inner: mavkit::Vehicle) -> Self {
+        Self { inner }
+    }
+}
+
+#[pyclass(name = "TelemetryMessagesHandle", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyTelemetryMessagesHandle {
+    inner: mavkit::Vehicle,
+}
+
+impl PyTelemetryMessagesHandle {
+    fn new(inner: mavkit::Vehicle) -> Self {
+        Self { inner }
+    }
+}
 
 #[pymethods]
 impl PyTelemetryPositionNamespace {
