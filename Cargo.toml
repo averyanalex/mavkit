@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "mavkit-python"]
+members = [".", "mavkit-python", "mavkit-macros"]
 
 [package]
 name = "mavkit"
@@ -25,6 +25,7 @@ stream = ["async-trait", "futures"]
 tlog = ["tokio/fs", "tokio/io-util"]
 
 [dependencies]
+mavkit-macros = { path = "mavkit-macros" }
 mavlink = { version = "0.17", default-features = false, features = ["all", "std", "serde", "format-generated-code", "tokio-1", "emit-extensions"] }
 tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }
 tokio-stream = { version = "0.1", features = ["sync"] }

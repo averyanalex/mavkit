@@ -1,0 +1,15 @@
+[package]
+name = "mavkit-macros"
+version = "0.4.0"
+edition = "2024"
+rust-version = "1.87"
+description = "Proc-macros for MAVKit mission command generation"
+license = "MIT OR Apache-2.0"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2.0.117", features = ["full", "extra-traits"] }
+quote = "1.0.45"
+proc-macro2 = "1.0.106"
