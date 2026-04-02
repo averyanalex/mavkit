@@ -342,10 +342,20 @@ impl<'a> MissionHandle<'a> {
     pub fn upload(&self, plan: MissionPlan) -> Result<MissionUploadOp, VehicleError> {
         let issues = validate_plan(&plan);
         if let Some(issue) = issues.iter().find(|i| i.severity == IssueSeverity::Error) {
-            return Err(VehicleError::MissionValidation(format!(
-                "{}: {}",
-                issue.code, issue.message
-            )));
+            return if let Some(seq) = issue.seq {
+                Err(VehicleError::InvalidMissionItem {
+                    index: usize::from(seq),
+                    reason: crate::error::MissionValidationReason::Other(format!(
+                        "{}: {}",
+                        issue.code, issue.message
+                    )),
+                })
+            } else {
+                Err(VehicleError::InvalidMissionPlan(format!(
+                    "{}: {}",
+                    issue.code, issue.message
+                )))
+            };
         }
 
         let wire_plan = WireMissionPlan {

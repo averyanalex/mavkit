@@ -24,6 +24,48 @@ impl fmt::Display for CommandResult {
     }
 }
 
+/// Why a mission item failed validation.
+#[derive(Debug, Clone)]
+pub enum MissionValidationReason {
+    /// A coordinate value is outside its legal range.
+    InvalidCoordinate { detail: String },
+    /// A required field is absent or unset.
+    MissingField { field: &'static str },
+    /// A numeric parameter is outside the allowed range.
+    ParameterOutOfRange {
+        field: &'static str,
+        value: f64,
+        min: f64,
+        max: f64,
+    },
+    /// The command type is not recognised or supported.
+    UnsupportedCommand { command: u16 },
+    /// Any other validation failure not covered by the above.
+    Other(String),
+}
+
+impl fmt::Display for MissionValidationReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidCoordinate { detail } => write!(f, "invalid coordinate: {detail}"),
+            Self::MissingField { field } => write!(f, "missing field: {field}"),
+            Self::ParameterOutOfRange {
+                field,
+                value,
+                min,
+                max,
+            } => write!(
+                f,
+                "parameter out of range: {field}={value} not in [{min}, {max}]"
+            ),
+            Self::UnsupportedCommand { command } => {
+                write!(f, "unsupported command: {command}")
+            }
+            Self::Other(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+
 /// Errors that can occur during vehicle communication and operations.
 #[derive(Debug, thiserror::Error)]
 pub enum VehicleError {
@@ -33,8 +75,8 @@ pub enum VehicleError {
     Disconnected,
     #[error("command rejected: command={command}, result={result}")]
     CommandRejected { command: u16, result: CommandResult },
-    #[error("command outcome unknown: command={command}")]
-    OutcomeUnknown { command: u16 },
+    #[error("command outcome unknown: command={command} ({context})")]
+    OutcomeUnknown { command: u16, context: String },
     #[error("operation timed out: {0}")]
     Timeout(String),
     #[error("unsupported: {0}")]
@@ -56,8 +98,21 @@ pub enum VehicleError {
     },
     #[error("operation cancelled")]
     Cancelled,
-    #[error("mission validation failed: {0}")]
-    MissionValidation(String),
+    #[error("invalid mission item at index {index}: {reason}")]
+    InvalidMissionItem {
+        index: usize,
+        reason: MissionValidationReason,
+    },
+    #[error("invalid mission plan: {0}")]
+    InvalidMissionPlan(String),
+    #[error("parameter not found: {name}")]
+    ParameterNotFound { name: String },
+    #[error("parameter type mismatch for {name}: expected {expected}, got {actual}")]
+    ParameterTypeMismatch {
+        name: String,
+        expected: String,
+        actual: String,
+    },
     #[error("no heartbeat received yet")]
     IdentityUnknown,
     #[error("MAVLink I/O: {0}")]
@@ -66,7 +121,7 @@ pub enum VehicleError {
 
 #[cfg(test)]
 mod tests {
-    use super::{CommandResult, VehicleError};
+    use super::{CommandResult, MissionValidationReason, VehicleError};
 
     #[test]
     fn command_result_display() {
@@ -141,5 +196,85 @@ mod tests {
 
         let err2 = VehicleError::Timeout("sending command".into());
         assert!(err2.to_string().contains("sending command"));
+    }
+
+    #[test]
+    fn invalid_mission_item_display() {
+        let err = VehicleError::InvalidMissionItem {
+            index: 3,
+            reason: MissionValidationReason::InvalidCoordinate {
+                detail: "latitude 120 outside [-90, 90]".to_string(),
+            },
+        };
+        let text = err.to_string();
+        assert!(text.contains("index 3"));
+        assert!(text.contains("latitude 120"));
+    }
+
+    #[test]
+    fn invalid_mission_plan_display() {
+        let err = VehicleError::InvalidMissionPlan("too many items".to_string());
+        assert!(err.to_string().contains("too many items"));
+    }
+
+    #[test]
+    fn parameter_not_found_display() {
+        let err = VehicleError::ParameterNotFound {
+            name: "BATT_CAPACITY".to_string(),
+        };
+        assert!(err.to_string().contains("BATT_CAPACITY"));
+    }
+
+    #[test]
+    fn parameter_type_mismatch_display() {
+        let err = VehicleError::ParameterTypeMismatch {
+            name: "ARMING_CHECK".to_string(),
+            expected: "Int32".to_string(),
+            actual: "Real32".to_string(),
+        };
+        let text = err.to_string();
+        assert!(text.contains("ARMING_CHECK"));
+        assert!(text.contains("Int32"));
+        assert!(text.contains("Real32"));
+    }
+
+    #[test]
+    fn outcome_unknown_includes_context() {
+        let err = VehicleError::OutcomeUnknown {
+            command: 400,
+            context: "cancelled after send".to_string(),
+        };
+        let text = err.to_string();
+        assert!(text.contains("400"));
+        assert!(text.contains("cancelled after send"));
+    }
+
+    #[test]
+    fn mission_validation_reason_display() {
+        assert!(
+            MissionValidationReason::MissingField { field: "altitude" }
+                .to_string()
+                .contains("altitude")
+        );
+        assert!(
+            MissionValidationReason::ParameterOutOfRange {
+                field: "speed",
+                value: 200.0,
+                min: 0.0,
+                max: 100.0,
+            }
+            .to_string()
+            .contains("speed")
+        );
+        assert!(
+            MissionValidationReason::UnsupportedCommand { command: 999 }
+                .to_string()
+                .contains("999")
+        );
+        assert!(
+            MissionValidationReason::Other("bad".to_string())
+                .to_string()
+                .contains("bad")
+        );
     }
 }

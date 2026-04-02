@@ -328,6 +328,7 @@ impl AckCommandDispatcher {
                 if sent_once {
                     Err(VehicleError::OutcomeUnknown {
                         command: command_id,
+                        context: "cancelled after send".to_string(),
                     })
                 } else {
                     Err(VehicleError::Cancelled)
@@ -347,6 +348,7 @@ impl AckCommandDispatcher {
         if sent_once {
             Err(VehicleError::OutcomeUnknown {
                 command: command_id,
+                context: "cancelled after send".to_string(),
             })
         } else {
             Err(VehicleError::Cancelled)
