@@ -11,20 +11,38 @@ use tokio_stream::{Stream, StreamExt};
 
 pub use crate::types::SupportState;
 
-/// Value plus provenance metadata for coalescing metric streams.
+/// A decoded metric value together with the provenance needed to reason about freshness.
+///
+/// Multiple MAVLink message types can carry the same logical metric (e.g. altitude
+/// appears in both `GLOBAL_POSITION_INT` and `VFR_HUD`). `source` records which
+/// message produced this sample so callers can filter or prefer a specific source.
+///
+/// `vehicle_time` is `None` when the autopilot's message did not carry a usable
+/// timestamp (e.g. the field was zero or outside the plausible boot-time range).
+/// Use `received_at` as a fallback for staleness checks in that case.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MetricSample<T> {
     pub value: T,
+    /// Which MAVLink message type produced this sample.
     pub source: TelemetryMessageKind,
+    /// Vehicle boot-relative timestamp extracted from the MAVLink message, if available.
     pub vehicle_time: Option<VehicleTimestamp>,
+    /// Wall-clock time at which the event loop received this message.
     pub received_at: Instant,
 }
 
-/// Value plus timestamps for event-like telemetry messages.
+/// A raw MAVLink message value together with receipt timestamps.
+///
+/// Unlike [`MetricSample`], `MessageSample` does not carry a `source` field because
+/// each `MessageHandle` is bound to exactly one MAVLink message type.
+///
+/// `vehicle_time` is `None` when the message's timestamp field was absent or zero.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MessageSample<M> {
     pub value: M,
+    /// Wall-clock time at which the event loop received this message.
     pub received_at: Instant,
+    /// Vehicle boot-relative timestamp extracted from the MAVLink message, if available.
     pub vehicle_time: Option<VehicleTimestamp>,
 }
 
@@ -42,7 +60,30 @@ enum ObservationBacking<T: Clone + Send + Sync + 'static> {
     Broadcast(BroadcastStore<T>),
 }
 
-/// Generic observation reader over either watch-style or broadcast backing.
+/// Read side of a reactive observation channel.
+///
+/// Observations are the primary mechanism for telemetry, vehicle state, and domain
+/// updates. Each handle wraps one of two backing strategies:
+///
+/// - **Watch** — coalesces updates; [`latest()`] always returns the most recent value
+///   (which may be stale if the vehicle is silent). Callers that need every change
+///   should use [`subscribe()`] or [`wait()`] rather than polling [`latest()`].
+///
+/// - **Broadcast** — preserves every event; no coalescing occurs. [`latest()`]
+///   returns the value of the last published event, but [`subscribe()`] only receives
+///   events published *after* the subscription was created. Use this for status-text
+///   messages and other discrete events where history matters.
+///
+/// [`wait()`] blocks until the first value is available (or returns immediately if one
+/// already exists). It returns [`VehicleError::Disconnected`] when the writer is
+/// dropped, signalling vehicle disconnection.
+///
+/// [`subscribe()`] returns an [`ObservationSubscription`] that implements `Stream<Item = T>`.
+/// The stream terminates (yields `None`) when the writer is dropped.
+///
+/// [`latest()`]: ObservationHandle::latest
+/// [`wait()`]: ObservationHandle::wait
+/// [`subscribe()`]: ObservationHandle::subscribe
 #[derive(Clone)]
 pub struct ObservationHandle<T: Clone + Send + Sync + 'static> {
     backing: Arc<ObservationBacking<T>>,
@@ -61,7 +102,18 @@ enum SubscriptionBacking<T: Clone + Send + Sync + 'static> {
     Broadcast { stream: BroadcastStream<T> },
 }
 
-/// Async stream subscription created from an [`ObservationHandle`].
+/// A `Stream<Item = T>` created from an [`ObservationHandle`].
+///
+/// The stream terminates (yields `None`) when the originating [`ObservationWriter`] is
+/// dropped. This signals vehicle disconnection and lets callers break out of
+/// `while let Some(value) = sub.recv().await` loops cleanly.
+///
+/// For watch-backed observations the stream replays the current value on creation and
+/// then emits each subsequent change. For broadcast-backed observations only events
+/// published *after* subscription creation are delivered; earlier events are not
+/// replayed. If the channel is lagged (the receiver falls too far behind the sender)
+/// intermediate events are silently dropped and the stream continues from the next
+/// available item.
 pub struct ObservationSubscription<T: Clone + Send + Sync + 'static> {
     backing: SubscriptionBacking<T>,
     close_stream: WatchStream<()>,
@@ -69,6 +121,11 @@ pub struct ObservationSubscription<T: Clone + Send + Sync + 'static> {
 }
 
 impl<T: Clone + Send + Sync + 'static> ObservationHandle<T> {
+    /// Create a coalescing (watch-backed) observation pair.
+    ///
+    /// Use for metrics that should always expose the most recent value — telemetry
+    /// readings, vehicle state, etc. Only the latest published value is retained;
+    /// rapid updates between reads are collapsed into the last one.
     pub fn watch() -> (ObservationWriter<T>, Self) {
         let (tx, _) = watch::channel(None::<T>);
         let (close_tx, close_rx) = watch::channel(());
@@ -83,6 +140,12 @@ impl<T: Clone + Send + Sync + 'static> ObservationHandle<T> {
         )
     }
 
+    /// Create a broadcast-backed observation pair.
+    ///
+    /// Use for discrete events where every occurrence matters — status-text messages,
+    /// calibration reports, etc. All active subscriptions receive every event
+    /// independently. `capacity` is the broadcast channel buffer size; slow receivers
+    /// that fall behind by more than `capacity` items will skip the intermediate events.
     pub fn broadcast(capacity: usize) -> (ObservationWriter<T>, Self) {
         let (tx, _) = broadcast::channel(capacity.max(1));
         let (close_tx, close_rx) = watch::channel(());
@@ -283,7 +346,16 @@ impl<T: Clone + Send + Sync + 'static> Stream for ObservationSubscription<T> {
     }
 }
 
-/// Typed metric handle with support metadata and wait/subscribe helpers.
+/// A typed [`ObservationHandle`] for a coalesced telemetry metric, paired with a
+/// support-state observation.
+///
+/// Use [`support()`] to check whether the connected vehicle is currently sending this
+/// metric at all: a value of [`SupportState::Unsupported`] means the autopilot has not
+/// produced the relevant MAVLink messages since connection, so [`wait()`] would block
+/// indefinitely.
+///
+/// [`support()`]: MetricHandle::support
+/// [`wait()`]: MetricHandle::wait
 #[derive(Clone)]
 pub struct MetricHandle<T: Clone + Send + Sync + 'static> {
     observation: ObservationHandle<MetricSample<T>>,
@@ -322,7 +394,21 @@ impl<T: Clone + Send + Sync + 'static> MetricHandle<T> {
     }
 }
 
-/// Typed message handle with support metadata and request/stream helpers.
+/// A typed [`ObservationHandle`] for a specific MAVLink message type, paired with a
+/// support-state observation.
+///
+/// Unlike [`MetricHandle`], which coalesces values from multiple message sources,
+/// `MessageHandle` is bound to a single MAVLink message type and preserves every
+/// received event via broadcast backing. Use [`subscribe()`] when you need an
+/// uncoalesced stream of individual messages.
+///
+/// [`support()`] indicates whether the vehicle has sent this message type since
+/// connection. A value of [`SupportState::Unsupported`] means [`wait()`] would block
+/// indefinitely.
+///
+/// [`support()`]: MessageHandle::support
+/// [`wait()`]: MessageHandle::wait
+/// [`subscribe()`]: MessageHandle::subscribe
 #[derive(Clone)]
 pub struct MessageHandle<M: Clone + Send + Sync + 'static> {
     observation: ObservationHandle<MessageSample<M>>,

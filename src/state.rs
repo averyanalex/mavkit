@@ -75,7 +75,15 @@ impl WireMissionState {
     }
 }
 
-/// Connection lifecycle state.
+/// Connection lifecycle for the underlying MAVLink transport.
+///
+/// The typical progression is `Connecting → Connected → Disconnected`.
+/// `Error` is emitted when the transport encounters a non-recoverable failure (e.g.
+/// the serial port is removed). After `Disconnected` or `Error` no further MAVLink
+/// messages will arrive and all [`ObservationHandle::wait`] calls will return
+/// [`VehicleError::Disconnected`].
+///
+/// [`ObservationHandle::wait`]: crate::ObservationHandle::wait
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LinkState {
@@ -95,7 +103,11 @@ pub struct FlightMode {
 
 // --- Simple enums mapping from MAVLink values ---
 
-/// MAVLink system status.
+/// Vehicle lifecycle stage reported in HEARTBEAT `system_status`.
+///
+/// Transitions generally follow `Boot → Calibrating → Standby → Active`.
+/// `Critical` and `Emergency` indicate sensor or autopilot failures requiring
+/// immediate attention. `Poweroff` means the vehicle is shutting down.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SystemStatus {
@@ -194,7 +206,11 @@ impl AutopilotType {
     }
 }
 
-/// MAVLink message severity level (MAV_SEVERITY).
+/// Severity level from a STATUSTEXT message, following RFC 5424 (syslog) ordering.
+///
+/// `Emergency` is the most severe; `Debug` is the least. Most autopilot informational
+/// messages are `Info` or `Notice`. `Warning` and above typically indicate a condition
+/// that requires attention from the operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MavSeverity {
