@@ -1616,7 +1616,7 @@ fn mission_item_int_msg(
             target_system: 0,
             target_component: 0,
             frame: mission_frame_msg(frame),
-            current: u8::from(item.current),
+            current: 0,
             autocontinue: u8::from(item.autocontinue),
             mission_type: mission_type_msg(mission_type),
         },

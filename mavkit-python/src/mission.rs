@@ -2783,7 +2783,7 @@ pub struct PyMissionItem {
 #[pymethods]
 impl PyMissionItem {
     #[new]
-    #[pyo3(signature = (*, command, frame=None, x=0, y=0, z=0.0, param1=0.0, param2=0.0, param3=0.0, param4=0.0, current=false, autocontinue=true))]
+    #[pyo3(signature = (*, command, frame=None, x=0, y=0, z=0.0, param1=0.0, param2=0.0, param3=0.0, param4=0.0, autocontinue=true))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         command: &Bound<'_, PyAny>,
@@ -2795,7 +2795,6 @@ impl PyMissionItem {
         param2: f32,
         param3: f32,
         param4: f32,
-        current: bool,
         autocontinue: bool,
     ) -> PyResult<Self> {
         let uses_legacy_wire_fields = frame.is_some()
@@ -2841,7 +2840,6 @@ impl PyMissionItem {
         Ok(Self {
             inner: mavkit::MissionItem {
                 command: mission_command,
-                current,
                 autocontinue,
             },
         })
@@ -2854,10 +2852,6 @@ impl PyMissionItem {
     #[getter]
     fn frame(&self) -> PyMissionFrame {
         wire_parts(&self.inner).1
-    }
-    #[getter]
-    fn current(&self) -> bool {
-        self.inner.current
     }
     #[getter]
     fn autocontinue(&self) -> bool {

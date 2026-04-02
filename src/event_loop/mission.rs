@@ -58,7 +58,6 @@ pub(super) fn from_mission_item_int(data: &dialect::MISSION_ITEM_INT_DATA) -> Mi
             data.y,
             data.z,
         ),
-        current: data.current > 0,
         autocontinue: data.autocontinue > 0,
     }
 }
@@ -93,7 +92,6 @@ fn from_mission_item_float(data: &dialect::MISSION_ITEM_DATA) -> MissionItem {
             },
             data.z,
         ),
-        current: data.current > 0,
         autocontinue: data.autocontinue > 0,
     }
 }

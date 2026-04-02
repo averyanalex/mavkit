@@ -296,7 +296,6 @@ fn rally_item(point: &GeoPoint3d) -> Result<MissionItem, VehicleError> {
             y,
             z,
         }),
-        current: false,
         autocontinue: true,
     })
 }

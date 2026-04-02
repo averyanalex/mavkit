@@ -543,7 +543,6 @@ fn fence_item(
             y: try_longitude_e7(point.longitude_deg)?,
             z: 0.0,
         }),
-        current: false,
         autocontinue: true,
     })
 }

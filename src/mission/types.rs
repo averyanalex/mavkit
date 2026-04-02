@@ -41,7 +41,6 @@ impl MissionFrame {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MissionItem {
     pub command: MissionCommand,
-    pub current: bool,
     pub autocontinue: bool,
 }
 
@@ -69,7 +68,6 @@ impl HomePosition {
                 // Narrow to f32 at the wire boundary (MAVLink z field is f32).
                 z: self.altitude_m as f32,
             }),
-            current: false,
             autocontinue: true,
         }
     }

@@ -1969,7 +1969,6 @@ class MissionItem:
         param2: float = 0.0,
         param3: float = 0.0,
         param4: float = 0.0,
-        current: bool = False,
         autocontinue: bool = True,
     ) -> Self: ...
     @property
@@ -1990,8 +1989,6 @@ class MissionItem:
     def param3(self) -> float: ...
     @property
     def param4(self) -> float: ...
-    @property
-    def current(self) -> bool: ...
     @property
     def autocontinue(self) -> bool: ...
 

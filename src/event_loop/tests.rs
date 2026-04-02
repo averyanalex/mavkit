@@ -1606,7 +1606,6 @@ fn from_mission_item_int_converts_correctly() {
     assert_eq!(x, 473_977_420);
     assert_eq!(y, 85_455_940);
     assert_eq!(z, 100.0);
-    assert!(item.current);
     assert!(item.autocontinue);
     assert_eq!(
         frame,

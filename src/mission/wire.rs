@@ -14,7 +14,6 @@ fn mission_home_placeholder() -> MissionItem {
             y: 0,
             z: 0.0,
         }),
-        current: false,
         autocontinue: true,
     }
 }
@@ -49,7 +48,6 @@ pub(crate) fn items_for_wire_upload(plan: &WireMissionPlan) -> Vec<MissionItem> 
     for item in &plan.items {
         wire.push(MissionItem {
             command: encode_command_for_wire(&item.command),
-            current: item.current,
             autocontinue: item.autocontinue,
         });
     }
@@ -70,10 +68,8 @@ pub(crate) fn plan_from_wire_download(
     let items: Vec<MissionItem> = wire_items
         .into_iter()
         .skip(1)
-        .enumerate()
-        .map(|(index, item)| MissionItem {
+        .map(|item| MissionItem {
             command: decode_command_from_wire(&item.command),
-            current: index == 0,
             autocontinue: item.autocontinue,
         })
         .collect();
@@ -195,7 +191,6 @@ mod tests {
         let plan = plan_from_wire_download(MissionType::Mission, wire_items);
 
         assert_eq!(plan.items.len(), 2);
-        assert!(plan.items[0].current);
         assert!(matches!(
             &plan.items[0].command,
             MissionCommand::Nav(NavCommand::Waypoint(_))
@@ -219,8 +214,7 @@ mod tests {
 
     #[test]
     fn typed_roundtrip() {
-        let mut first = typed_waypoint_item(47.397_742);
-        first.current = true; // download always marks first item current
+        let first = typed_waypoint_item(47.397_742);
         let plan = WireMissionPlan {
             mission_type: MissionType::Mission,
             items: vec![first, typed_jump_item(0)],
