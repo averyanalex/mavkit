@@ -292,62 +292,11 @@ fn parse_frame(frame: u8) -> Result<dialect::MavFrame, VehicleError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Vehicle;
-    use crate::config::VehicleConfig;
-    use crate::dialect::{self, MavModeFlag, MavState};
-    use crate::test_support::{MockConnection, SentMessages};
-    use tokio::sync::mpsc;
+    use crate::dialect;
+    use crate::test_support::{
+        ConnectedVehicleHarness, ConnectedVehicleOptions, command_ack_with, default_header,
+    };
     use tokio::time::timeout;
-
-    fn default_header() -> MavHeader {
-        MavHeader {
-            system_id: 1,
-            component_id: 1,
-            sequence: 0,
-        }
-    }
-
-    fn heartbeat_msg(armed: bool, custom_mode: u32) -> dialect::MavMessage {
-        let mut base_mode = MavModeFlag::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED;
-        if armed {
-            base_mode |= MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED;
-        }
-
-        dialect::MavMessage::HEARTBEAT(dialect::HEARTBEAT_DATA {
-            custom_mode,
-            mavtype: dialect::MavType::MAV_TYPE_QUADROTOR,
-            autopilot: dialect::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
-            base_mode,
-            system_status: MavState::MAV_STATE_STANDBY,
-            mavlink_version: 3,
-        })
-    }
-
-    fn fast_config() -> VehicleConfig {
-        VehicleConfig {
-            connect_timeout: Duration::from_millis(150),
-            command_timeout: Duration::from_millis(50),
-            command_completion_timeout: Duration::from_millis(150),
-            auto_request_home: false,
-            ..VehicleConfig::default()
-        }
-    }
-
-    fn ack_msg(
-        command: dialect::MavCmd,
-        result: dialect::MavResult,
-        progress: u8,
-        result_param2: i32,
-    ) -> dialect::MavMessage {
-        dialect::MavMessage::COMMAND_ACK(dialect::COMMAND_ACK_DATA {
-            command,
-            result,
-            progress,
-            result_param2,
-            target_system: 0,
-            target_component: 0,
-        })
-    }
 
     fn global_position_int_msg() -> dialect::MavMessage {
         dialect::MavMessage::GLOBAL_POSITION_INT(dialect::GLOBAL_POSITION_INT_DATA {
@@ -363,35 +312,12 @@ mod tests {
         })
     }
 
-    async fn connect_mock_vehicle_with_sent() -> (
-        Vehicle,
-        mpsc::Sender<(MavHeader, dialect::MavMessage)>,
-        SentMessages,
-    ) {
-        let (msg_tx, msg_rx) = mpsc::channel(16);
-        let (conn, sent) = MockConnection::new(msg_rx);
-        let connect_task =
-            tokio::spawn(
-                async move { Vehicle::from_connection(Box::new(conn), fast_config()).await },
-            );
-
-        msg_tx
-            .send((default_header(), heartbeat_msg(false, 7)))
-            .await
-            .expect("heartbeat should be delivered to mock connection");
-
-        let vehicle = timeout(Duration::from_millis(250), connect_task)
-            .await
-            .expect("connect should complete after first heartbeat")
-            .expect("connect task should join")
-            .expect("mock vehicle should connect");
-
-        (vehicle, msg_tx, sent)
-    }
-
     #[tokio::test]
     async fn command_long_ack() {
-        let (vehicle, msg_tx, sent) = connect_mock_vehicle_with_sent().await;
+        let harness = ConnectedVehicleHarness::connect(ConnectedVehicleOptions::default()).await;
+        let vehicle = harness.vehicle;
+        let msg_tx = harness.msg_tx;
+        let sent = harness.sent;
 
         let command_task = {
             let vehicle = vehicle.clone();
@@ -410,7 +336,7 @@ mod tests {
         msg_tx
             .send((
                 default_header(),
-                ack_msg(
+                command_ack_with(
                     dialect::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
                     dialect::MavResult::MAV_RESULT_ACCEPTED,
                     77,
@@ -461,7 +387,9 @@ mod tests {
 
     #[tokio::test]
     async fn send_bypasses_ack() {
-        let (vehicle, _msg_tx, sent) = connect_mock_vehicle_with_sent().await;
+        let harness = ConnectedVehicleHarness::connect(ConnectedVehicleOptions::default()).await;
+        let vehicle = harness.vehicle;
+        let sent = harness.sent;
         let raw_message = RawMessage::from_mavlink(
             default_header(),
             dialect::MavMessage::COMMAND_LONG(dialect::COMMAND_LONG_DATA {
@@ -498,7 +426,9 @@ mod tests {
 
     #[tokio::test]
     async fn subscribe_filtered() {
-        let (vehicle, msg_tx, _sent) = connect_mock_vehicle_with_sent().await;
+        let harness = ConnectedVehicleHarness::connect(ConnectedVehicleOptions::default()).await;
+        let vehicle = harness.vehicle;
+        let msg_tx = harness.msg_tx;
         let stream = vehicle.raw().subscribe_filtered(33);
         tokio::pin!(stream);
 
@@ -536,7 +466,9 @@ mod tests {
 
     #[tokio::test]
     async fn command_int_shares_ack_scope_with_typed_commands() {
-        let (vehicle, msg_tx, _sent) = connect_mock_vehicle_with_sent().await;
+        let harness = ConnectedVehicleHarness::connect(ConnectedVehicleOptions::default()).await;
+        let vehicle = harness.vehicle;
+        let msg_tx = harness.msg_tx;
 
         let arm_task = {
             let vehicle = vehicle.clone();
@@ -569,7 +501,7 @@ mod tests {
         msg_tx
             .send((
                 default_header(),
-                ack_msg(
+                command_ack_with(
                     dialect::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
                     dialect::MavResult::MAV_RESULT_ACCEPTED,
                     0,

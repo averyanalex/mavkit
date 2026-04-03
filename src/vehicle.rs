@@ -957,9 +957,12 @@ impl Vehicle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dialect::{self, MavModeFlag, MavState};
+    use crate::dialect::{self};
     use crate::geo::quantize_degrees_e7;
-    use crate::test_support::{MockConnection, SentMessages};
+    use crate::test_support::{
+        ConnectedVehicleHarness, ConnectedVehicleOptions, MockConnection, SentMessages,
+        command_ack, default_header, fast_vehicle_test_config, heartbeat,
+    };
     use mavlink::MavHeader;
     #[cfg(feature = "stream")]
     use mavlink::async_peek_reader::AsyncPeekReader;
@@ -973,49 +976,16 @@ mod tests {
     use tokio::io::{duplex, split};
     use tokio::time::timeout;
 
-    fn default_header() -> MavHeader {
-        MavHeader {
-            system_id: 1,
-            component_id: 1,
-            sequence: 0,
-        }
+    fn fast_config() -> VehicleConfig {
+        fast_vehicle_test_config()
     }
 
     fn heartbeat_msg(armed: bool, custom_mode: u32) -> dialect::MavMessage {
-        let mut base_mode = MavModeFlag::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED;
-        if armed {
-            base_mode |= MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED;
-        }
-
-        dialect::MavMessage::HEARTBEAT(dialect::HEARTBEAT_DATA {
-            custom_mode,
-            mavtype: dialect::MavType::MAV_TYPE_QUADROTOR,
-            autopilot: dialect::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
-            base_mode,
-            system_status: MavState::MAV_STATE_STANDBY,
-            mavlink_version: 3,
-        })
-    }
-
-    fn fast_config() -> VehicleConfig {
-        VehicleConfig {
-            connect_timeout: Duration::from_millis(150),
-            command_timeout: Duration::from_millis(50),
-            command_completion_timeout: Duration::from_millis(150),
-            auto_request_home: false,
-            ..VehicleConfig::default()
-        }
+        heartbeat(armed, custom_mode)
     }
 
     fn ack_msg(command: dialect::MavCmd, result: dialect::MavResult) -> dialect::MavMessage {
-        dialect::MavMessage::COMMAND_ACK(dialect::COMMAND_ACK_DATA {
-            command,
-            result,
-            progress: 0,
-            result_param2: 0,
-            target_system: 0,
-            target_component: 0,
-        })
+        command_ack(command, result)
     }
 
     fn gps_global_origin_msg(latitude: i32, longitude: i32, altitude: i32) -> dialect::MavMessage {
@@ -1053,25 +1023,14 @@ mod tests {
         mpsc::Sender<(MavHeader, dialect::MavMessage)>,
         SentMessages,
     ) {
-        let (msg_tx, msg_rx) = mpsc::channel(16);
-        let (conn, sent) = MockConnection::new(msg_rx);
-        let connect_task =
-            tokio::spawn(
-                async move { Vehicle::from_connection(Box::new(conn), fast_config()).await },
-            );
+        let harness = ConnectedVehicleHarness::connect(ConnectedVehicleOptions {
+            config: fast_config(),
+            join_timeout: Duration::from_millis(250),
+            ..ConnectedVehicleOptions::default()
+        })
+        .await;
 
-        msg_tx
-            .send((default_header(), heartbeat_msg(false, 7)))
-            .await
-            .expect("heartbeat should be delivered to the mock connection");
-
-        let vehicle = timeout(Duration::from_millis(250), connect_task)
-            .await
-            .expect("connect should complete after first heartbeat")
-            .expect("connect task should join")
-            .expect("mock vehicle should connect");
-
-        (vehicle, msg_tx, sent)
+        (harness.vehicle, harness.msg_tx, harness.sent)
     }
 
     async fn connect_mock_vehicle_with_header_and_sent(
@@ -1081,25 +1040,16 @@ mod tests {
         mpsc::Sender<(MavHeader, dialect::MavMessage)>,
         SentMessages,
     ) {
-        let (msg_tx, msg_rx) = mpsc::channel(16);
-        let (conn, sent) = MockConnection::new(msg_rx);
-        let connect_task =
-            tokio::spawn(
-                async move { Vehicle::from_connection(Box::new(conn), fast_config()).await },
-            );
+        let harness = ConnectedVehicleHarness::connect(ConnectedVehicleOptions {
+            config: fast_config(),
+            heartbeat_header: header,
+            heartbeat_message: heartbeat(false, 7),
+            join_timeout: Duration::from_millis(250),
+            ..ConnectedVehicleOptions::default()
+        })
+        .await;
 
-        msg_tx
-            .send((header, heartbeat_msg(false, 7)))
-            .await
-            .expect("heartbeat should be delivered to the mock connection");
-
-        let vehicle = timeout(Duration::from_millis(250), connect_task)
-            .await
-            .expect("connect should complete after first heartbeat")
-            .expect("connect task should join")
-            .expect("mock vehicle should connect");
-
-        (vehicle, msg_tx, sent)
+        (harness.vehicle, harness.msg_tx, harness.sent)
     }
 
     async fn wait_for_metric_disconnect<T: Clone + Send + Sync + 'static>(

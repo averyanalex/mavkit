@@ -4,6 +4,8 @@ mod init;
 mod mission;
 mod params;
 mod state_update;
+#[cfg(test)]
+mod test_support;
 
 use commands::{
     handle_arm_disarm, handle_command_int, handle_command_long, handle_command_long_raw,

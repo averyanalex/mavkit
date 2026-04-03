@@ -411,11 +411,12 @@ impl<'a> ParamsHandle<'a> {
 mod tests {
     use super::*;
     use crate::Vehicle;
-    use crate::config::VehicleConfig;
     use crate::dialect;
-    use crate::test_support::MockConnection;
+    use crate::test_support::{
+        ConnectedVehicleHarness, ConnectedVehicleOptions, default_header, fast_vehicle_test_config,
+        heartbeat,
+    };
     use crate::types::SyncState;
-    use mavlink::MavHeader;
     use std::time::Duration;
     use tokio::sync::mpsc;
     use tokio::time::timeout;
@@ -451,25 +452,6 @@ mod tests {
         assert_ne!(downloading, downloading_unknown);
     }
 
-    fn default_header() -> MavHeader {
-        MavHeader {
-            system_id: 1,
-            component_id: 1,
-            sequence: 0,
-        }
-    }
-
-    fn heartbeat_msg() -> dialect::MavMessage {
-        dialect::MavMessage::HEARTBEAT(dialect::HEARTBEAT_DATA {
-            custom_mode: 0,
-            mavtype: dialect::MavType::MAV_TYPE_QUADROTOR,
-            autopilot: dialect::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
-            base_mode: dialect::MavModeFlag::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
-            system_status: dialect::MavState::MAV_STATE_STANDBY,
-            mavlink_version: 3,
-        })
-    }
-
     fn param_value_msg(
         name: &str,
         value: f32,
@@ -485,38 +467,28 @@ mod tests {
         })
     }
 
-    fn fast_config() -> VehicleConfig {
-        let mut config = VehicleConfig {
-            connect_timeout: Duration::from_millis(200),
-            command_timeout: Duration::from_millis(50),
-            command_completion_timeout: Duration::from_millis(200),
-            auto_request_home: false,
-            ..VehicleConfig::default()
-        };
+    fn fast_config() -> crate::config::VehicleConfig {
+        let mut config = fast_vehicle_test_config();
+        config.connect_timeout = Duration::from_millis(200);
+        config.command_completion_timeout = Duration::from_millis(200);
         config.retry_policy.max_retries = 0;
         config
     }
 
-    async fn connect_mock_vehicle() -> (Vehicle, mpsc::Sender<(MavHeader, dialect::MavMessage)>) {
-        let (msg_tx, msg_rx) = mpsc::channel(32);
-        let (conn, _sent) = MockConnection::new(msg_rx);
-        let connect_task =
-            tokio::spawn(
-                async move { Vehicle::from_connection(Box::new(conn), fast_config()).await },
-            );
+    async fn connect_mock_vehicle() -> (
+        Vehicle,
+        mpsc::Sender<(mavlink::MavHeader, dialect::MavMessage)>,
+    ) {
+        let harness = ConnectedVehicleHarness::connect(ConnectedVehicleOptions {
+            config: fast_config(),
+            heartbeat_message: heartbeat(false, 0),
+            join_timeout: Duration::from_millis(400),
+            message_capacity: 32,
+            ..ConnectedVehicleOptions::default()
+        })
+        .await;
 
-        msg_tx
-            .send((default_header(), heartbeat_msg()))
-            .await
-            .expect("heartbeat should be delivered");
-
-        let vehicle = timeout(Duration::from_millis(400), connect_task)
-            .await
-            .expect("connect should finish")
-            .expect("connect task should join")
-            .expect("vehicle should connect");
-
-        (vehicle, msg_tx)
+        (harness.vehicle, harness.msg_tx)
     }
 
     #[tokio::test]

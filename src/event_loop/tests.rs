@@ -4,13 +4,14 @@ use super::mission::{
 use super::params::{
     from_mav_param_type, param_id_to_string, string_to_param_id, to_mav_param_type,
 };
+use super::test_support::{EventLoopHarness, EventLoopOptions, fast_event_loop_test_config};
 use super::*;
-use crate::dialect::{self, MavCmd, MavModeFlag, MavState};
+use crate::dialect::{self, MavCmd};
 use crate::mission::{MissionFrame, MissionType};
 use crate::observation::SupportState;
 use crate::state::{self, LinkState, create_channels};
 use crate::telemetry::TelemetryHandle;
-use crate::test_support::MockConnection;
+use crate::test_support::{MockConnection, assert_approx, command_ack, default_header, heartbeat};
 use mavlink::MavHeader;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
@@ -18,22 +19,6 @@ use tokio::sync::{mpsc, oneshot};
 // -----------------------------------------------------------------------
 // Test helpers
 // -----------------------------------------------------------------------
-
-fn default_header() -> MavHeader {
-    MavHeader {
-        system_id: 1,
-        component_id: 1,
-        sequence: 0,
-    }
-}
-
-/// Floating-point proximity check for telemetry value assertions.
-fn assert_approx(actual: f64, expected: f64) {
-    assert!(
-        (actual - expected).abs() < 1e-4,
-        "expected {expected}, got {actual}"
-    );
-}
 
 /// Generates a `#[test]` function for the common single-message state-update
 /// pattern: create channels, call `update_state` once, assert on channels.
@@ -69,43 +54,15 @@ macro_rules! test_state_update {
 }
 
 fn heartbeat_msg(armed: bool, custom_mode: u32) -> dialect::MavMessage {
-    let mut base_mode = MavModeFlag::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED;
-    if armed {
-        base_mode |= MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED;
-    }
-    dialect::MavMessage::HEARTBEAT(dialect::HEARTBEAT_DATA {
-        custom_mode,
-        mavtype: dialect::MavType::MAV_TYPE_QUADROTOR,
-        autopilot: dialect::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
-        base_mode,
-        system_status: MavState::MAV_STATE_STANDBY,
-        mavlink_version: 3,
-    })
+    heartbeat(armed, custom_mode)
 }
 
 fn fast_config() -> VehicleConfig {
-    VehicleConfig {
-        command_timeout: Duration::from_millis(50),
-        command_completion_timeout: Duration::from_millis(250),
-        retry_policy: crate::mission::RetryPolicy {
-            request_timeout_ms: 50,
-            item_timeout_ms: 50,
-            max_retries: 2,
-        },
-        auto_request_home: false,
-        ..VehicleConfig::default()
-    }
+    fast_event_loop_test_config()
 }
 
 fn ack_msg(command: MavCmd, result: dialect::MavResult) -> dialect::MavMessage {
-    dialect::MavMessage::COMMAND_ACK(dialect::COMMAND_ACK_DATA {
-        command,
-        result,
-        progress: 0,
-        result_param2: 0,
-        target_system: 0,
-        target_component: 0,
-    })
+    command_ack(command, result)
 }
 
 // -----------------------------------------------------------------------
@@ -456,16 +413,12 @@ test_state_update! {
 
 #[tokio::test]
 async fn heartbeat_processing() {
-    let (msg_tx, msg_rx) = mpsc::channel(16);
-    let (conn, _sent) = MockConnection::new(msg_rx);
-
-    let (cmd_tx, cmd_rx) = mpsc::channel(16);
-    let (writers, channels) = create_channels();
-    let cancel = CancellationToken::new();
-
-    let handle = tokio::spawn(async move {
-        run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
-    });
+    let harness = EventLoopHarness::start(EventLoopOptions {
+        message_capacity: 16,
+        ..EventLoopOptions::default()
+    })
+    .await;
+    let msg_tx = harness.msg_tx.clone();
 
     msg_tx
         .send((default_header(), heartbeat_msg(true, 5)))
@@ -473,26 +426,21 @@ async fn heartbeat_processing() {
         .unwrap();
     tokio::time::sleep(Duration::from_millis(20)).await;
 
-    cmd_tx.send(Command::Shutdown).await.unwrap();
-    handle.await.unwrap();
+    {
+        let vs = harness.channels.vehicle_state.borrow();
+        assert!(vs.armed);
+        assert_eq!(vs.custom_mode, 5);
+    }
 
-    let vs = channels.vehicle_state.borrow();
-    assert!(vs.armed);
-    assert_eq!(vs.custom_mode, 5);
+    harness.shutdown().await;
 }
 
 #[tokio::test]
 async fn mock_outbound_capture() {
-    let (msg_tx, msg_rx) = mpsc::channel(64);
-    let (conn, sent) = MockConnection::new(msg_rx);
-
-    let (cmd_tx, cmd_rx) = mpsc::channel(16);
-    let (writers, _channels) = create_channels();
-    let cancel = CancellationToken::new();
-
-    let handle = tokio::spawn(async move {
-        run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
-    });
+    let harness = EventLoopHarness::start(EventLoopOptions::default()).await;
+    let msg_tx = harness.msg_tx.clone();
+    let cmd_tx = harness.cmd_tx.clone();
+    let sent = harness.sent.clone();
 
     msg_tx
         .send((default_header(), heartbeat_msg(false, 0)))
@@ -539,23 +487,15 @@ async fn mock_outbound_capture() {
         "MockConnection must capture outbound arm COMMAND_LONG"
     );
 
-    cmd_tx.send(Command::Shutdown).await.unwrap();
-    handle.await.unwrap();
+    harness.shutdown().await;
 }
 
 #[tokio::test]
 async fn router_forwards_ack_to_raw_subscribers_during_command_wait() {
-    let (msg_tx, msg_rx) = mpsc::channel(64);
-    let (conn, _sent) = MockConnection::new(msg_rx);
-
-    let (cmd_tx, cmd_rx) = mpsc::channel(16);
-    let (writers, channels) = create_channels();
-    let cancel = CancellationToken::new();
-    let mut raw_rx = channels.raw_message_tx.subscribe();
-
-    let handle = tokio::spawn(async move {
-        run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
-    });
+    let harness = EventLoopHarness::start(EventLoopOptions::default()).await;
+    let msg_tx = harness.msg_tx.clone();
+    let cmd_tx = harness.cmd_tx.clone();
+    let mut raw_rx = harness.channels.raw_message_tx.subscribe();
 
     msg_tx
         .send((default_header(), heartbeat_msg(false, 0)))
@@ -605,8 +545,7 @@ async fn router_forwards_ack_to_raw_subscribers_during_command_wait() {
         "single-ingress router should broadcast ACKs to raw subscribers"
     );
 
-    cmd_tx.send(Command::Shutdown).await.unwrap();
-    handle.await.unwrap();
+    harness.shutdown().await;
 }
 
 #[tokio::test]
@@ -667,16 +606,12 @@ async fn recv_error_stops_loop_with_error_state() {
 
 #[tokio::test]
 async fn heartbeat_message_updates_state_through_loop() {
-    let (msg_tx, msg_rx) = mpsc::channel(16);
-    let (conn, _sent) = MockConnection::new(msg_rx);
-
-    let (cmd_tx, cmd_rx) = mpsc::channel(16);
-    let (writers, channels) = create_channels();
-    let cancel = CancellationToken::new();
-
-    let handle = tokio::spawn(async move {
-        run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
-    });
+    let harness = EventLoopHarness::start(EventLoopOptions {
+        message_capacity: 16,
+        ..EventLoopOptions::default()
+    })
+    .await;
+    let msg_tx = harness.msg_tx.clone();
 
     // Send heartbeat and wait for it to be processed before shutdown
     msg_tx
@@ -685,12 +620,13 @@ async fn heartbeat_message_updates_state_through_loop() {
         .unwrap();
     tokio::time::sleep(Duration::from_millis(20)).await;
 
-    cmd_tx.send(Command::Shutdown).await.unwrap();
-    handle.await.unwrap();
+    {
+        let vs = harness.channels.vehicle_state.borrow();
+        assert!(vs.armed);
+        assert_eq!(vs.custom_mode, 5);
+    }
 
-    let vs = channels.vehicle_state.borrow();
-    assert!(vs.armed);
-    assert_eq!(vs.custom_mode, 5);
+    harness.shutdown().await;
 }
 
 #[tokio::test]
@@ -719,16 +655,10 @@ async fn link_state_set_to_connected_on_start() {
 
 #[tokio::test]
 async fn arm_command_sends_command_long_and_returns_ack() {
-    let (msg_tx, msg_rx) = mpsc::channel(64);
-    let (conn, sent) = MockConnection::new(msg_rx);
-
-    let (cmd_tx, cmd_rx) = mpsc::channel(16);
-    let (writers, _channels) = create_channels();
-    let cancel = CancellationToken::new();
-
-    let handle = tokio::spawn(async move {
-        run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
-    });
+    let harness = EventLoopHarness::start(EventLoopOptions::default()).await;
+    let msg_tx = harness.msg_tx.clone();
+    let cmd_tx = harness.cmd_tx.clone();
+    let sent = harness.sent.clone();
 
     // First, establish vehicle target with a heartbeat
     msg_tx
@@ -783,22 +713,15 @@ async fn arm_command_sends_command_long_and_returns_ack() {
     }
 
     // Shutdown
-    cmd_tx.send(Command::Shutdown).await.unwrap();
-    handle.await.unwrap();
+    harness.shutdown().await;
 }
 
 #[tokio::test]
 async fn force_arm_uses_magic_value() {
-    let (msg_tx, msg_rx) = mpsc::channel(64);
-    let (conn, sent) = MockConnection::new(msg_rx);
-
-    let (cmd_tx, cmd_rx) = mpsc::channel(16);
-    let (writers, _channels) = create_channels();
-    let cancel = CancellationToken::new();
-
-    let handle = tokio::spawn(async move {
-        run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
-    });
+    let harness = EventLoopHarness::start(EventLoopOptions::default()).await;
+    let msg_tx = harness.msg_tx.clone();
+    let cmd_tx = harness.cmd_tx.clone();
+    let sent = harness.sent.clone();
 
     // Establish target
     msg_tx
@@ -842,22 +765,13 @@ async fn force_arm_uses_magic_value() {
         }
     }
 
-    cmd_tx.send(Command::Shutdown).await.unwrap();
-    handle.await.unwrap();
+    harness.shutdown().await;
 }
 
 #[tokio::test]
 async fn arm_without_target_returns_identity_unknown() {
-    let (_msg_tx, msg_rx) = mpsc::channel(64);
-    let (conn, _sent) = MockConnection::new(msg_rx);
-
-    let (cmd_tx, cmd_rx) = mpsc::channel(16);
-    let (writers, _channels) = create_channels();
-    let cancel = CancellationToken::new();
-
-    let handle = tokio::spawn(async move {
-        run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
-    });
+    let harness = EventLoopHarness::start(EventLoopOptions::default()).await;
+    let cmd_tx = harness.cmd_tx.clone();
 
     // Send arm without establishing target first
     let (reply_tx, reply_rx) = oneshot::channel();
@@ -872,22 +786,14 @@ async fn arm_without_target_returns_identity_unknown() {
     let result = reply_rx.await.unwrap();
     assert!(matches!(result, Err(VehicleError::IdentityUnknown)));
 
-    cmd_tx.send(Command::Shutdown).await.unwrap();
-    handle.await.unwrap();
+    harness.shutdown().await;
 }
 
 #[tokio::test]
 async fn command_rejected_returns_error() {
-    let (msg_tx, msg_rx) = mpsc::channel(64);
-    let (conn, _sent) = MockConnection::new(msg_rx);
-
-    let (cmd_tx, cmd_rx) = mpsc::channel(16);
-    let (writers, _channels) = create_channels();
-    let cancel = CancellationToken::new();
-
-    let handle = tokio::spawn(async move {
-        run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
-    });
+    let harness = EventLoopHarness::start(EventLoopOptions::default()).await;
+    let msg_tx = harness.msg_tx.clone();
+    let cmd_tx = harness.cmd_tx.clone();
 
     // Establish target
     msg_tx
@@ -927,22 +833,15 @@ async fn command_rejected_returns_error() {
         }) if command == MavCmd::MAV_CMD_COMPONENT_ARM_DISARM as u16
     ));
 
-    cmd_tx.send(Command::Shutdown).await.unwrap();
-    handle.await.unwrap();
+    harness.shutdown().await;
 }
 
 #[tokio::test]
 async fn set_mode_via_command_long_ack() {
-    let (msg_tx, msg_rx) = mpsc::channel(64);
-    let (conn, sent) = MockConnection::new(msg_rx);
-
-    let (cmd_tx, cmd_rx) = mpsc::channel(16);
-    let (writers, _channels) = create_channels();
-    let cancel = CancellationToken::new();
-
-    let handle = tokio::spawn(async move {
-        run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
-    });
+    let harness = EventLoopHarness::start(EventLoopOptions::default()).await;
+    let msg_tx = harness.msg_tx.clone();
+    let cmd_tx = harness.cmd_tx.clone();
+    let sent = harness.sent.clone();
 
     // Establish target
     msg_tx
@@ -988,22 +887,15 @@ async fn set_mode_via_command_long_ack() {
         }
     }
 
-    cmd_tx.send(Command::Shutdown).await.unwrap();
-    handle.await.unwrap();
+    harness.shutdown().await;
 }
 
 #[tokio::test]
 async fn guided_goto_sends_set_position_target() {
-    let (msg_tx, msg_rx) = mpsc::channel(64);
-    let (conn, sent) = MockConnection::new(msg_rx);
-
-    let (cmd_tx, cmd_rx) = mpsc::channel(16);
-    let (writers, _channels) = create_channels();
-    let cancel = CancellationToken::new();
-
-    let handle = tokio::spawn(async move {
-        run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
-    });
+    let harness = EventLoopHarness::start(EventLoopOptions::default()).await;
+    let msg_tx = harness.msg_tx.clone();
+    let cmd_tx = harness.cmd_tx.clone();
+    let sent = harness.sent.clone();
 
     // Establish target
     msg_tx
@@ -1039,22 +931,14 @@ async fn guided_goto_sends_set_position_target() {
         }
     }
 
-    cmd_tx.send(Command::Shutdown).await.unwrap();
-    handle.await.unwrap();
+    harness.shutdown().await;
 }
 
 #[tokio::test]
 async fn arm_timeout_returns_error() {
-    let (msg_tx, msg_rx) = mpsc::channel(64);
-    let (conn, _sent) = MockConnection::new(msg_rx);
-
-    let (cmd_tx, cmd_rx) = mpsc::channel(16);
-    let (writers, _channels) = create_channels();
-    let cancel = CancellationToken::new();
-
-    let handle = tokio::spawn(async move {
-        run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
-    });
+    let harness = EventLoopHarness::start(EventLoopOptions::default()).await;
+    let msg_tx = harness.msg_tx.clone();
+    let cmd_tx = harness.cmd_tx.clone();
 
     // Establish target
     msg_tx
@@ -1079,22 +963,14 @@ async fn arm_timeout_returns_error() {
         .unwrap();
     assert!(matches!(result, Err(VehicleError::Timeout(_))));
 
-    cmd_tx.send(Command::Shutdown).await.unwrap();
-    handle.await.unwrap();
+    harness.shutdown().await;
 }
 
 #[tokio::test]
 async fn parallel_different_keys_commands_can_complete() {
-    let (msg_tx, msg_rx) = mpsc::channel(64);
-    let (conn, _sent) = MockConnection::new(msg_rx);
-
-    let (cmd_tx, cmd_rx) = mpsc::channel(16);
-    let (writers, _channels) = create_channels();
-    let cancel = CancellationToken::new();
-
-    let handle = tokio::spawn(async move {
-        run_event_loop(Box::new(conn), cmd_rx, writers, fast_config(), cancel).await;
-    });
+    let harness = EventLoopHarness::start(EventLoopOptions::default()).await;
+    let msg_tx = harness.msg_tx.clone();
+    let cmd_tx = harness.cmd_tx.clone();
 
     msg_tx
         .send((default_header(), heartbeat_msg(false, 0)))
@@ -1146,8 +1022,7 @@ async fn parallel_different_keys_commands_can_complete() {
     assert!(arm_reply_rx.await.unwrap().is_ok());
     assert!(mode_reply_rx.await.unwrap().is_ok());
 
-    cmd_tx.send(Command::Shutdown).await.unwrap();
-    handle.await.unwrap();
+    harness.shutdown().await;
 }
 
 #[tokio::test]

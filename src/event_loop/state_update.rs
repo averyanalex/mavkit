@@ -522,20 +522,13 @@ mod tests {
     use crate::dialect;
     use crate::state::create_channels;
     use crate::telemetry::TelemetryHandle;
+    use crate::test_support::{assert_approx, default_header};
     use crate::types::SensorHealthState;
     use std::time::Duration;
 
     fn exact_50_char_text(value: &str) -> mavlink::types::CharArray<50> {
         assert_eq!(value.len(), 50, "test chunk must be exactly 50 chars");
         value.into()
-    }
-
-    fn default_header() -> MavHeader {
-        MavHeader {
-            system_id: 1,
-            component_id: 1,
-            sequence: 0,
-        }
     }
 
     #[test]
@@ -563,8 +556,8 @@ mod tests {
             global_sample.source,
             crate::TelemetryMessageKind::GlobalPositionInt
         );
-        assert!((global_sample.value.latitude_deg - 47.397742).abs() < 0.0001);
-        assert!((global_sample.value.longitude_deg - 8.545594).abs() < 0.0001);
+        assert_approx(global_sample.value.latitude_deg, 47.397742);
+        assert_approx(global_sample.value.longitude_deg, 8.545594);
         assert!((global_sample.value.altitude_msl_m - 510.0).abs() < 0.001);
         assert!((global_sample.value.relative_alt_m - 50.0).abs() < 0.001);
 
