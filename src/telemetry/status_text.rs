@@ -5,6 +5,7 @@ use crate::observation::{
 };
 use mavlink::MavHeader;
 use std::collections::{BTreeMap, HashMap};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -41,6 +42,7 @@ pub(crate) struct StatusTextWriter {
     sample: ObservationWriter<MessageSample<StatusTextEvent>>,
     support: ObservationWriter<SupportState>,
     pending: Arc<Mutex<HashMap<PendingKey, PendingStatusText>>>,
+    closed: Arc<AtomicBool>,
     flush_timeout: Duration,
 }
 
@@ -56,6 +58,7 @@ pub(crate) fn create_status_text_backing_store()
             sample: sample_writer,
             support: support_writer,
             pending: Arc::new(Mutex::new(HashMap::new())),
+            closed: Arc::new(AtomicBool::new(false)),
             flush_timeout: STATUS_TEXT_FLUSH_TIMEOUT,
         },
         MessageHandle::new(sample_observation, support_observation),
@@ -64,6 +67,9 @@ pub(crate) fn create_status_text_backing_store()
 
 impl StatusTextWriter {
     pub(crate) fn publish(&self, value: StatusTextEvent, vehicle_time: Option<VehicleTimestamp>) {
+        if self.closed.load(Ordering::SeqCst) {
+            return;
+        }
         let _ = self.support.publish(SupportState::Supported);
         let _ = self.sample.publish(MessageSample {
             value,
@@ -72,12 +78,26 @@ impl StatusTextWriter {
         });
     }
 
+    pub(crate) fn close(&self) {
+        self.closed.store(true, Ordering::SeqCst);
+        self.pending
+            .lock()
+            .expect("status text pending map mutex poisoned")
+            .clear();
+        self.sample.close();
+        self.support.close();
+    }
+
     pub(crate) fn ingest(
         &self,
         header: &MavHeader,
         data: &dialect::STATUSTEXT_DATA,
         vehicle_time: Option<VehicleTimestamp>,
     ) -> Option<StatusTextEvent> {
+        if self.closed.load(Ordering::SeqCst) {
+            return None;
+        }
+
         let chunk_text = data.text.to_str().unwrap_or_default().to_string();
 
         if data.id == 0 {
@@ -159,6 +179,10 @@ impl StatusTextWriter {
         let writer = self.clone();
         tokio::spawn(async move {
             tokio::time::sleep(writer.flush_timeout).await;
+
+            if writer.closed.load(Ordering::SeqCst) {
+                return;
+            }
 
             let flushed = {
                 let mut pending = writer

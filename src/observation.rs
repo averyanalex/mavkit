@@ -87,14 +87,30 @@ enum ObservationBacking<T: Clone + Send + Sync + 'static> {
 #[derive(Clone)]
 pub struct ObservationHandle<T: Clone + Send + Sync + 'static> {
     backing: Arc<ObservationBacking<T>>,
-    close_rx: watch::Receiver<()>,
+    close_rx: watch::Receiver<bool>,
 }
 
 /// Generic observation writer paired with an [`ObservationHandle`].
 #[derive(Clone)]
 pub struct ObservationWriter<T: Clone + Send + Sync + 'static> {
     backing: Arc<ObservationBacking<T>>,
-    _close_tx: Arc<watch::Sender<()>>,
+    close_notifier: Arc<CloseNotifier>,
+}
+
+struct CloseNotifier {
+    close_tx: watch::Sender<bool>,
+}
+
+impl CloseNotifier {
+    fn close(&self) {
+        let _ = self.close_tx.send(true);
+    }
+}
+
+impl Drop for CloseNotifier {
+    fn drop(&mut self) {
+        let _ = self.close_tx.send(true);
+    }
 }
 
 enum SubscriptionBacking<T: Clone + Send + Sync + 'static> {
@@ -116,7 +132,7 @@ enum SubscriptionBacking<T: Clone + Send + Sync + 'static> {
 /// available item.
 pub struct ObservationSubscription<T: Clone + Send + Sync + 'static> {
     backing: SubscriptionBacking<T>,
-    close_stream: WatchStream<()>,
+    close_stream: WatchStream<bool>,
     disconnect_emitted: bool,
 }
 
@@ -128,13 +144,14 @@ impl<T: Clone + Send + Sync + 'static> ObservationHandle<T> {
     /// rapid updates between reads are collapsed into the last one.
     pub fn watch() -> (ObservationWriter<T>, Self) {
         let (tx, _) = watch::channel(None::<T>);
-        let (close_tx, close_rx) = watch::channel(());
+        let (close_tx, close_rx) = watch::channel(false);
         let backing = Arc::new(ObservationBacking::Watch(WatchStore { tx }));
+        let close_notifier = Arc::new(CloseNotifier { close_tx });
 
         (
             ObservationWriter {
                 backing: backing.clone(),
-                _close_tx: Arc::new(close_tx),
+                close_notifier,
             },
             Self { backing, close_rx },
         )
@@ -148,16 +165,17 @@ impl<T: Clone + Send + Sync + 'static> ObservationHandle<T> {
     /// that fall behind by more than `capacity` items will skip the intermediate events.
     pub fn broadcast(capacity: usize) -> (ObservationWriter<T>, Self) {
         let (tx, _) = broadcast::channel(capacity.max(1));
-        let (close_tx, close_rx) = watch::channel(());
+        let (close_tx, close_rx) = watch::channel(false);
         let backing = Arc::new(ObservationBacking::Broadcast(BroadcastStore {
             tx,
             latest: Arc::new(Mutex::new(None)),
         }));
+        let close_notifier = Arc::new(CloseNotifier { close_tx });
 
         (
             ObservationWriter {
                 backing: backing.clone(),
-                _close_tx: Arc::new(close_tx),
+                close_notifier,
             },
             Self { backing, close_rx },
         )
@@ -173,6 +191,10 @@ impl<T: Clone + Send + Sync + 'static> ObservationHandle<T> {
     }
 
     pub async fn wait(&self) -> Result<T, VehicleError> {
+        if *self.close_rx.borrow() {
+            return Err(VehicleError::Disconnected);
+        }
+
         if let Some(value) = self.latest() {
             return Ok(value);
         }
@@ -194,8 +216,10 @@ impl<T: Clone + Send + Sync + 'static> ObservationHandle<T> {
                                 return Ok(value);
                             }
                         }
-                        _ = close_rx.changed() => {
-                            return Err(VehicleError::Disconnected);
+                        changed = close_rx.changed() => {
+                            if changed.is_err() || *close_rx.borrow_and_update() {
+                                return Err(VehicleError::Disconnected);
+                            }
                         }
                     }
                 }
@@ -217,8 +241,10 @@ impl<T: Clone + Send + Sync + 'static> ObservationHandle<T> {
                                 Err(broadcast::error::RecvError::Closed) => return Err(VehicleError::Disconnected),
                             }
                         }
-                        _ = close_rx.changed() => {
-                            return Err(VehicleError::Disconnected);
+                        changed = close_rx.changed() => {
+                            if changed.is_err() || *close_rx.borrow_and_update() {
+                                return Err(VehicleError::Disconnected);
+                            }
                         }
                     }
                 }
@@ -227,10 +253,6 @@ impl<T: Clone + Send + Sync + 'static> ObservationHandle<T> {
     }
 
     pub async fn wait_timeout(&self, timeout: Duration) -> Result<T, VehicleError> {
-        if let Some(value) = self.latest() {
-            return Ok(value);
-        }
-
         match tokio::time::timeout(timeout, self.wait()).await {
             Ok(result) => result,
             Err(_) => Err(VehicleError::Timeout("observation wait".into())),
@@ -241,7 +263,7 @@ impl<T: Clone + Send + Sync + 'static> ObservationHandle<T> {
         match self.backing.as_ref() {
             ObservationBacking::Watch(store) => {
                 let value_rx = store.tx.subscribe();
-                let close_stream = WatchStream::from_changes(self.close_rx.clone());
+                let close_stream = WatchStream::new(self.close_rx.clone());
                 ObservationSubscription {
                     backing: SubscriptionBacking::Watch {
                         stream: WatchStream::new(value_rx),
@@ -254,7 +276,7 @@ impl<T: Clone + Send + Sync + 'static> ObservationHandle<T> {
                 backing: SubscriptionBacking::Broadcast {
                     stream: BroadcastStream::new(store.tx.subscribe()),
                 },
-                close_stream: WatchStream::from_changes(self.close_rx.clone()),
+                close_stream: WatchStream::new(self.close_rx.clone()),
                 disconnect_emitted: false,
             },
         }
@@ -290,6 +312,10 @@ impl<T: Clone + Send + Sync + 'static> ObservationWriter<T> {
             }
         }
     }
+
+    pub(crate) fn close(&self) {
+        self.close_notifier.close();
+    }
 }
 
 impl<T: Clone + Send + Sync + 'static> ObservationSubscription<T> {
@@ -313,7 +339,12 @@ impl<T: Clone + Send + Sync + 'static> Stream for ObservationSubscription<T> {
                 this.disconnect_emitted = true;
                 return Poll::Ready(None);
             }
-            Poll::Ready(Some(_)) => {}
+            Poll::Ready(Some(closed)) => {
+                if closed {
+                    this.disconnect_emitted = true;
+                    return Poll::Ready(None);
+                }
+            }
             Poll::Pending => {}
         }
 
@@ -487,10 +518,82 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn subscribe_terminates_when_writer_closed() {
+        let (writer, handle) = watch_fixture();
+        let mut sub = handle.subscribe();
+
+        writer.close();
+
+        assert_eq!(sub.recv().await, None);
+    }
+
+    #[tokio::test]
     async fn wait_timeout() {
         let (_writer, handle) = watch_fixture();
         let result = handle.wait_timeout(Duration::from_millis(20)).await;
         assert!(matches!(result, Err(VehicleError::Timeout(_))));
+    }
+
+    #[tokio::test]
+    async fn wait_timeout_returns_disconnected_over_cached_latest() {
+        let (writer, handle) = watch_fixture();
+        writer.publish(7).unwrap();
+        writer.close();
+
+        let result = handle.wait_timeout(Duration::from_millis(20)).await;
+        assert!(matches!(result, Err(VehicleError::Disconnected)));
+    }
+
+    #[tokio::test]
+    async fn wait_timeout_returns_disconnected_over_cached_latest_after_last_writer_drop() {
+        let (writer, handle) = watch_fixture();
+        writer.publish(7).unwrap();
+        drop(writer);
+
+        let result = handle.wait_timeout(Duration::from_millis(20)).await;
+        assert!(matches!(result, Err(VehicleError::Disconnected)));
+    }
+
+    #[tokio::test]
+    async fn dropping_non_last_writer_clone_does_not_close_observation() {
+        let (writer, handle) = watch_fixture();
+        let writer_clone = writer.clone();
+
+        drop(writer);
+        writer_clone.publish(7).unwrap();
+
+        assert_eq!(handle.wait().await.unwrap(), 7);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn wait_timeout_returns_disconnected_after_concurrent_final_writer_drop() {
+        for _ in 0..64 {
+            let (writer, handle) = watch_fixture();
+            writer.publish(7).unwrap();
+
+            let writer_a = writer.clone();
+            let writer_b = writer;
+            let barrier = Arc::new(std::sync::Barrier::new(3));
+
+            let barrier_a = barrier.clone();
+            let thread_a = std::thread::spawn(move || {
+                barrier_a.wait();
+                drop(writer_a);
+            });
+
+            let barrier_b = barrier.clone();
+            let thread_b = std::thread::spawn(move || {
+                barrier_b.wait();
+                drop(writer_b);
+            });
+
+            barrier.wait();
+            thread_a.join().unwrap();
+            thread_b.join().unwrap();
+
+            let result = handle.wait_timeout(Duration::from_millis(20)).await;
+            assert!(matches!(result, Err(VehicleError::Disconnected)));
+        }
     }
 
     #[tokio::test]
@@ -562,6 +665,18 @@ mod tests {
 
         writer.publish("latest".to_string()).unwrap();
         assert_eq!(handle.wait().await.unwrap(), "latest");
+    }
+
+    #[tokio::test]
+    async fn broadcast_wait_timeout_returns_disconnected_over_cached_latest_after_last_writer_drop()
+    {
+        let (writer, handle) = broadcast_fixture(16);
+
+        writer.publish("latest".to_string()).unwrap();
+        drop(writer);
+
+        let result = handle.wait_timeout(Duration::from_millis(20)).await;
+        assert!(matches!(result, Err(VehicleError::Disconnected)));
     }
 
     #[tokio::test]

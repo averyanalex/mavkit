@@ -2,6 +2,7 @@ use crate::observation::{ObservationHandle, ObservationWriter};
 use crate::state::{MagCalProgress, MagCalReport, StateChannels};
 use std::collections::BTreeMap;
 use tokio::sync::watch;
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
@@ -27,19 +28,25 @@ impl MagCalObservations {
         }
     }
 
-    pub(super) fn start(&self, stores: &StateChannels, cancel: CancellationToken) {
-        spawn_compass_aggregator(
-            stores.mag_cal_progress.clone(),
-            self.progress_writer.clone(),
-            cancel.clone(),
-            |progress| progress.compass_id,
-        );
-        spawn_compass_aggregator(
-            stores.mag_cal_report.clone(),
-            self.report_writer.clone(),
-            cancel,
-            |report| report.compass_id,
-        );
+    pub(super) fn start(
+        &self,
+        stores: &StateChannels,
+        cancel: CancellationToken,
+    ) -> Vec<JoinHandle<()>> {
+        vec![
+            spawn_compass_aggregator(
+                stores.mag_cal_progress.clone(),
+                self.progress_writer.clone(),
+                cancel.clone(),
+                |progress| progress.compass_id,
+            ),
+            spawn_compass_aggregator(
+                stores.mag_cal_report.clone(),
+                self.report_writer.clone(),
+                cancel,
+                |report| report.compass_id,
+            ),
+        ]
     }
 
     pub(super) fn progress(&self) -> ObservationHandle<Vec<MagCalProgress>> {
@@ -49,6 +56,11 @@ impl MagCalObservations {
     pub(super) fn report(&self) -> ObservationHandle<Vec<MagCalReport>> {
         self.report.clone()
     }
+
+    pub(super) fn close(&self) {
+        self.progress_writer.close();
+        self.report_writer.close();
+    }
 }
 
 fn spawn_compass_aggregator<T>(
@@ -56,7 +68,8 @@ fn spawn_compass_aggregator<T>(
     writer: ObservationWriter<Vec<T>>,
     cancel: CancellationToken,
     compass_id_of: fn(&T) -> u8,
-) where
+) -> JoinHandle<()>
+where
     T: Clone + Send + Sync + 'static,
 {
     tokio::spawn(async move {
@@ -81,7 +94,7 @@ fn spawn_compass_aggregator<T>(
                 }
             }
         }
-    });
+    })
 }
 
 #[cfg(test)]
@@ -96,7 +109,7 @@ mod tests {
         let (writers, channels) = create_channels();
         let cancel = CancellationToken::new();
         let observations = MagCalObservations::new();
-        observations.start(&channels, cancel.clone());
+        let _tasks = observations.start(&channels, cancel.clone());
 
         assert_eq!(observations.progress().latest(), Some(Vec::new()));
         assert_eq!(observations.report().latest(), Some(Vec::new()));

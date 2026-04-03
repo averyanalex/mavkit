@@ -11,8 +11,10 @@ use crate::params::ParamsDomain;
 use crate::rally::RallyDomain;
 use crate::state::StateChannels;
 use crate::support::SupportDomain;
+use crate::telemetry::TelemetryMetricHandles;
 use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 mod accessors;
@@ -65,7 +67,20 @@ pub(crate) struct VehicleInner {
     pub(crate) info: InfoDomain,
     pub(crate) modes: ModeDomain,
     pub(crate) support: SupportDomain,
+    pub(crate) shutdown_complete: Option<watch::Receiver<bool>>,
     pub(crate) _config: VehicleConfig,
+}
+
+pub(crate) struct ConnectionScopedObservationClosers {
+    mission: MissionDomain,
+    params: ParamsDomain,
+    fence: FenceDomain,
+    rally: RallyDomain,
+    ardupilot: ArduPilotDomain,
+    info: InfoDomain,
+    modes: ModeDomain,
+    support: SupportDomain,
+    telemetry: TelemetryMetricHandles,
 }
 
 impl Drop for VehicleInner {
@@ -94,16 +109,52 @@ impl VehicleInner {
             info: InfoDomain::new(),
             modes: ModeDomain::new(),
             support: SupportDomain::new(),
+            shutdown_complete: None,
             _config: config,
         }
     }
 
-    pub(crate) fn start_background_domains(&self, init_manager: &InitManager) {
-        self.mission.start(&self.stores, self.cancel.clone());
-        self.ardupilot.start(&self.stores, self.cancel.clone());
-        self.info.start(&self.stores, init_manager);
-        self.modes.start(&self.stores, self.command_tx.clone());
-        self.support.start(&self.stores, init_manager);
+    pub(crate) fn start_background_domains(
+        &self,
+        init_manager: &InitManager,
+    ) -> Vec<JoinHandle<()>> {
+        let mut handles = Vec::with_capacity(6);
+        handles.push(self.mission.start(&self.stores, self.cancel.clone()));
+        handles.extend(self.ardupilot.start(&self.stores, self.cancel.clone()));
+        handles.push(self.info.start(&self.stores, init_manager));
+        handles.push(self.modes.start(&self.stores, self.command_tx.clone()));
+        handles.push(self.support.start(&self.stores, init_manager));
+        handles
+    }
+
+    pub(crate) fn connection_scoped_observation_closers(
+        &self,
+    ) -> ConnectionScopedObservationClosers {
+        ConnectionScopedObservationClosers {
+            mission: self.mission.clone(),
+            params: self.params.clone(),
+            fence: self.fence.clone(),
+            rally: self.rally.clone(),
+            ardupilot: self.ardupilot.clone(),
+            info: self.info.clone(),
+            modes: self.modes.clone(),
+            support: self.support.clone(),
+            telemetry: self.stores.telemetry_handles.clone(),
+        }
+    }
+}
+
+impl ConnectionScopedObservationClosers {
+    pub(crate) fn close(&self) {
+        self.mission.close();
+        self.params.close();
+        self.fence.close();
+        self.rally.close();
+        self.ardupilot.close();
+        self.info.close();
+        self.modes.close();
+        self.support.close();
+        self.telemetry.close_indexed_message_families();
     }
 }
 

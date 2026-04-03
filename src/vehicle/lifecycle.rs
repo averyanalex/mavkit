@@ -6,11 +6,12 @@ use crate::event_loop::{InitManager, run_event_loop_with_init};
 use crate::state::{LinkState, create_channels};
 #[cfg(feature = "stream")]
 use crate::stream::StreamConnection;
-use crate::vehicle::{Vehicle, VehicleInner};
+use crate::vehicle::{ConnectionScopedObservationClosers, Vehicle, VehicleInner};
 use std::sync::Arc;
 #[cfg(feature = "stream")]
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
+use tokio::task::{JoinError, JoinHandle};
 use tokio_util::sync::CancellationToken;
 
 impl Vehicle {
@@ -98,10 +99,13 @@ impl Vehicle {
         let connect_timeout = config.connect_timeout;
         let init_manager = InitManager::new(config.clone());
 
-        let inner = VehicleInner::new(command_tx, cancel, stores, config);
-        inner.start_background_domains(&init_manager);
+        let mut inner = VehicleInner::new(command_tx, cancel, stores, config);
+        let background_handles = inner.start_background_domains(&init_manager);
+        let close_bundle = inner.connection_scoped_observation_closers();
+        let (shutdown_complete_tx, shutdown_complete_rx) = watch::channel(false);
+        inner.shutdown_complete = Some(shutdown_complete_rx);
 
-        tokio::spawn(run_event_loop_with_init(
+        let event_loop_handle = tokio::spawn(run_event_loop_with_init(
             connection,
             command_rx,
             writers,
@@ -113,6 +117,13 @@ impl Vehicle {
         let vehicle = Self {
             inner: Arc::new(inner),
         };
+
+        tokio::spawn(supervise_connection_shutdown(
+            event_loop_handle,
+            background_handles,
+            close_bundle,
+            shutdown_complete_tx,
+        ));
 
         wait_for_first_heartbeat(&vehicle, connect_timeout).await?;
         Ok(vehicle)
@@ -130,19 +141,38 @@ impl Vehicle {
             link_state.borrow().clone(),
             LinkState::Disconnected | LinkState::Error(_)
         ) {
+            if let Some(shutdown_complete) = &self.inner.shutdown_complete {
+                await_shutdown_completion(shutdown_complete.clone()).await?;
+            }
             return Ok(());
         }
 
-        self.inner
-            .command_tx
-            .send(Command::Shutdown)
-            .await
-            .map_err(|_| VehicleError::Disconnected)?;
+        if self.inner.command_tx.send(Command::Shutdown).await.is_err() {
+            if matches!(
+                link_state.borrow().clone(),
+                LinkState::Disconnected | LinkState::Error(_)
+            ) {
+                if let Some(shutdown_complete) = &self.inner.shutdown_complete {
+                    await_shutdown_completion(shutdown_complete.clone()).await?;
+                }
+                return Ok(());
+            }
+
+            if let Some(shutdown_complete) = &self.inner.shutdown_complete
+                && await_shutdown_completion(shutdown_complete.clone())
+                    .await
+                    .is_ok()
+            {
+                return Ok(());
+            }
+
+            return Err(VehicleError::Disconnected);
+        }
 
         loop {
             let current = link_state.borrow().clone();
             match current {
-                LinkState::Disconnected | LinkState::Error(_) => return Ok(()),
+                LinkState::Disconnected | LinkState::Error(_) => break,
                 LinkState::Connecting | LinkState::Connected => {
                     link_state
                         .changed()
@@ -151,6 +181,59 @@ impl Vehicle {
                 }
             }
         }
+
+        if let Some(shutdown_complete) = &self.inner.shutdown_complete {
+            await_shutdown_completion(shutdown_complete.clone()).await?;
+        }
+
+        Ok(())
+    }
+}
+
+async fn await_shutdown_completion(
+    mut shutdown_complete: watch::Receiver<bool>,
+) -> Result<(), VehicleError> {
+    if *shutdown_complete.borrow() {
+        return Ok(());
+    }
+
+    loop {
+        shutdown_complete
+            .changed()
+            .await
+            .map_err(|_| VehicleError::Disconnected)?;
+        if *shutdown_complete.borrow_and_update() {
+            return Ok(());
+        }
+    }
+}
+
+async fn supervise_connection_shutdown(
+    event_loop_handle: JoinHandle<()>,
+    watcher_handles: Vec<JoinHandle<()>>,
+    close_bundle: ConnectionScopedObservationClosers,
+    shutdown_complete: watch::Sender<bool>,
+) {
+    if let Err(err) = event_loop_handle.await {
+        log_join_error("vehicle event-loop", &err);
+    }
+
+    for (index, watcher_handle) in watcher_handles.into_iter().enumerate() {
+        if let Err(err) = watcher_handle.await {
+            log_join_error(&format!("vehicle background watcher #{index}"), &err);
+        }
+    }
+
+    close_bundle.close();
+
+    let _ = shutdown_complete.send(true);
+}
+
+fn log_join_error(task_name: &str, err: &JoinError) {
+    if err.is_panic() {
+        tracing::error!("{task_name} task panicked: {err}");
+    } else {
+        tracing::warn!("{task_name} task join error: {err}");
     }
 }
 

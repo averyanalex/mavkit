@@ -52,6 +52,10 @@ impl<S: StoredPlanState> StoredPlanDomain<S> {
         self.inner.state.clone()
     }
 
+    pub(crate) fn close(&self) {
+        self.inner.state_writer.close();
+    }
+
     pub(crate) fn begin_operation(
         &self,
         scope: &MissionProtocolScope,

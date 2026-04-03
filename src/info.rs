@@ -6,6 +6,7 @@ use crate::vehicle::VehicleInner;
 use serde::{Deserialize, Serialize};
 use std::fmt::Write as _;
 use std::sync::{Arc, Mutex};
+use tokio::task::JoinHandle;
 
 /// Parsed firmware identity details from `AUTOPILOT_VERSION`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -165,7 +166,11 @@ impl InfoDomain {
         }
     }
 
-    pub(crate) fn start(&self, stores: &StateChannels, init_manager: &InitManager) {
+    pub(crate) fn start(
+        &self,
+        stores: &StateChannels,
+        init_manager: &InitManager,
+    ) -> JoinHandle<()> {
         let inner = self.inner.clone();
         let mut vehicle_state_rx = stores.vehicle_state.clone();
         let mut init_rx = init_manager.subscribe();
@@ -190,7 +195,7 @@ impl InfoDomain {
                     }
                 }
             }
-        });
+        })
     }
 
     pub(crate) fn firmware(&self) -> ObservationHandle<FirmwareInfo> {
@@ -207,6 +212,13 @@ impl InfoDomain {
 
     pub(crate) fn persistent_identity(&self) -> ObservationHandle<PersistentIdentity> {
         self.inner.persistent_identity.clone()
+    }
+
+    pub(crate) fn close(&self) {
+        self.inner.firmware_writer.close();
+        self.inner.hardware_writer.close();
+        self.inner.unique_ids_writer.close();
+        self.inner.persistent_identity_writer.close();
     }
 }
 

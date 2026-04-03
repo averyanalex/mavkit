@@ -9,6 +9,7 @@ use crate::observation::{
 use crate::{VehicleError, VehicleTimestamp};
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
@@ -42,6 +43,11 @@ impl<M: Clone + Send + Sync + 'static> MessageSlotWriter<M> {
             vehicle_time,
         });
     }
+
+    pub(crate) fn close(&self) {
+        self.sample.close();
+        self.support.close();
+    }
 }
 
 fn message_slot_watch<M: Clone + Send + Sync + 'static>() -> (MessageSlotWriter<M>, MessageHandle<M>)
@@ -72,6 +78,7 @@ where
     M: Clone + Send + Sync + 'static,
 {
     entries: Arc<Mutex<HashMap<K, IndexedMessageEntry<M>>>>,
+    closed: Arc<AtomicBool>,
     factory: fn() -> (MessageSlotWriter<M>, MessageHandle<M>),
 }
 
@@ -83,6 +90,7 @@ where
     pub(crate) fn watch() -> Self {
         Self {
             entries: Arc::new(Mutex::new(HashMap::new())),
+            closed: Arc::new(AtomicBool::new(false)),
             factory: message_slot_watch::<M>,
         }
     }
@@ -92,14 +100,19 @@ where
             .entries
             .lock()
             .expect("indexed message family mutex poisoned");
+
+        if let Some(existing) = entries.get(&key) {
+            return existing.clone();
+        }
+
         let factory = self.factory;
-        entries
-            .entry(key)
-            .or_insert_with(|| {
-                let (writer, handle) = factory();
-                IndexedMessageEntry { writer, handle }
-            })
-            .clone()
+        let (writer, handle) = factory();
+        if self.closed.load(Ordering::SeqCst) {
+            writer.close();
+        }
+        let created = IndexedMessageEntry { writer, handle };
+        entries.insert(key, created.clone());
+        created
     }
 
     pub(crate) fn handle(&self, key: K) -> MessageHandle<M> {
@@ -108,6 +121,17 @@ where
 
     pub(crate) fn publish(&self, key: K, value: M, vehicle_time: Option<VehicleTimestamp>) {
         self.entry(key).writer.publish(value, vehicle_time);
+    }
+
+    pub(crate) fn close(&self) {
+        self.closed.store(true, Ordering::SeqCst);
+        let entries = self
+            .entries
+            .lock()
+            .expect("indexed message family mutex poisoned");
+        for entry in entries.values() {
+            entry.writer.close();
+        }
     }
 }
 
@@ -183,6 +207,7 @@ macro_rules! define_messages {
             $( pub(crate) $sf: MessageHandle<$st>, )*
             $( pub(crate) $if: IndexedMessageFamily<$ik, $it>, )*
             pub(crate) status_text: MessageHandle<StatusTextEvent>,
+            pub(crate) status_text_writer: super::status_text::StatusTextWriter,
         }
 
         #[derive(Clone)]
@@ -211,6 +236,14 @@ define_messages! {
     indexed {
         battery_status: u8, dialect::BATTERY_STATUS_DATA,
         servo_output_raw: u8, dialect::SERVO_OUTPUT_RAW_DATA,
+    }
+}
+
+impl TelemetryMessageHandles {
+    pub(crate) fn close_indexed_families(&self) {
+        self.battery_status.close();
+        self.servo_output_raw.close();
+        self.status_text_writer.close();
     }
 }
 
@@ -247,7 +280,7 @@ pub(crate) fn create_telemetry_message_backing_stores()
             servo_output_raw: servo_output_raw.clone(),
             home_position: home_position_w,
             gps_global_origin: gps_global_origin_w,
-            status_text: status_text_w,
+            status_text: status_text_w.clone(),
         },
         TelemetryMessageHandles {
             commands,
@@ -265,6 +298,7 @@ pub(crate) fn create_telemetry_message_backing_stores()
             home_position: home_position_h,
             gps_global_origin: gps_global_origin_h,
             status_text: status_text_h,
+            status_text_writer: status_text_w,
         },
     )
 }

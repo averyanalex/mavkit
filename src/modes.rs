@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::task::JoinHandle;
 
 pub use crate::state::FlightMode;
 
@@ -212,7 +213,11 @@ impl ModeDomain {
         }
     }
 
-    pub(crate) fn start(&self, stores: &StateChannels, command_tx: mpsc::Sender<Command>) {
+    pub(crate) fn start(
+        &self,
+        stores: &StateChannels,
+        command_tx: mpsc::Sender<Command>,
+    ) -> JoinHandle<()> {
         let inner = self.inner.clone();
         let mut vehicle_state_rx = stores.vehicle_state.clone();
         let mut raw_rx = stores.raw_message_tx.subscribe();
@@ -241,7 +246,7 @@ impl ModeDomain {
                     }
                 }
             }
-        });
+        })
     }
 
     pub(crate) fn seed_from_vehicle_state(&self, state: &VehicleState) {
@@ -258,6 +263,12 @@ impl ModeDomain {
 
     pub(crate) fn current(&self) -> ObservationHandle<CurrentMode> {
         self.inner.current.clone()
+    }
+
+    pub(crate) fn close(&self) {
+        self.inner.support_writer.close();
+        self.inner.catalog_writer.close();
+        self.inner.current_writer.close();
     }
 
     #[cfg(test)]

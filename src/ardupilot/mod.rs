@@ -29,6 +29,7 @@ use calibration::{
     MAV_CMD_DO_ACCEPT_MAG_CAL_ID, MAV_CMD_DO_CANCEL_MAG_CAL_ID, MAV_CMD_DO_START_MAG_CAL_ID,
 };
 use std::sync::Arc;
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 pub use types::{MagCalProgress, MagCalReport, MagCalStatus};
@@ -56,8 +57,12 @@ impl ArduPilotDomain {
         }
     }
 
-    pub(crate) fn start(&self, stores: &StateChannels, cancel: CancellationToken) {
-        self.inner.mag_cal.start(stores, cancel);
+    pub(crate) fn start(
+        &self,
+        stores: &StateChannels,
+        cancel: CancellationToken,
+    ) -> Vec<JoinHandle<()>> {
+        self.inner.mag_cal.start(stores, cancel)
     }
 
     pub(crate) fn mag_cal_progress(&self) -> ObservationHandle<Vec<MagCalProgress>> {
@@ -78,6 +83,10 @@ impl ArduPilotDomain {
 
     pub(crate) fn guided_lease_scope(&self) -> guided::GuidedLeaseScope {
         self.inner.guided_lease.clone()
+    }
+
+    pub(crate) fn close(&self) {
+        self.inner.mag_cal.close();
     }
 }
 
@@ -1884,7 +1893,7 @@ mod tests {
         let (writers, channels) = create_channels();
         let cancel = tokio_util::sync::CancellationToken::new();
         let domain = ArduPilotDomain::new();
-        domain.start(&channels, cancel.clone());
+        let _tasks = domain.start(&channels, cancel.clone());
 
         assert_eq!(domain.mag_cal_progress().latest(), Some(Vec::new()));
         assert_eq!(domain.mag_cal_report().latest(), Some(Vec::new()));

@@ -33,6 +33,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
@@ -113,37 +114,37 @@ impl MissionDomain {
         }
     }
 
-    pub(crate) fn start(&self, stores: &StateChannels, cancel: CancellationToken) {
+    pub(crate) fn start(
+        &self,
+        stores: &StateChannels,
+        cancel: CancellationToken,
+    ) -> JoinHandle<()> {
         self.update_current_index(stores.mission_state.borrow().current_seq);
         let mut mission_state_rx = stores.mission_state.clone();
         let domain = self.clone();
 
         tokio::spawn(async move {
-            let mission_state_task = tokio::spawn(async move {
-                loop {
-                    tokio::select! {
-                        _ = cancel.cancelled() => break,
-                        changed = mission_state_rx.changed() => {
-                            if changed.is_err() {
-                                break;
-                            }
-                            let current = mission_state_rx.borrow_and_update().current_seq;
-                            domain.update_current_index(current);
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => break,
+                    changed = mission_state_rx.changed() => {
+                        if changed.is_err() {
+                            break;
                         }
+                        let current = mission_state_rx.borrow_and_update().current_seq;
+                        domain.update_current_index(current);
                     }
                 }
-            });
-
-            if let Err(err) = mission_state_task.await
-                && err.is_panic()
-            {
-                tracing::error!("mission current-seq watcher task panicked: {err}");
             }
-        });
+        })
     }
 
     pub(crate) fn state(&self) -> ObservationHandle<MissionState> {
         self.inner.state()
+    }
+
+    pub(crate) fn close(&self) {
+        self.inner.close();
     }
 
     pub(crate) fn begin_operation(

@@ -122,6 +122,12 @@ define_metrics! {
     }
 }
 
+impl TelemetryMetricHandles {
+    pub(crate) fn close_indexed_message_families(&self) {
+        self.message_handles.close_indexed_families();
+    }
+}
+
 impl TelemetryMetricWriters {
     pub(crate) fn publish_battery_from_sys_status(
         &self,

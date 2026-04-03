@@ -1,13 +1,18 @@
 use crate::VehicleError;
 use crate::command::{Command, RawCommandIntPayload};
 use crate::dialect::{self, MavCmd};
+use crate::observation::ObservationSubscription;
+use crate::state::LinkState;
 use crate::vehicle::Vehicle;
 use mavlink::{MavHeader, MavlinkVersion, Message};
 use num_traits::FromPrimitive;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 use tokio_stream::Stream;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 
 /// Decoded `COMMAND_ACK` payload returned from raw command helpers.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -102,6 +107,13 @@ impl RawMessage {
 /// its ack returns [`VehicleError::OperationConflict`] immediately.
 pub struct RawHandle<'a> {
     vehicle: &'a Vehicle,
+}
+
+struct RawSubscription {
+    messages: BroadcastStream<(MavHeader, dialect::MavMessage)>,
+    link_state: ObservationSubscription<LinkState>,
+    message_id: Option<u32>,
+    disconnected: bool,
 }
 
 impl<'a> RawHandle<'a> {
@@ -265,17 +277,56 @@ impl<'a> RawHandle<'a> {
         &self,
         message_id: Option<u32>,
     ) -> impl Stream<Item = RawMessage> + Send + 'static {
-        BroadcastStream::new(self.vehicle.inner.stores.raw_message_tx.subscribe()).filter_map(
-            move |result| match result {
-                Ok((header, message)) => {
-                    let raw = RawMessage::from_mavlink(header, message);
-                    message_id
-                        .is_none_or(|expected| expected == raw.message_id)
-                        .then_some(raw)
+        RawSubscription {
+            messages: BroadcastStream::new(self.vehicle.inner.stores.raw_message_tx.subscribe()),
+            link_state: self.vehicle.inner.stores.link_state_observation.subscribe(),
+            message_id,
+            disconnected: false,
+        }
+    }
+}
+
+impl Stream for RawSubscription {
+    type Item = RawMessage;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+
+        if this.disconnected {
+            return Poll::Ready(None);
+        }
+
+        loop {
+            match Pin::new(&mut this.link_state).poll_next(cx) {
+                Poll::Ready(Some(LinkState::Disconnected | LinkState::Error(_)))
+                | Poll::Ready(None) => {
+                    this.disconnected = true;
+                    return Poll::Ready(None);
                 }
-                Err(_) => None,
-            },
-        )
+                Poll::Ready(Some(LinkState::Connecting | LinkState::Connected)) => continue,
+                Poll::Pending => break,
+            }
+        }
+
+        loop {
+            match Pin::new(&mut this.messages).poll_next(cx) {
+                Poll::Ready(Some(Ok((header, message)))) => {
+                    let raw = RawMessage::from_mavlink(header, message);
+                    if this
+                        .message_id
+                        .is_none_or(|expected| expected == raw.message_id)
+                    {
+                        return Poll::Ready(Some(raw));
+                    }
+                }
+                Poll::Ready(Some(Err(BroadcastStreamRecvError::Lagged(_)))) => continue,
+                Poll::Ready(None) => {
+                    this.disconnected = true;
+                    return Poll::Ready(None);
+                }
+                Poll::Pending => return Poll::Pending,
+            }
+        }
     }
 }
 
@@ -462,6 +513,27 @@ mod tests {
             .disconnect()
             .await
             .expect("disconnect should succeed");
+    }
+
+    #[tokio::test]
+    async fn raw_subscriptions_close_on_disconnect() {
+        let harness = ConnectedVehicleHarness::connect(ConnectedVehicleOptions::default()).await;
+        let vehicle = harness.vehicle;
+        let stream = vehicle.raw().subscribe();
+        tokio::pin!(stream);
+
+        vehicle
+            .disconnect()
+            .await
+            .expect("disconnect should succeed");
+
+        let next = timeout(Duration::from_millis(250), stream.next())
+            .await
+            .expect("raw subscription should resolve after disconnect");
+        assert!(
+            next.is_none(),
+            "raw subscription should close on disconnect"
+        );
     }
 
     #[tokio::test]

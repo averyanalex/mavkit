@@ -6,6 +6,7 @@ use crate::types::SupportState;
 use crate::vehicle::VehicleInner;
 use std::sync::Arc;
 use std::sync::Mutex;
+use tokio::task::JoinHandle;
 
 /// Accessor for capability support observations derived from the vehicle's protocol capabilities.
 ///
@@ -138,7 +139,11 @@ impl SupportDomain {
         domain
     }
 
-    pub(crate) fn start(&self, stores: &StateChannels, init_manager: &InitManager) {
+    pub(crate) fn start(
+        &self,
+        stores: &StateChannels,
+        init_manager: &InitManager,
+    ) -> JoinHandle<()> {
         let inner = self.inner.clone();
         let mut vehicle_state_rx = stores.vehicle_state.clone();
         let mut init_rx = init_manager.subscribe();
@@ -163,7 +168,7 @@ impl SupportDomain {
                     }
                 }
             }
-        });
+        })
     }
 
     pub(crate) fn command_int(&self) -> ObservationHandle<SupportState> {
@@ -188,6 +193,15 @@ impl SupportDomain {
 
     pub(crate) fn ardupilot(&self) -> ObservationHandle<SupportState> {
         self.inner.ardupilot.clone()
+    }
+
+    pub(crate) fn close(&self) {
+        self.inner.command_int_writer.close();
+        self.inner.ftp_writer.close();
+        self.inner.terrain_writer.close();
+        self.inner.mission_fence_writer.close();
+        self.inner.mission_rally_writer.close();
+        self.inner.ardupilot_writer.close();
     }
 
     fn publish_unknowns(&self) {

@@ -1,15 +1,15 @@
 use super::support::*;
-#[cfg(feature = "stream")]
 use crate::dialect;
 use crate::{AutopilotType, Vehicle, VehicleError, VehicleIdentity, VehicleType};
 #[cfg(feature = "stream")]
 use mavlink::async_peek_reader::AsyncPeekReader;
 #[cfg(feature = "stream")]
 use mavlink::{MavlinkVersion, ReadVersion, read_versioned_msg_async, write_versioned_msg_async};
+use std::sync::Arc;
 use std::time::Duration;
 #[cfg(feature = "stream")]
 use tokio::io::{duplex, split};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::time::timeout;
 
 #[test]
@@ -263,4 +263,315 @@ async fn connect_disconnect_waits_for_disconnected_state_and_pending_waits() {
     assert!(matches!(wait_result, Err(VehicleError::Disconnected)));
 
     drop(msg_tx);
+}
+
+#[tokio::test]
+async fn dropping_last_vehicle_clone_resolves_pending_waits_with_disconnected() {
+    let (vehicle, msg_tx) = connect_mock_vehicle().await;
+    let pending_wait = tokio::spawn(wait_for_metric_disconnect(vehicle.telemetry().home()));
+
+    drop(vehicle);
+
+    let wait_result = timeout(Duration::from_millis(100), pending_wait)
+        .await
+        .expect("dropping the last vehicle clone should resolve pending waits promptly")
+        .expect("wait task should join");
+    assert!(matches!(wait_result, Err(VehicleError::Disconnected)));
+
+    drop(msg_tx);
+}
+
+#[tokio::test]
+async fn disconnect_send_failure_is_ok_when_shutdown_already_completed() {
+    let (mut vehicle, command_rx) = test_vehicle_with_command_rx();
+    drop(command_rx);
+
+    let (_shutdown_complete_tx, shutdown_complete_rx) = watch::channel(true);
+    Arc::get_mut(&mut vehicle.inner)
+        .expect("vehicle should have unique inner ownership in this test")
+        .shutdown_complete = Some(shutdown_complete_rx);
+
+    vehicle
+        .disconnect()
+        .await
+        .expect("disconnect should be idempotent when shutdown is already complete");
+}
+
+#[tokio::test]
+async fn disconnect_closes_connection_scoped_observations_for_remaining_clones() {
+    let (vehicle, msg_tx) = connect_mock_vehicle().await;
+    let mission_vehicle = vehicle.clone();
+    let params_vehicle = vehicle.clone();
+    let fence_vehicle = vehicle.clone();
+    let rally_vehicle = vehicle.clone();
+    let mag_cal_progress_vehicle = vehicle.clone();
+    let mag_cal_report_vehicle = vehicle.clone();
+    let firmware_vehicle = vehicle.clone();
+    let hardware_vehicle = vehicle.clone();
+    let unique_ids_vehicle = vehicle.clone();
+    let modes_vehicle = vehicle.clone();
+    let support_vehicle = vehicle.clone();
+
+    let mission_closed = tokio::spawn(wait_for_subscription_disconnect(
+        mission_vehicle.mission().subscribe(),
+    ));
+    let params_closed = tokio::spawn(wait_for_subscription_disconnect(
+        params_vehicle.params().subscribe(),
+    ));
+    let fence_closed = tokio::spawn(wait_for_subscription_disconnect(
+        fence_vehicle.fence().subscribe(),
+    ));
+    let rally_closed = tokio::spawn(wait_for_subscription_disconnect(
+        rally_vehicle.rally().subscribe(),
+    ));
+    let mag_cal_progress_closed = tokio::spawn(wait_for_subscription_disconnect(
+        mag_cal_progress_vehicle
+            .ardupilot()
+            .mag_cal_progress()
+            .subscribe(),
+    ));
+    let mag_cal_report_closed = tokio::spawn(wait_for_subscription_disconnect(
+        mag_cal_report_vehicle
+            .ardupilot()
+            .mag_cal_report()
+            .subscribe(),
+    ));
+    let firmware_wait =
+        tokio::spawn(async move { firmware_vehicle.info().firmware().wait().await });
+    let hardware_wait =
+        tokio::spawn(async move { hardware_vehicle.info().hardware().wait().await });
+    let unique_ids_wait =
+        tokio::spawn(async move { unique_ids_vehicle.info().unique_ids().wait().await });
+    let modes_current_closed = tokio::spawn(wait_for_subscription_disconnect(
+        modes_vehicle.available_modes().current().subscribe(),
+    ));
+    let support_command_int_closed = tokio::spawn(wait_for_subscription_disconnect(
+        support_vehicle.support().command_int().subscribe(),
+    ));
+
+    vehicle
+        .disconnect()
+        .await
+        .expect("disconnect should close all connection-scoped observation subscriptions");
+
+    timeout(Duration::from_millis(250), mission_closed)
+        .await
+        .expect("mission subscription should close")
+        .expect("mission close waiter should join");
+    timeout(Duration::from_millis(250), params_closed)
+        .await
+        .expect("params subscription should close")
+        .expect("params close waiter should join");
+    timeout(Duration::from_millis(250), fence_closed)
+        .await
+        .expect("fence subscription should close")
+        .expect("fence close waiter should join");
+    timeout(Duration::from_millis(250), rally_closed)
+        .await
+        .expect("rally subscription should close")
+        .expect("rally close waiter should join");
+    timeout(Duration::from_millis(250), mag_cal_progress_closed)
+        .await
+        .expect("mag_cal_progress subscription should close")
+        .expect("mag_cal_progress close waiter should join");
+    timeout(Duration::from_millis(250), mag_cal_report_closed)
+        .await
+        .expect("mag_cal_report subscription should close")
+        .expect("mag_cal_report close waiter should join");
+    assert!(matches!(
+        timeout(Duration::from_millis(250), firmware_wait)
+            .await
+            .expect("firmware wait should resolve")
+            .expect("firmware wait task should join"),
+        Err(VehicleError::Disconnected)
+    ));
+    assert!(matches!(
+        timeout(Duration::from_millis(250), hardware_wait)
+            .await
+            .expect("hardware wait should resolve")
+            .expect("hardware wait task should join"),
+        Err(VehicleError::Disconnected)
+    ));
+    assert!(matches!(
+        timeout(Duration::from_millis(250), unique_ids_wait)
+            .await
+            .expect("unique_ids wait should resolve")
+            .expect("unique_ids wait task should join"),
+        Err(VehicleError::Disconnected)
+    ));
+    timeout(Duration::from_millis(250), modes_current_closed)
+        .await
+        .expect("modes current subscription should close")
+        .expect("modes current close waiter should join");
+    timeout(Duration::from_millis(250), support_command_int_closed)
+        .await
+        .expect("support command_int subscription should close")
+        .expect("support command_int close waiter should join");
+
+    drop(msg_tx);
+}
+
+#[tokio::test]
+async fn disconnect_closes_indexed_message_families() {
+    let (vehicle, msg_tx) = connect_mock_vehicle().await;
+
+    let battery = vehicle.telemetry().messages().battery_status(2);
+    let servo = vehicle.telemetry().messages().servo_output_raw(1);
+    let mut battery_sub = battery.subscribe();
+    let mut servo_sub = servo.subscribe();
+
+    msg_tx
+        .send((
+            crate::test_support::default_header(),
+            dialect::MavMessage::BATTERY_STATUS(dialect::BATTERY_STATUS_DATA {
+                id: 2,
+                battery_remaining: 61,
+                ..dialect::BATTERY_STATUS_DATA::default()
+            }),
+        ))
+        .await
+        .expect("battery status should be delivered");
+    msg_tx
+        .send((
+            crate::test_support::default_header(),
+            dialect::MavMessage::SERVO_OUTPUT_RAW(dialect::SERVO_OUTPUT_RAW_DATA {
+                port: 1,
+                servo1_raw: 1100,
+                ..dialect::SERVO_OUTPUT_RAW_DATA::default()
+            }),
+        ))
+        .await
+        .expect("servo output raw should be delivered");
+
+    assert_eq!(
+        timeout(Duration::from_millis(250), battery_sub.recv())
+            .await
+            .expect("battery subscription should receive initial sample")
+            .expect("battery sample should be present")
+            .value
+            .battery_remaining,
+        61
+    );
+    assert_eq!(
+        timeout(Duration::from_millis(250), servo_sub.recv())
+            .await
+            .expect("servo subscription should receive initial sample")
+            .expect("servo sample should be present")
+            .value
+            .servo1_raw,
+        1100
+    );
+
+    vehicle
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+
+    assert!(matches!(
+        battery.wait_timeout(Duration::from_millis(50)).await,
+        Err(VehicleError::Disconnected)
+    ));
+    assert!(matches!(
+        servo.wait_timeout(Duration::from_millis(50)).await,
+        Err(VehicleError::Disconnected)
+    ));
+
+    let post_disconnect_battery = vehicle.telemetry().messages().battery_status(7);
+    let post_disconnect_servo = vehicle.telemetry().messages().servo_output_raw(3);
+    let mut post_disconnect_battery_sub = post_disconnect_battery.subscribe();
+    let mut post_disconnect_servo_sub = post_disconnect_servo.subscribe();
+
+    assert!(matches!(
+        post_disconnect_battery
+            .wait_timeout(Duration::from_millis(50))
+            .await,
+        Err(VehicleError::Disconnected)
+    ));
+    assert!(matches!(
+        post_disconnect_servo
+            .wait_timeout(Duration::from_millis(50))
+            .await,
+        Err(VehicleError::Disconnected)
+    ));
+
+    assert_eq!(
+        timeout(Duration::from_millis(250), battery_sub.recv())
+            .await
+            .expect("battery subscription should close after disconnect"),
+        None
+    );
+    assert_eq!(
+        timeout(Duration::from_millis(250), servo_sub.recv())
+            .await
+            .expect("servo subscription should close after disconnect"),
+        None
+    );
+    assert_eq!(
+        timeout(
+            Duration::from_millis(250),
+            post_disconnect_battery_sub.recv()
+        )
+        .await
+        .expect("new battery subscription should close after disconnect"),
+        None
+    );
+    assert_eq!(
+        timeout(Duration::from_millis(250), post_disconnect_servo_sub.recv())
+            .await
+            .expect("new servo subscription should close after disconnect"),
+        None
+    );
+
+    drop(msg_tx);
+}
+
+#[tokio::test]
+async fn disconnect_closes_status_text_with_pending_partial_flush() {
+    let (vehicle, msg_tx) = connect_mock_vehicle().await;
+    let status_text = vehicle.telemetry().messages().status_text();
+    let mut status_text_sub = status_text.subscribe();
+
+    msg_tx
+        .send((
+            crate::test_support::default_header(),
+            dialect::MavMessage::STATUSTEXT(dialect::STATUSTEXT_DATA {
+                severity: dialect::MavSeverity::MAV_SEVERITY_WARNING,
+                text: exact_50_char_text("01234567890123456789012345678901234567890123456789"),
+                id: 77,
+                chunk_seq: 0,
+            }),
+        ))
+        .await
+        .expect("partial status text should be delivered");
+
+    tokio::task::yield_now().await;
+
+    vehicle
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+
+    assert!(matches!(
+        status_text.wait_timeout(Duration::from_millis(50)).await,
+        Err(VehicleError::Disconnected)
+    ));
+    assert_eq!(
+        timeout(Duration::from_millis(250), status_text_sub.recv())
+            .await
+            .expect("status text subscription should close after disconnect"),
+        None
+    );
+
+    drop(msg_tx);
+}
+
+fn exact_50_char_text(text: &str) -> mavlink::types::CharArray<50> {
+    assert_eq!(text.len(), 50, "status text chunk must be exactly 50 bytes");
+    text.into()
+}
+
+async fn wait_for_subscription_disconnect<T: Clone + Send + Sync + 'static>(
+    mut sub: crate::observation::ObservationSubscription<T>,
+) {
+    while sub.recv().await.is_some() {}
 }
