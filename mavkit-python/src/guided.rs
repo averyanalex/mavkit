@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 use tokio::sync::Mutex;
 
 use crate::error::to_py_err;
+use crate::macros::py_async_unit;
 
 fn geo_point_2d(latitude_deg: f64, longitude_deg: f64) -> mavkit::GeoPoint2d {
     mavkit::GeoPoint2d {
@@ -185,11 +186,7 @@ impl PyArduGuidedSession {
 #[pymethods]
 impl PyArduGuidedSession {
     fn close<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let shared = self.shared.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            shared.close().await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, shared = self.shared.clone(); shared.close())
     }
 
     fn copter(&self) -> PyResult<Option<PyArduCopterGuidedHandle>> {
@@ -317,14 +314,7 @@ impl PyArduCopterGuidedHandle {
 #[pymethods]
 impl PyArduCopterGuidedHandle {
     fn takeoff<'py>(&self, py: Python<'py>, relative_climb_m: f32) -> PyResult<Bound<'py, PyAny>> {
-        let handle = self.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            handle
-                .takeoff_impl(relative_climb_m)
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, handle = self.clone(); handle.takeoff_impl(relative_climb_m))
     }
 
     #[pyo3(signature = (*, latitude_deg, longitude_deg, relative_alt_m))]
@@ -335,14 +325,11 @@ impl PyArduCopterGuidedHandle {
         longitude_deg: f64,
         relative_alt_m: f64,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let handle = self.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            handle
-                .goto_impl(latitude_deg, longitude_deg, relative_alt_m)
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(
+            py,
+            handle = self.clone();
+            handle.goto_impl(latitude_deg, longitude_deg, relative_alt_m)
+        )
     }
 
     #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_msl_m))]
@@ -353,14 +340,11 @@ impl PyArduCopterGuidedHandle {
         longitude_deg: f64,
         altitude_msl_m: f64,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let handle = self.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            handle
-                .goto_msl_impl(latitude_deg, longitude_deg, altitude_msl_m)
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(
+            py,
+            handle = self.clone();
+            handle.goto_msl_impl(latitude_deg, longitude_deg, altitude_msl_m)
+        )
     }
 
     fn set_velocity_ned<'py>(
@@ -370,22 +354,15 @@ impl PyArduCopterGuidedHandle {
         east_mps: f32,
         down_mps: f32,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let handle = self.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            handle
-                .set_velocity_ned_impl(north_mps, east_mps, down_mps)
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(
+            py,
+            handle = self.clone();
+            handle.set_velocity_ned_impl(north_mps, east_mps, down_mps)
+        )
     }
 
     fn hold<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let handle = self.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            handle.hold_impl().await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, handle = self.clone(); handle.hold_impl())
     }
 
     fn __repr__(&self) -> String {
@@ -449,14 +426,11 @@ impl PyArduPlaneGuidedHandle {
         longitude_deg: f64,
         altitude_msl_m: f64,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let handle = self.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            handle
-                .reposition_impl(latitude_deg, longitude_deg, altitude_msl_m)
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(
+            py,
+            handle = self.clone();
+            handle.reposition_impl(latitude_deg, longitude_deg, altitude_msl_m)
+        )
     }
 
     #[pyo3(signature = (*, latitude_deg, longitude_deg, relative_alt_m))]
@@ -467,14 +441,11 @@ impl PyArduPlaneGuidedHandle {
         longitude_deg: f64,
         relative_alt_m: f64,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let handle = self.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            handle
-                .reposition_rel_home_impl(latitude_deg, longitude_deg, relative_alt_m)
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(
+            py,
+            handle = self.clone();
+            handle.reposition_rel_home_impl(latitude_deg, longitude_deg, relative_alt_m)
+        )
     }
 
     fn vtol(&self) -> PyResult<Option<PyArduPlaneVtolGuidedHandle>> {
@@ -527,22 +498,11 @@ impl PyArduPlaneVtolGuidedHandle {
 #[pymethods]
 impl PyArduPlaneVtolGuidedHandle {
     fn takeoff<'py>(&self, py: Python<'py>, relative_climb_m: f32) -> PyResult<Bound<'py, PyAny>> {
-        let handle = self.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            handle
-                .takeoff_impl(relative_climb_m)
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, handle = self.clone(); handle.takeoff_impl(relative_climb_m))
     }
 
     fn hold<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let handle = self.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            handle.hold_impl().await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, handle = self.clone(); handle.hold_impl())
     }
 
     fn __repr__(&self) -> String {
@@ -605,14 +565,11 @@ impl PyArduRoverGuidedHandle {
         latitude_deg: f64,
         longitude_deg: f64,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let handle = self.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            handle
-                .drive_to_impl(latitude_deg, longitude_deg)
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(
+            py,
+            handle = self.clone();
+            handle.drive_to_impl(latitude_deg, longitude_deg)
+        )
     }
 
     fn drive<'py>(
@@ -621,22 +578,15 @@ impl PyArduRoverGuidedHandle {
         forward_mps: f32,
         turn_rate_dps: f32,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let handle = self.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            handle
-                .drive_impl(forward_mps, turn_rate_dps)
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(
+            py,
+            handle = self.clone();
+            handle.drive_impl(forward_mps, turn_rate_dps)
+        )
     }
 
     fn hold<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let handle = self.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            handle.hold_impl().await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, handle = self.clone(); handle.hold_impl())
     }
 
     fn __repr__(&self) -> String {
@@ -703,14 +653,11 @@ impl PyArduSubGuidedHandle {
         longitude_deg: f64,
         depth_m: f32,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let handle = self.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            handle
-                .goto_depth_impl(latitude_deg, longitude_deg, depth_m)
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(
+            py,
+            handle = self.clone();
+            handle.goto_depth_impl(latitude_deg, longitude_deg, depth_m)
+        )
     }
 
     fn set_velocity_body<'py>(
@@ -721,22 +668,15 @@ impl PyArduSubGuidedHandle {
         vertical_mps: f32,
         yaw_rate_dps: f32,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let handle = self.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            handle
-                .set_velocity_body_impl(forward_mps, lateral_mps, vertical_mps, yaw_rate_dps)
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(
+            py,
+            handle = self.clone();
+            handle.set_velocity_body_impl(forward_mps, lateral_mps, vertical_mps, yaw_rate_dps)
+        )
     }
 
     fn hold<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let handle = self.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            handle.hold_impl().await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, handle = self.clone(); handle.hold_impl())
     }
 
     fn __repr__(&self) -> String {

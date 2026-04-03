@@ -1,5 +1,3 @@
-#[allow(unused_imports)]
-use super::MavCmd::*;
 use super::MissionFrame;
 use super::wire_support::{
     bool_from_param, bool_to_param, empty_unit_from_wire, i8_from_param, mission_command_to_wire,
@@ -148,7 +146,7 @@ pub(super) fn inverted_bool_from_param(value: f32) -> bool {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_JUMP, category = Do)]
+#[mavkit_command(id = 177, category = Do)]
 #[derive(Copy)]
 pub struct DoJump {
     #[param(1)]
@@ -158,7 +156,7 @@ pub struct DoJump {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_JUMP_TAG, category = Do)]
+#[mavkit_command(id = 601, category = Do)]
 #[derive(Copy)]
 pub struct DoJumpTag {
     #[param(1)]
@@ -168,7 +166,7 @@ pub struct DoJumpTag {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_JUMP_TAG, category = Do)]
+#[mavkit_command(id = 600, category = Do)]
 #[derive(Copy)]
 pub struct DoTag {
     #[param(1)]
@@ -176,7 +174,7 @@ pub struct DoTag {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_PAUSE_CONTINUE, category = Do)]
+#[mavkit_command(id = 193, category = Do)]
 #[derive(Copy)]
 pub struct DoPauseContinue {
     #[param(1, via = inverted_bool_to_param, from = inverted_bool_from_param)]
@@ -184,7 +182,7 @@ pub struct DoPauseContinue {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_CHANGE_SPEED, category = Do)]
+#[mavkit_command(id = 178, category = Do)]
 #[derive(Copy)]
 pub struct DoChangeSpeed {
     #[param(1, via = speed_type_to_param, from = speed_type_from_param)]
@@ -196,7 +194,7 @@ pub struct DoChangeSpeed {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_SET_REVERSE, category = Do)]
+#[mavkit_command(id = 194, category = Do)]
 #[derive(Copy)]
 pub struct DoSetReverse {
     #[param(1)]
@@ -204,7 +202,7 @@ pub struct DoSetReverse {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_SET_HOME, category = Do)]
+#[mavkit_command(id = 179, category = Do)]
 pub struct DoSetHome {
     #[position]
     pub position: GeoPoint3d,
@@ -222,7 +220,7 @@ impl DoSetHome {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_LAND_START, category = Do)]
+#[mavkit_command(id = 189, category = Do)]
 pub struct DoLandStart {
     #[position]
     pub position: GeoPoint3d,
@@ -237,7 +235,7 @@ impl DoLandStart {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_RETURN_PATH_START, category = Do)]
+#[mavkit_command(id = 188, category = Do)]
 pub struct DoReturnPathStart {
     #[position]
     pub position: GeoPoint3d,
@@ -252,7 +250,7 @@ impl DoReturnPathStart {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_GO_AROUND, category = Do)]
+#[mavkit_command(id = 191, category = Do)]
 pub struct DoGoAround {
     #[position]
     pub position: GeoPoint3d,
@@ -267,7 +265,7 @@ impl DoGoAround {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_SET_ROI_LOCATION, category = Do)]
+#[mavkit_command(id = 195, category = Do)]
 pub struct DoSetRoiLocation {
     #[position]
     pub position: GeoPoint3d,
@@ -296,7 +294,7 @@ pub(super) fn do_set_roi_none_from_wire(
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_SET_ROI, category = Do)]
+#[mavkit_command(id = 201, category = Do)]
 pub struct DoSetRoi {
     #[param(1)]
     pub mode: u8,
@@ -314,7 +312,7 @@ impl DoSetRoi {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_MOUNT_CONTROL, category = Do)]
+#[mavkit_command(id = 205, category = Do)]
 #[derive(Copy)]
 pub struct DoMountControl {
     #[param(1)]
@@ -326,7 +324,7 @@ pub struct DoMountControl {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW, category = Do)]
+#[mavkit_command(id = 1000, category = Do)]
 #[derive(Copy)]
 pub struct DoGimbalManagerPitchYaw {
     #[param(1)]
@@ -344,7 +342,7 @@ pub struct DoGimbalManagerPitchYaw {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_SET_CAM_TRIGG_DIST, category = Do)]
+#[mavkit_command(id = 206, category = Do)]
 #[derive(Copy)]
 pub struct DoCamTriggerDistance {
     #[param(1)]
@@ -354,7 +352,7 @@ pub struct DoCamTriggerDistance {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_IMAGE_START_CAPTURE, category = Do)]
+#[mavkit_command(id = 2000, category = Do)]
 #[derive(Copy)]
 pub struct DoImageStartCapture {
     #[param(1)]
@@ -368,7 +366,7 @@ pub struct DoImageStartCapture {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_IMAGE_STOP_CAPTURE, category = Do)]
+#[mavkit_command(id = 2001, category = Do)]
 #[derive(Copy)]
 pub struct DoImageStopCapture {
     #[param(1)]
@@ -376,7 +374,7 @@ pub struct DoImageStopCapture {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_VIDEO_START_CAPTURE, category = Do)]
+#[mavkit_command(id = 2500, category = Do)]
 #[derive(Copy)]
 pub struct DoVideoStartCapture {
     #[param(1)]
@@ -384,7 +382,7 @@ pub struct DoVideoStartCapture {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_VIDEO_STOP_CAPTURE, category = Do)]
+#[mavkit_command(id = 2501, category = Do)]
 #[derive(Copy)]
 pub struct DoVideoStopCapture {
     #[param(1)]
@@ -392,7 +390,7 @@ pub struct DoVideoStopCapture {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_SET_CAMERA_ZOOM, category = Do)]
+#[mavkit_command(id = 531, category = Do)]
 #[derive(Copy)]
 pub struct DoSetCameraZoom {
     #[param(1)]
@@ -402,7 +400,7 @@ pub struct DoSetCameraZoom {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_SET_CAMERA_FOCUS, category = Do)]
+#[mavkit_command(id = 532, category = Do)]
 #[derive(Copy)]
 pub struct DoSetCameraFocus {
     #[param(1)]
@@ -412,7 +410,7 @@ pub struct DoSetCameraFocus {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_SET_CAMERA_SOURCE, category = Do)]
+#[mavkit_command(id = 534, category = Do)]
 #[derive(Copy)]
 pub struct DoSetCameraSource {
     #[param(1)]
@@ -424,7 +422,7 @@ pub struct DoSetCameraSource {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_DIGICAM_CONFIGURE, category = Do)]
+#[mavkit_command(id = 202, category = Do)]
 #[derive(Copy)]
 pub struct DoDigicamConfigure {
     #[param(1)]
@@ -444,7 +442,7 @@ pub struct DoDigicamConfigure {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_DIGICAM_CONTROL, category = Do)]
+#[mavkit_command(id = 203, category = Do)]
 #[derive(Copy)]
 pub struct DoDigicamControl {
     #[param(1)]
@@ -462,7 +460,7 @@ pub struct DoDigicamControl {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_SET_SERVO, category = Do)]
+#[mavkit_command(id = 183, category = Do)]
 #[derive(Copy)]
 pub struct DoSetServo {
     #[param(1)]
@@ -472,7 +470,7 @@ pub struct DoSetServo {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_SET_RELAY, category = Do)]
+#[mavkit_command(id = 181, category = Do)]
 #[derive(Copy)]
 pub struct DoSetRelay {
     #[param(1)]
@@ -482,7 +480,7 @@ pub struct DoSetRelay {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_REPEAT_SERVO, category = Do)]
+#[mavkit_command(id = 184, category = Do)]
 #[derive(Copy)]
 pub struct DoRepeatServo {
     #[param(1)]
@@ -496,7 +494,7 @@ pub struct DoRepeatServo {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_REPEAT_RELAY, category = Do)]
+#[mavkit_command(id = 182, category = Do)]
 #[derive(Copy)]
 pub struct DoRepeatRelay {
     #[param(1)]
@@ -508,7 +506,7 @@ pub struct DoRepeatRelay {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_FENCE_ENABLE, category = Do)]
+#[mavkit_command(id = 207, category = Do)]
 #[derive(Copy)]
 pub struct DoFenceEnable {
     #[param(1, via = fence_action_to_param, from = fence_action_from_param)]
@@ -516,7 +514,7 @@ pub struct DoFenceEnable {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_PARACHUTE, category = Do)]
+#[mavkit_command(id = 208, category = Do)]
 #[derive(Copy)]
 pub struct DoParachute {
     #[param(1, via = parachute_action_to_param, from = parachute_action_from_param)]
@@ -524,7 +522,7 @@ pub struct DoParachute {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_GRIPPER, category = Do)]
+#[mavkit_command(id = 211, category = Do)]
 #[derive(Copy)]
 pub struct DoGripper {
     #[param(1)]
@@ -534,7 +532,7 @@ pub struct DoGripper {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_SPRAYER, category = Do)]
+#[mavkit_command(id = 216, category = Do)]
 #[derive(Copy)]
 pub struct DoSprayer {
     #[param(1)]
@@ -542,7 +540,7 @@ pub struct DoSprayer {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_WINCH, category = Do)]
+#[mavkit_command(id = 42_600, category = Do)]
 #[derive(Copy)]
 pub struct DoWinch {
     #[param(1)]
@@ -556,7 +554,7 @@ pub struct DoWinch {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_ENGINE_CONTROL, category = Do)]
+#[mavkit_command(id = 223, category = Do)]
 #[derive(Copy)]
 pub struct DoEngineControl {
     #[param(1)]
@@ -570,7 +568,7 @@ pub struct DoEngineControl {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_INVERTED_FLIGHT, category = Do)]
+#[mavkit_command(id = 210, category = Do)]
 #[derive(Copy)]
 pub struct DoInvertedFlight {
     #[param(1)]
@@ -578,7 +576,7 @@ pub struct DoInvertedFlight {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_AUTOTUNE_ENABLE, category = Do)]
+#[mavkit_command(id = 212, category = Do)]
 #[derive(Copy)]
 pub struct DoAutotuneEnable {
     #[param(1)]
@@ -586,7 +584,7 @@ pub struct DoAutotuneEnable {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_VTOL_TRANSITION, category = Do)]
+#[mavkit_command(id = 3000, category = Do)]
 #[derive(Copy)]
 pub struct DoVtolTransition {
     #[param(1)]
@@ -594,7 +592,7 @@ pub struct DoVtolTransition {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_GUIDED_LIMITS, category = Do)]
+#[mavkit_command(id = 222, category = Do)]
 #[derive(Copy)]
 pub struct DoGuidedLimits {
     #[param(1)]
@@ -608,7 +606,7 @@ pub struct DoGuidedLimits {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_SET_RESUME_REPEAT_DIST, category = Do)]
+#[mavkit_command(id = 215, category = Do)]
 #[derive(Copy)]
 pub struct DoSetResumeRepeatDist {
     #[param(1)]
@@ -616,7 +614,7 @@ pub struct DoSetResumeRepeatDist {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_AUX_FUNCTION, category = Do)]
+#[mavkit_command(id = 218, category = Do)]
 #[derive(Copy)]
 pub struct DoAuxFunction {
     #[param(1)]
@@ -626,7 +624,7 @@ pub struct DoAuxFunction {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_DO_SEND_SCRIPT_MESSAGE, category = Do)]
+#[mavkit_command(id = 217, category = Do)]
 #[derive(Copy)]
 pub struct DoSendScriptMessage {
     #[param(1)]

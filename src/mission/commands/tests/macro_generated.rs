@@ -20,9 +20,33 @@ fn test_speed_type_from_param(value: f32) -> SpeedType {
     }
 }
 
+fn test_wire_x_encode(value: i16) -> i32 {
+    i32::from(value) * 10
+}
+
+fn test_wire_x_decode(value: i32) -> i16 {
+    (value / 10) as i16
+}
+
+fn test_wire_y_encode(value: bool) -> i32 {
+    if value { 123 } else { -123 }
+}
+
+fn test_wire_y_decode(value: i32) -> bool {
+    value > 0
+}
+
+fn test_wire_z_encode(value: u8) -> f32 {
+    f32::from(value) + 0.5
+}
+
+fn test_wire_z_decode(value: f32) -> u8 {
+    (value - 0.5).round() as u8
+}
+
 // --- Position command: struct with #[position] + #[param] fields ---
 
-#[mavkit_command(id = MAV_CMD_NAV_WAYPOINT, category = Nav)]
+#[mavkit_command(id = 16, category = Nav)]
 pub struct TestNavWaypoint {
     #[position]
     pub position: GeoPoint3d,
@@ -59,7 +83,7 @@ fn macro_position_command_roundtrip() {
 
 // --- Non-position command: params only ---
 
-#[mavkit_command(id = MAV_CMD_DO_CHANGE_SPEED, category = Do)]
+#[mavkit_command(id = 178, category = Do)]
 pub struct TestDoChangeSpeed {
     #[param(1, via = test_speed_type_to_param, from = test_speed_type_from_param)]
     pub speed_type: SpeedType,
@@ -96,7 +120,7 @@ fn macro_non_position_command_with_custom_fn() {
 
 // --- Non-position command with wire_x and wire_z ---
 
-#[mavkit_command(id = MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW, category = Do)]
+#[mavkit_command(id = 1000, category = Do)]
 pub struct TestDoGimbalPitchYaw {
     #[param(1)]
     pub pitch_deg: f32,
@@ -135,9 +159,40 @@ fn macro_non_position_with_wire_x_z() {
     assert_eq!(result.gimbal_id, 2);
 }
 
+#[mavkit_command(id = 1001, category = Do)]
+pub struct TestDoCustomWireHooks {
+    #[wire_x(via = test_wire_x_encode, from = test_wire_x_decode)]
+    pub x_value: i16,
+    #[wire_y(via = test_wire_y_encode, from = test_wire_y_decode)]
+    pub y_value: bool,
+    #[wire_z(via = test_wire_z_encode, from = test_wire_z_decode)]
+    pub z_value: u8,
+}
+
+#[test]
+fn macro_non_position_with_custom_wire_hooks() {
+    let cmd = TestDoCustomWireHooks {
+        x_value: 7,
+        y_value: true,
+        z_value: 9,
+    };
+
+    let (frame, params, x, y, z) = test_do_custom_wire_hooks_to_wire(cmd);
+    assert_eq!(frame, MissionFrame::Mission);
+    assert_eq!(params, [0.0, 0.0, 0.0, 0.0]);
+    assert_eq!(x, 70);
+    assert_eq!(y, 123);
+    assert_eq!(z, 9.5);
+
+    let roundtrip = test_do_custom_wire_hooks_from_wire(frame, params, x, y, z);
+    assert_eq!(roundtrip.x_value, 7);
+    assert!(roundtrip.y_value);
+    assert_eq!(roundtrip.z_value, 9);
+}
+
 // --- Unit command: no fields ---
 
-#[mavkit_command(id = MAV_CMD_NAV_RETURN_TO_LAUNCH, category = Nav)]
+#[mavkit_command(id = 20, category = Nav)]
 pub struct TestReturnToLaunch;
 
 #[test]
@@ -155,7 +210,7 @@ fn macro_unit_command() {
 
 // --- Bool param ---
 
-#[mavkit_command(id = MAV_CMD_DO_SET_REVERSE, category = Do)]
+#[mavkit_command(id = 194, category = Do)]
 pub struct TestDoSetReverse {
     #[param(1)]
     pub reverse: bool,
@@ -184,7 +239,7 @@ fn macro_bool_param_roundtrip() {
 
 // --- u16 param ---
 
-#[mavkit_command(id = MAV_CMD_DO_JUMP, category = Do)]
+#[mavkit_command(id = 177, category = Do)]
 pub struct TestDoJump {
     #[param(1)]
     pub target_index: u16,
@@ -212,7 +267,7 @@ fn macro_u16_param_roundtrip() {
 
 // --- Struct with existing derives preserved ---
 
-#[mavkit_command(id = MAV_CMD_DO_CHANGE_SPEED, category = Do)]
+#[mavkit_command(id = 178, category = Do)]
 #[derive(Copy)]
 pub struct TestWithCopy {
     #[param(1)]
@@ -225,4 +280,22 @@ fn macro_preserves_existing_derives() {
     let cmd2 = cmd; // Copy works
     let _ = cmd; // Original still usable
     assert_eq!(cmd2.value, 1.0);
+}
+
+#[test]
+fn macro_generates_command_id_and_inherent_wire_methods() {
+    assert_eq!(TestDoJump::COMMAND_ID, 177);
+
+    let cmd = TestDoJump {
+        target_index: 7,
+        repeat_count: 2,
+    };
+    let (frame, params, x, y, z) = cmd.into_wire();
+    assert_eq!(frame, MissionFrame::Mission);
+    assert_eq!(params, [7.0, 2.0, 0.0, 0.0]);
+    assert_eq!((x, y, z), (0, 0, 0.0));
+
+    let roundtrip = TestDoJump::from_wire(frame, params, x, y, z);
+    assert_eq!(roundtrip.target_index, 7);
+    assert_eq!(roundtrip.repeat_count, 2);
 }

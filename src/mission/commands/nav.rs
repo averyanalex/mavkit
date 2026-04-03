@@ -1,9 +1,8 @@
-#[allow(unused_imports)]
-use super::MavCmd::*;
 use super::MissionFrame;
 use super::wire_support::{
-    bool_from_param, bool_to_param, empty_unit_from_wire, mission_command_to_wire,
-    position_command_to_wire, position_from_wire, u8_from_param, unit_command_to_wire,
+    bool_from_param, bool_to_param, empty_unit_from_wire, i16_to_wire_i32, mission_command_to_wire,
+    position_command_to_wire, position_from_wire, round_f32_to_i32, saturating_i32_to_i16,
+    u8_from_param, u16_from_param_saturating_cast, unit_command_to_wire, wire_i32_to_f32,
 };
 use crate::geo::GeoPoint3d;
 use mavkit_macros::mavkit_command;
@@ -58,7 +57,7 @@ pub(super) fn alt_change_action_from_param(value: f32) -> AltChangeAction {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_NAV_WAYPOINT, category = Nav)]
+#[mavkit_command(id = 16, category = Nav)]
 pub struct NavWaypoint {
     #[position]
     pub position: GeoPoint3d,
@@ -85,7 +84,7 @@ impl NavWaypoint {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_NAV_SPLINE_WAYPOINT, category = Nav)]
+#[mavkit_command(id = 82, category = Nav)]
 pub struct NavSplineWaypoint {
     #[position]
     pub position: GeoPoint3d,
@@ -111,6 +110,8 @@ pub struct NavArcWaypoint {
 }
 
 impl NavArcWaypoint {
+    pub(crate) const COMMAND_ID: u16 = 36;
+
     pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
         Self {
             position: position.into(),
@@ -118,38 +119,30 @@ impl NavArcWaypoint {
             direction: LoiterDirection::Clockwise,
         }
     }
-}
 
-pub(super) fn nav_arc_waypoint_to_wire(
-    command: NavArcWaypoint,
-) -> (MissionFrame, [f32; 4], i32, i32, f32) {
-    position_command_to_wire(
-        command.position,
-        [
-            signed_value(command.arc_angle_deg, command.direction),
-            0.0,
-            0.0,
-            0.0,
-        ],
-    )
-}
+    pub(crate) fn into_wire(self) -> (MissionFrame, [f32; 4], i32, i32, f32) {
+        position_command_to_wire(
+            self.position,
+            [
+                signed_value(self.arc_angle_deg, self.direction),
+                0.0,
+                0.0,
+                0.0,
+            ],
+        )
+    }
 
-pub(super) fn nav_arc_waypoint_from_wire(
-    frame: MissionFrame,
-    params: [f32; 4],
-    x: i32,
-    y: i32,
-    z: f32,
-) -> NavArcWaypoint {
-    NavArcWaypoint {
-        position: position_from_wire(frame, x, y, z),
-        arc_angle_deg: params[0].abs(),
-        direction: direction_from_signed(params[0]),
+    pub(crate) fn from_wire(frame: MissionFrame, params: [f32; 4], x: i32, y: i32, z: f32) -> Self {
+        Self {
+            position: position_from_wire(frame, x, y, z),
+            arc_angle_deg: params[0].abs(),
+            direction: direction_from_signed(params[0]),
+        }
     }
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_NAV_TAKEOFF, category = Nav)]
+#[mavkit_command(id = 22, category = Nav)]
 pub struct NavTakeoff {
     #[position]
     pub position: GeoPoint3d,
@@ -167,7 +160,7 @@ impl NavTakeoff {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_NAV_LAND, category = Nav)]
+#[mavkit_command(id = 21, category = Nav)]
 pub struct NavLand {
     #[position]
     pub position: GeoPoint3d,
@@ -207,6 +200,8 @@ pub struct NavLoiterUnlimited {
 }
 
 impl NavLoiterUnlimited {
+    pub(crate) const COMMAND_ID: u16 = 17;
+
     pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
         Self {
             position: position.into(),
@@ -214,33 +209,20 @@ impl NavLoiterUnlimited {
             direction: LoiterDirection::Clockwise,
         }
     }
-}
 
-pub(super) fn nav_loiter_unlimited_to_wire(
-    command: NavLoiterUnlimited,
-) -> (MissionFrame, [f32; 4], i32, i32, f32) {
-    position_command_to_wire(
-        command.position,
-        [
-            0.0,
-            0.0,
-            signed_value(command.radius_m, command.direction),
-            0.0,
-        ],
-    )
-}
+    pub(crate) fn into_wire(self) -> (MissionFrame, [f32; 4], i32, i32, f32) {
+        position_command_to_wire(
+            self.position,
+            [0.0, 0.0, signed_value(self.radius_m, self.direction), 0.0],
+        )
+    }
 
-pub(super) fn nav_loiter_unlimited_from_wire(
-    frame: MissionFrame,
-    params: [f32; 4],
-    x: i32,
-    y: i32,
-    z: f32,
-) -> NavLoiterUnlimited {
-    NavLoiterUnlimited {
-        position: position_from_wire(frame, x, y, z),
-        radius_m: params[2].abs(),
-        direction: direction_from_signed(params[2]),
+    pub(crate) fn from_wire(frame: MissionFrame, params: [f32; 4], x: i32, y: i32, z: f32) -> Self {
+        Self {
+            position: position_from_wire(frame, x, y, z),
+            radius_m: params[2].abs(),
+            direction: direction_from_signed(params[2]),
+        }
     }
 }
 
@@ -255,6 +237,8 @@ pub struct NavLoiterTurns {
 }
 
 impl NavLoiterTurns {
+    pub(crate) const COMMAND_ID: u16 = 18;
+
     pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
         Self {
             position: position.into(),
@@ -264,35 +248,27 @@ impl NavLoiterTurns {
             exit_xtrack: false,
         }
     }
-}
 
-pub(super) fn nav_loiter_turns_to_wire(
-    command: NavLoiterTurns,
-) -> (MissionFrame, [f32; 4], i32, i32, f32) {
-    position_command_to_wire(
-        command.position,
-        [
-            command.turns,
-            0.0,
-            signed_value(command.radius_m, command.direction),
-            bool_to_param(command.exit_xtrack),
-        ],
-    )
-}
+    pub(crate) fn into_wire(self) -> (MissionFrame, [f32; 4], i32, i32, f32) {
+        position_command_to_wire(
+            self.position,
+            [
+                self.turns,
+                0.0,
+                signed_value(self.radius_m, self.direction),
+                bool_to_param(self.exit_xtrack),
+            ],
+        )
+    }
 
-pub(super) fn nav_loiter_turns_from_wire(
-    frame: MissionFrame,
-    params: [f32; 4],
-    x: i32,
-    y: i32,
-    z: f32,
-) -> NavLoiterTurns {
-    NavLoiterTurns {
-        position: position_from_wire(frame, x, y, z),
-        turns: params[0],
-        radius_m: params[2].abs(),
-        direction: direction_from_signed(params[2]),
-        exit_xtrack: bool_from_param(params[3]),
+    pub(crate) fn from_wire(frame: MissionFrame, params: [f32; 4], x: i32, y: i32, z: f32) -> Self {
+        Self {
+            position: position_from_wire(frame, x, y, z),
+            turns: params[0],
+            radius_m: params[2].abs(),
+            direction: direction_from_signed(params[2]),
+            exit_xtrack: bool_from_param(params[3]),
+        }
     }
 }
 
@@ -306,6 +282,8 @@ pub struct NavLoiterTime {
 }
 
 impl NavLoiterTime {
+    pub(crate) const COMMAND_ID: u16 = 19;
+
     pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
         Self {
             position: position.into(),
@@ -314,34 +292,26 @@ impl NavLoiterTime {
             exit_xtrack: false,
         }
     }
-}
 
-pub(super) fn nav_loiter_time_to_wire(
-    command: NavLoiterTime,
-) -> (MissionFrame, [f32; 4], i32, i32, f32) {
-    position_command_to_wire(
-        command.position,
-        [
-            command.time_s,
-            0.0,
-            signed_value(0.0, command.direction),
-            bool_to_param(command.exit_xtrack),
-        ],
-    )
-}
+    pub(crate) fn into_wire(self) -> (MissionFrame, [f32; 4], i32, i32, f32) {
+        position_command_to_wire(
+            self.position,
+            [
+                self.time_s,
+                0.0,
+                signed_value(0.0, self.direction),
+                bool_to_param(self.exit_xtrack),
+            ],
+        )
+    }
 
-pub(super) fn nav_loiter_time_from_wire(
-    frame: MissionFrame,
-    params: [f32; 4],
-    x: i32,
-    y: i32,
-    z: f32,
-) -> NavLoiterTime {
-    NavLoiterTime {
-        position: position_from_wire(frame, x, y, z),
-        time_s: params[0],
-        direction: direction_from_signed(params[2]),
-        exit_xtrack: bool_from_param(params[3]),
+    pub(crate) fn from_wire(frame: MissionFrame, params: [f32; 4], x: i32, y: i32, z: f32) -> Self {
+        Self {
+            position: position_from_wire(frame, x, y, z),
+            time_s: params[0],
+            direction: direction_from_signed(params[2]),
+            exit_xtrack: bool_from_param(params[3]),
+        }
     }
 }
 
@@ -355,6 +325,8 @@ pub struct NavLoiterToAlt {
 }
 
 impl NavLoiterToAlt {
+    pub(crate) const COMMAND_ID: u16 = 31;
+
     pub fn from_point(position: impl Into<GeoPoint3d>) -> Self {
         Self {
             position: position.into(),
@@ -363,39 +335,31 @@ impl NavLoiterToAlt {
             exit_xtrack: false,
         }
     }
-}
 
-pub(super) fn nav_loiter_to_alt_to_wire(
-    command: NavLoiterToAlt,
-) -> (MissionFrame, [f32; 4], i32, i32, f32) {
-    position_command_to_wire(
-        command.position,
-        [
-            0.0,
-            signed_value(command.radius_m, command.direction),
-            0.0,
-            bool_to_param(command.exit_xtrack),
-        ],
-    )
-}
+    pub(crate) fn into_wire(self) -> (MissionFrame, [f32; 4], i32, i32, f32) {
+        position_command_to_wire(
+            self.position,
+            [
+                0.0,
+                signed_value(self.radius_m, self.direction),
+                0.0,
+                bool_to_param(self.exit_xtrack),
+            ],
+        )
+    }
 
-pub(super) fn nav_loiter_to_alt_from_wire(
-    frame: MissionFrame,
-    params: [f32; 4],
-    x: i32,
-    y: i32,
-    z: f32,
-) -> NavLoiterToAlt {
-    NavLoiterToAlt {
-        position: position_from_wire(frame, x, y, z),
-        radius_m: params[1].abs(),
-        direction: direction_from_signed(params[1]),
-        exit_xtrack: bool_from_param(params[3]),
+    pub(crate) fn from_wire(frame: MissionFrame, params: [f32; 4], x: i32, y: i32, z: f32) -> Self {
+        Self {
+            position: position_from_wire(frame, x, y, z),
+            radius_m: params[1].abs(),
+            direction: direction_from_signed(params[1]),
+            exit_xtrack: bool_from_param(params[3]),
+        }
     }
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_NAV_CONTINUE_AND_CHANGE_ALT, category = Nav)]
+#[mavkit_command(id = 30, category = Nav)]
 pub struct NavContinueAndChangeAlt {
     #[position]
     pub position: GeoPoint3d,
@@ -413,7 +377,7 @@ impl NavContinueAndChangeAlt {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_NAV_DELAY, category = Nav)]
+#[mavkit_command(id = 93, category = Nav)]
 pub struct NavDelay {
     #[param(1)]
     pub seconds: f32,
@@ -426,14 +390,14 @@ pub struct NavDelay {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_NAV_GUIDED_ENABLE, category = Nav)]
+#[mavkit_command(id = 92, category = Nav)]
 pub struct NavGuidedEnable {
     #[param(1)]
     pub enabled: bool,
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_NAV_ALTITUDE_WAIT, category = Nav)]
+#[mavkit_command(id = 83, category = Nav)]
 pub struct NavAltitudeWait {
     #[param(1)]
     pub altitude_m: f32,
@@ -444,7 +408,7 @@ pub struct NavAltitudeWait {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_NAV_VTOL_TAKEOFF, category = Nav)]
+#[mavkit_command(id = 84, category = Nav)]
 pub struct NavVtolTakeoff {
     #[position]
     pub position: GeoPoint3d,
@@ -459,7 +423,7 @@ impl NavVtolTakeoff {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_NAV_VTOL_LAND, category = Nav)]
+#[mavkit_command(id = 85, category = Nav)]
 pub struct NavVtolLand {
     #[position]
     pub position: GeoPoint3d,
@@ -477,7 +441,7 @@ impl NavVtolLand {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_NAV_PAYLOAD_PLACE, category = Nav)]
+#[mavkit_command(id = 94, category = Nav)]
 pub struct NavPayloadPlace {
     #[position]
     pub position: GeoPoint3d,
@@ -495,7 +459,7 @@ impl NavPayloadPlace {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_NAV_SET_YAW_SPEED, category = Nav)]
+#[mavkit_command(id = 213, category = Nav)]
 pub struct NavSetYawSpeed {
     #[param(1)]
     pub angle_deg: f32,
@@ -506,90 +470,36 @@ pub struct NavSetYawSpeed {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[mavkit_command(id = 42_702, category = Nav)]
 pub struct NavScriptTime {
+    // f32→u16 saturates in Rust (NaN→0, overflow→clamp).
+    #[param(1, via = f32::from, from = u16_from_param_saturating_cast)]
     pub command: u16,
+    #[param(2)]
     pub timeout_s: f32,
+    #[param(3)]
     pub arg1: f32,
+    #[param(4)]
     pub arg2: f32,
+    #[wire_x(via = i16_to_wire_i32, from = saturating_i32_to_i16)]
     pub arg3: i16,
+    #[wire_y(via = i16_to_wire_i32, from = saturating_i32_to_i16)]
     pub arg4: i16,
 }
 
-pub(super) fn nav_script_time_to_wire(
-    command: NavScriptTime,
-) -> (MissionFrame, [f32; 4], i32, i32, f32) {
-    mission_command_to_wire(
-        [
-            f32::from(command.command),
-            command.timeout_s,
-            command.arg1,
-            command.arg2,
-        ],
-        i32::from(command.arg3),
-        i32::from(command.arg4),
-        0.0,
-    )
-}
-
-pub(super) fn nav_script_time_from_wire(
-    _frame: MissionFrame,
-    params: [f32; 4],
-    x: i32,
-    y: i32,
-    _z: f32,
-) -> NavScriptTime {
-    NavScriptTime {
-        // f32→u16 saturates in Rust (NaN→0, overflow→clamp).
-        command: params[0] as u16,
-        timeout_s: params[1],
-        arg1: params[2],
-        arg2: params[3],
-        arg3: i16::try_from(x).unwrap_or(if x > 0 { i16::MAX } else { i16::MIN }),
-        arg4: i16::try_from(y).unwrap_or(if y > 0 { i16::MAX } else { i16::MIN }),
-    }
-}
-
 /// Typed mission command API item used by plan serialization and validation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[mavkit_command(id = 42_703, category = Nav)]
 pub struct NavAttitudeTime {
+    #[param(1)]
     pub time_s: f32,
+    #[param(2)]
     pub roll_deg: f32,
+    #[param(3)]
     pub pitch_deg: f32,
+    #[param(4)]
     pub yaw_deg: f32,
-    pub climb_rate_mps: f32,
-}
-
-pub(super) fn nav_attitude_time_to_wire(
-    command: NavAttitudeTime,
-) -> (MissionFrame, [f32; 4], i32, i32, f32) {
     // x field is i32 on wire; round to nearest integer for the climb rate.
-    mission_command_to_wire(
-        [
-            command.time_s,
-            command.roll_deg,
-            command.pitch_deg,
-            command.yaw_deg,
-        ],
-        command.climb_rate_mps.round() as i32,
-        0,
-        0.0,
-    )
-}
-
-pub(super) fn nav_attitude_time_from_wire(
-    _frame: MissionFrame,
-    params: [f32; 4],
-    x: i32,
-    _y: i32,
-    _z: f32,
-) -> NavAttitudeTime {
-    NavAttitudeTime {
-        time_s: params[0],
-        roll_deg: params[1],
-        pitch_deg: params[2],
-        yaw_deg: params[3],
-        // Wire x is i32; widen to f32 (lossless for practical climb rates).
-        climb_rate_mps: x as f32,
-    }
+    // Wire x is i32; widen to f32 (lossless for practical climb rates).
+    #[wire_x(via = round_f32_to_i32, from = wire_i32_to_f32)]
+    pub climb_rate_mps: f32,
 }

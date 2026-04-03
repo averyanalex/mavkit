@@ -245,7 +245,7 @@ fn from_chain() {
 
     let mission_item: MissionItem = waypoint.into();
     let (command, frame, params, x, y, z) = mission_item.command.clone().into_wire();
-    assert_eq!(command, u16::from(MAV_CMD_NAV_WAYPOINT));
+    assert_eq!(command, NavWaypoint::COMMAND_ID);
     assert_eq!(
         MissionItemFrame::from(frame),
         MissionItemFrame::GlobalRelativeAltInt

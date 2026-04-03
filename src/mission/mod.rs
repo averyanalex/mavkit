@@ -209,22 +209,40 @@ fn map_transfer_progress(progress: TransferProgress) -> MissionOperationProgress
 }
 
 pub(crate) fn spawn_transfer_progress_bridge(
-    mut mission_progress_rx: tokio::sync::watch::Receiver<Option<TransferProgress>>,
+    mission_progress_rx: tokio::sync::watch::Receiver<Option<TransferProgress>>,
     progress_writer: ObservationWriter<MissionOperationProgress>,
     stop: CancellationToken,
 ) -> tokio::task::JoinHandle<()> {
+    spawn_watch_progress_bridge(
+        mission_progress_rx,
+        progress_writer,
+        stop,
+        map_transfer_progress,
+    )
+}
+
+pub(crate) fn spawn_watch_progress_bridge<S, P>(
+    mut progress_rx: tokio::sync::watch::Receiver<Option<S>>,
+    progress_writer: ObservationWriter<P>,
+    stop: CancellationToken,
+    map: impl Fn(S) -> P + Send + 'static,
+) -> tokio::task::JoinHandle<()>
+where
+    S: Clone + Send + Sync + 'static,
+    P: Clone + Send + Sync + 'static,
+{
     tokio::spawn(async move {
-        let _ = mission_progress_rx.borrow_and_update();
+        let _ = progress_rx.borrow_and_update();
 
         loop {
             tokio::select! {
                 _ = stop.cancelled() => break,
-                changed = mission_progress_rx.changed() => {
+                changed = progress_rx.changed() => {
                     if changed.is_err() {
                         break;
                     }
-                    if let Some(progress) = mission_progress_rx.borrow_and_update().clone() {
-                        let _ = progress_writer.publish(map_transfer_progress(progress));
+                    if let Some(progress) = progress_rx.borrow_and_update().clone() {
+                        let _ = progress_writer.publish(map(progress));
                     }
                 }
             }

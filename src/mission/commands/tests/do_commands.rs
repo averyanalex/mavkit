@@ -12,7 +12,7 @@ fn do_change_speed_roundtrip() {
     assert_roundtrip(
         original,
         (
-            u16::from(MAV_CMD_DO_CHANGE_SPEED),
+            DoChangeSpeed::COMMAND_ID,
             MissionFrame::Mission,
             [1.0, 5.5, 66.0, 0.0],
             0,
@@ -26,14 +26,7 @@ fn do_change_speed_roundtrip() {
 fn do_set_roi_none_roundtrip() {
     assert_roundtrip(
         MissionCommand::from(DoCommand::SetRoiNone),
-        (
-            u16::from(MAV_CMD_DO_SET_ROI_NONE),
-            MissionFrame::Mission,
-            [0.0, 0.0, 0.0, 0.0],
-            0,
-            0,
-            0.0,
-        ),
+        (197, MissionFrame::Mission, [0.0, 0.0, 0.0, 0.0], 0, 0, 0.0),
     );
 }
 
@@ -47,7 +40,7 @@ fn do_set_home_roundtrip_uses_geopoint_frame() {
     assert_roundtrip(
         original,
         (
-            u16::from(MAV_CMD_DO_SET_HOME),
+            DoSetHome::COMMAND_ID,
             MissionFrame::GlobalTerrainAlt,
             [0.0, 0.0, 0.0, 0.0],
             473_977_520,
@@ -66,7 +59,7 @@ fn all_do_roundtrip() {
                 repeat_count: 3,
             }),
             (
-                u16::from(MAV_CMD_DO_JUMP),
+                DoJump::COMMAND_ID,
                 MissionFrame::Mission,
                 [12.0, 3.0, 0.0, 0.0],
                 0,
@@ -80,7 +73,7 @@ fn all_do_roundtrip() {
                 repeat_count: 5,
             }),
             (
-                u16::from(MAV_CMD_DO_JUMP_TAG),
+                DoJumpTag::COMMAND_ID,
                 MissionFrame::Mission,
                 [44.0, 5.0, 0.0, 0.0],
                 0,
@@ -91,7 +84,7 @@ fn all_do_roundtrip() {
         (
             MissionCommand::from(DoTag { tag: 44 }),
             (
-                u16::from(MAV_CMD_JUMP_TAG),
+                DoTag::COMMAND_ID,
                 MissionFrame::Mission,
                 [44.0, 0.0, 0.0, 0.0],
                 0,
@@ -102,7 +95,7 @@ fn all_do_roundtrip() {
         (
             MissionCommand::from(DoPauseContinue { pause: true }),
             (
-                u16::from(MAV_CMD_DO_PAUSE_CONTINUE),
+                DoPauseContinue::COMMAND_ID,
                 MissionFrame::Mission,
                 [0.0, 0.0, 0.0, 0.0],
                 0,
@@ -117,7 +110,7 @@ fn all_do_roundtrip() {
                 throttle_pct: 66.0,
             }),
             (
-                u16::from(MAV_CMD_DO_CHANGE_SPEED),
+                DoChangeSpeed::COMMAND_ID,
                 MissionFrame::Mission,
                 [1.0, 5.5, 66.0, 0.0],
                 0,
@@ -128,7 +121,7 @@ fn all_do_roundtrip() {
         (
             MissionCommand::from(DoSetReverse { reverse: true }),
             (
-                u16::from(MAV_CMD_DO_SET_REVERSE),
+                DoSetReverse::COMMAND_ID,
                 MissionFrame::Mission,
                 [1.0, 0.0, 0.0, 0.0],
                 0,
@@ -142,7 +135,7 @@ fn all_do_roundtrip() {
                 use_current: false,
             }),
             (
-                u16::from(MAV_CMD_DO_SET_HOME),
+                DoSetHome::COMMAND_ID,
                 MissionFrame::Global,
                 [0.0, 0.0, 0.0, 0.0],
                 473_977_501,
@@ -155,7 +148,7 @@ fn all_do_roundtrip() {
                 position: geo_rel_home(473_977_502, 85_456_002, 25.0),
             }),
             (
-                u16::from(MAV_CMD_DO_LAND_START),
+                DoLandStart::COMMAND_ID,
                 MissionFrame::GlobalRelativeAlt,
                 [0.0, 0.0, 0.0, 0.0],
                 473_977_502,
@@ -168,7 +161,7 @@ fn all_do_roundtrip() {
                 position: geo_terrain(473_977_503, 85_456_003, 15.0),
             }),
             (
-                u16::from(MAV_CMD_DO_RETURN_PATH_START),
+                DoReturnPathStart::COMMAND_ID,
                 MissionFrame::GlobalTerrainAlt,
                 [0.0, 0.0, 0.0, 0.0],
                 473_977_503,
@@ -181,7 +174,7 @@ fn all_do_roundtrip() {
                 position: geo_rel_home(473_977_504, 85_456_004, 35.0),
             }),
             (
-                u16::from(MAV_CMD_DO_GO_AROUND),
+                DoGoAround::COMMAND_ID,
                 MissionFrame::GlobalRelativeAlt,
                 [0.0, 0.0, 0.0, 0.0],
                 473_977_504,
@@ -194,7 +187,7 @@ fn all_do_roundtrip() {
                 position: geo_msl(473_977_505, 85_456_005, 45.0),
             }),
             (
-                u16::from(MAV_CMD_DO_SET_ROI_LOCATION),
+                DoSetRoiLocation::COMMAND_ID,
                 MissionFrame::Global,
                 [0.0, 0.0, 0.0, 0.0],
                 473_977_505,
@@ -204,14 +197,7 @@ fn all_do_roundtrip() {
         ),
         (
             MissionCommand::from(DoCommand::SetRoiNone),
-            (
-                u16::from(MAV_CMD_DO_SET_ROI_NONE),
-                MissionFrame::Mission,
-                [0.0, 0.0, 0.0, 0.0],
-                0,
-                0,
-                0.0,
-            ),
+            (197, MissionFrame::Mission, [0.0, 0.0, 0.0, 0.0], 0, 0, 0.0),
         ),
         (
             MissionCommand::from(DoSetRoi {
@@ -219,7 +205,7 @@ fn all_do_roundtrip() {
                 position: geo_terrain(473_977_506, 85_456_006, 55.0),
             }),
             (
-                u16::from(MAV_CMD_DO_SET_ROI),
+                DoSetRoi::COMMAND_ID,
                 MissionFrame::GlobalTerrainAlt,
                 [3.0, 0.0, 0.0, 0.0],
                 473_977_506,
@@ -234,7 +220,7 @@ fn all_do_roundtrip() {
                 yaw_deg: 180.0,
             }),
             (
-                u16::from(MAV_CMD_DO_MOUNT_CONTROL),
+                DoMountControl::COMMAND_ID,
                 MissionFrame::Mission,
                 [-10.0, 2.5, 180.0, 0.0],
                 0,
@@ -252,7 +238,7 @@ fn all_do_roundtrip() {
                 gimbal_id: 5,
             }),
             (
-                u16::from(MAV_CMD_DO_GIMBAL_MANAGER_PITCHYAW),
+                DoGimbalManagerPitchYaw::COMMAND_ID,
                 MissionFrame::Mission,
                 [-5.0, 90.0, 3.0, 4.0],
                 7,
@@ -266,7 +252,7 @@ fn all_do_roundtrip() {
                 trigger_now: true,
             }),
             (
-                u16::from(MAV_CMD_DO_SET_CAM_TRIGG_DIST),
+                DoCamTriggerDistance::COMMAND_ID,
                 MissionFrame::Mission,
                 [12.5, 0.0, 1.0, 0.0],
                 0,
@@ -282,7 +268,7 @@ fn all_do_roundtrip() {
                 start_number: 8,
             }),
             (
-                u16::from(MAV_CMD_IMAGE_START_CAPTURE),
+                DoImageStartCapture::COMMAND_ID,
                 MissionFrame::Mission,
                 [2.0, 4.0, 6.0, 8.0],
                 0,
@@ -293,7 +279,7 @@ fn all_do_roundtrip() {
         (
             MissionCommand::from(DoImageStopCapture { instance: 2 }),
             (
-                u16::from(MAV_CMD_IMAGE_STOP_CAPTURE),
+                DoImageStopCapture::COMMAND_ID,
                 MissionFrame::Mission,
                 [2.0, 0.0, 0.0, 0.0],
                 0,
@@ -304,7 +290,7 @@ fn all_do_roundtrip() {
         (
             MissionCommand::from(DoVideoStartCapture { stream_id: 3 }),
             (
-                u16::from(MAV_CMD_VIDEO_START_CAPTURE),
+                DoVideoStartCapture::COMMAND_ID,
                 MissionFrame::Mission,
                 [3.0, 0.0, 0.0, 0.0],
                 0,
@@ -315,7 +301,7 @@ fn all_do_roundtrip() {
         (
             MissionCommand::from(DoVideoStopCapture { stream_id: 4 }),
             (
-                u16::from(MAV_CMD_VIDEO_STOP_CAPTURE),
+                DoVideoStopCapture::COMMAND_ID,
                 MissionFrame::Mission,
                 [4.0, 0.0, 0.0, 0.0],
                 0,
@@ -329,7 +315,7 @@ fn all_do_roundtrip() {
                 zoom_value: 55.0,
             }),
             (
-                u16::from(MAV_CMD_SET_CAMERA_ZOOM),
+                DoSetCameraZoom::COMMAND_ID,
                 MissionFrame::Mission,
                 [2.0, 55.0, 0.0, 0.0],
                 0,
@@ -343,7 +329,7 @@ fn all_do_roundtrip() {
                 focus_value: 9.0,
             }),
             (
-                u16::from(MAV_CMD_SET_CAMERA_FOCUS),
+                DoSetCameraFocus::COMMAND_ID,
                 MissionFrame::Mission,
                 [3.0, 9.0, 0.0, 0.0],
                 0,
@@ -358,7 +344,7 @@ fn all_do_roundtrip() {
                 secondary: 3,
             }),
             (
-                u16::from(MAV_CMD_SET_CAMERA_SOURCE),
+                DoSetCameraSource::COMMAND_ID,
                 MissionFrame::Mission,
                 [1.0, 2.0, 3.0, 0.0],
                 0,
@@ -377,7 +363,7 @@ fn all_do_roundtrip() {
                 cutoff_time: 0.7,
             }),
             (
-                u16::from(MAV_CMD_DO_DIGICAM_CONFIGURE),
+                DoDigicamConfigure::COMMAND_ID,
                 MissionFrame::Mission,
                 [1.0, 125.0, 2.8, 200.0],
                 4,
@@ -395,7 +381,7 @@ fn all_do_roundtrip() {
                 cmd_id: 6,
             }),
             (
-                u16::from(MAV_CMD_DO_DIGICAM_CONTROL),
+                DoDigicamControl::COMMAND_ID,
                 MissionFrame::Mission,
                 [1.0, 2.0, -3.0, 4.0],
                 5,
@@ -409,7 +395,7 @@ fn all_do_roundtrip() {
                 pwm: 1500,
             }),
             (
-                u16::from(MAV_CMD_DO_SET_SERVO),
+                DoSetServo::COMMAND_ID,
                 MissionFrame::Mission,
                 [9.0, 1500.0, 0.0, 0.0],
                 0,
@@ -423,7 +409,7 @@ fn all_do_roundtrip() {
                 state: true,
             }),
             (
-                u16::from(MAV_CMD_DO_SET_RELAY),
+                DoSetRelay::COMMAND_ID,
                 MissionFrame::Mission,
                 [2.0, 1.0, 0.0, 0.0],
                 0,
@@ -439,7 +425,7 @@ fn all_do_roundtrip() {
                 cycle_time_s: 2.0,
             }),
             (
-                u16::from(MAV_CMD_DO_REPEAT_SERVO),
+                DoRepeatServo::COMMAND_ID,
                 MissionFrame::Mission,
                 [10.0, 1200.0, 4.0, 2.0],
                 0,
@@ -454,7 +440,7 @@ fn all_do_roundtrip() {
                 cycle_time_s: 1.5,
             }),
             (
-                u16::from(MAV_CMD_DO_REPEAT_RELAY),
+                DoRepeatRelay::COMMAND_ID,
                 MissionFrame::Mission,
                 [3.0, 5.0, 1.5, 0.0],
                 0,
@@ -467,7 +453,7 @@ fn all_do_roundtrip() {
                 action: FenceAction::Enable,
             }),
             (
-                u16::from(MAV_CMD_DO_FENCE_ENABLE),
+                DoFenceEnable::COMMAND_ID,
                 MissionFrame::Mission,
                 [1.0, 0.0, 0.0, 0.0],
                 0,
@@ -480,7 +466,7 @@ fn all_do_roundtrip() {
                 action: ParachuteAction::Release,
             }),
             (
-                u16::from(MAV_CMD_DO_PARACHUTE),
+                DoParachute::COMMAND_ID,
                 MissionFrame::Mission,
                 [2.0, 0.0, 0.0, 0.0],
                 0,
@@ -494,7 +480,7 @@ fn all_do_roundtrip() {
                 action: GripperAction::Grab,
             }),
             (
-                u16::from(MAV_CMD_DO_GRIPPER),
+                DoGripper::COMMAND_ID,
                 MissionFrame::Mission,
                 [1.0, 1.0, 0.0, 0.0],
                 0,
@@ -505,7 +491,7 @@ fn all_do_roundtrip() {
         (
             MissionCommand::from(DoSprayer { enabled: true }),
             (
-                u16::from(MAV_CMD_DO_SPRAYER),
+                DoSprayer::COMMAND_ID,
                 MissionFrame::Mission,
                 [1.0, 0.0, 0.0, 0.0],
                 0,
@@ -521,7 +507,7 @@ fn all_do_roundtrip() {
                 release_rate_mps: -1.25,
             }),
             (
-                u16::from(MAV_CMD_DO_WINCH),
+                DoWinch::COMMAND_ID,
                 MissionFrame::Mission,
                 [1.0, 2.0, 12.5, -1.25],
                 0,
@@ -537,7 +523,7 @@ fn all_do_roundtrip() {
                 allow_disarmed: true,
             }),
             (
-                u16::from(MAV_CMD_DO_ENGINE_CONTROL),
+                DoEngineControl::COMMAND_ID,
                 MissionFrame::Mission,
                 [1.0, 0.0, 6.5, 1.0],
                 0,
@@ -548,7 +534,7 @@ fn all_do_roundtrip() {
         (
             MissionCommand::from(DoInvertedFlight { inverted: true }),
             (
-                u16::from(MAV_CMD_DO_INVERTED_FLIGHT),
+                DoInvertedFlight::COMMAND_ID,
                 MissionFrame::Mission,
                 [1.0, 0.0, 0.0, 0.0],
                 0,
@@ -559,7 +545,7 @@ fn all_do_roundtrip() {
         (
             MissionCommand::from(DoAutotuneEnable { enabled: true }),
             (
-                u16::from(MAV_CMD_DO_AUTOTUNE_ENABLE),
+                DoAutotuneEnable::COMMAND_ID,
                 MissionFrame::Mission,
                 [1.0, 0.0, 0.0, 0.0],
                 0,
@@ -570,7 +556,7 @@ fn all_do_roundtrip() {
         (
             MissionCommand::from(DoVtolTransition { target_state: 4 }),
             (
-                u16::from(MAV_CMD_DO_VTOL_TRANSITION),
+                DoVtolTransition::COMMAND_ID,
                 MissionFrame::Mission,
                 [4.0, 0.0, 0.0, 0.0],
                 0,
@@ -586,7 +572,7 @@ fn all_do_roundtrip() {
                 max_horiz_m: 40.0,
             }),
             (
-                u16::from(MAV_CMD_DO_GUIDED_LIMITS),
+                DoGuidedLimits::COMMAND_ID,
                 MissionFrame::Mission,
                 [10.0, 20.0, 30.0, 40.0],
                 0,
@@ -597,7 +583,7 @@ fn all_do_roundtrip() {
         (
             MissionCommand::from(DoSetResumeRepeatDist { distance_m: 18.0 }),
             (
-                u16::from(MAV_CMD_DO_SET_RESUME_REPEAT_DIST),
+                DoSetResumeRepeatDist::COMMAND_ID,
                 MissionFrame::Mission,
                 [18.0, 0.0, 0.0, 0.0],
                 0,
@@ -611,7 +597,7 @@ fn all_do_roundtrip() {
                 switch_pos: 2,
             }),
             (
-                u16::from(MAV_CMD_DO_AUX_FUNCTION),
+                DoAuxFunction::COMMAND_ID,
                 MissionFrame::Mission,
                 [42.0, 2.0, 0.0, 0.0],
                 0,
@@ -627,7 +613,7 @@ fn all_do_roundtrip() {
                 p3: 3.75,
             }),
             (
-                u16::from(MAV_CMD_DO_SEND_SCRIPT_MESSAGE),
+                DoSendScriptMessage::COMMAND_ID,
                 MissionFrame::Mission,
                 [7.0, 1.25, -2.5, 3.75],
                 0,

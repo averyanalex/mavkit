@@ -27,13 +27,13 @@ use crate::geo::{
 };
 use crate::info::PyInfoHandle;
 use crate::link::PyLinkHandle;
-use crate::macros::py_subscription;
+use crate::macros::{define_vehicle_plan_handle, py_subscription};
 use crate::mission::PyMissionPlan;
-use crate::modes::{PyCurrentModeHandle, PyModesHandle};
+use crate::modes::PyModesHandle;
 use crate::params::{PyParamsHandle, PySyncState};
 use crate::raw_message::{PyRawMessage, PyRawMessageStream};
 use crate::support::{PySupportHandle, PySupportStateHandle};
-use crate::telemetry::{PyMetricHandle, PyTelemetryHandle};
+use crate::telemetry::PyTelemetryHandle;
 
 fn geo_point_msl(
     latitude_deg: f64,
@@ -773,288 +773,75 @@ impl PyCommandAck {
     }
 }
 
-#[pyclass(name = "MissionHandle", frozen, skip_from_py_object)]
-#[derive(Clone)]
-pub struct PyMissionHandle {
-    inner: mavkit::Vehicle,
-}
-
-impl PyMissionHandle {
-    fn new(inner: mavkit::Vehicle) -> Self {
-        Self { inner }
-    }
-}
-
-#[pymethods]
-impl PyMissionHandle {
-    fn latest(&self) -> Option<PyMissionState> {
-        self.inner
-            .mission()
-            .latest()
-            .map(|inner| PyMissionState { inner })
-    }
-
-    fn wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let inner = vehicle.mission().wait().await;
-            Ok(PyMissionState { inner })
-        })
-    }
-
-    fn wait_timeout<'py>(&self, py: Python<'py>, timeout_secs: f64) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        let timeout = duration_from_secs(timeout_secs)?;
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let inner = vehicle
-                .mission()
-                .wait_timeout(timeout)
-                .await
+define_vehicle_plan_handle!(
+    handle = PyMissionHandle,
+    py_name = "MissionHandle",
+    state = PyMissionState,
+    subscription = PyMissionStateSubscription,
+    plan = PyMissionPlan,
+    upload_op = PyMissionUploadOp,
+    download_op = PyMissionDownloadOp,
+    clear_op = PyMissionClearOp,
+    access = mission,
+    extras = {
+        fn verify(&self, plan: &PyMissionPlan) -> PyResult<PyMissionVerifyOp> {
+            let vehicle = self.inner.clone();
+            let plan = plan.inner.clone();
+            let op = pyo3_async_runtimes::tokio::get_runtime()
+                .block_on(async move { vehicle.mission().verify(plan) })
                 .map_err(to_py_err)?;
-            Ok(PyMissionState { inner })
-        })
-    }
+            Ok(PyMissionVerifyOp {
+                inner: Arc::new(op),
+            })
+        }
 
-    fn subscribe(&self) -> PyMissionStateSubscription {
-        PyMissionStateSubscription {
-            inner: Arc::new(tokio::sync::Mutex::new(self.inner.mission().subscribe())),
+        fn set_current<'py>(&self, py: Python<'py>, index: u16) -> PyResult<Bound<'py, PyAny>> {
+            let vehicle = self.inner.clone();
+            pyo3_async_runtimes::tokio::future_into_py(py, async move {
+                vehicle
+                    .mission()
+                    .set_current(index)
+                    .await
+                    .map_err(to_py_err)?;
+                Ok(())
+            })
         }
     }
+);
 
-    fn upload(&self, plan: &PyMissionPlan) -> PyResult<PyMissionUploadOp> {
-        let vehicle = self.inner.clone();
-        let plan = plan.inner.clone();
-        let op = pyo3_async_runtimes::tokio::get_runtime()
-            .block_on(async move { vehicle.mission().upload(plan) })
-            .map_err(to_py_err)?;
-        Ok(PyMissionUploadOp {
-            inner: Arc::new(op),
-        })
-    }
-
-    fn download(&self) -> PyResult<PyMissionDownloadOp> {
-        let vehicle = self.inner.clone();
-        let op = pyo3_async_runtimes::tokio::get_runtime()
-            .block_on(async move { vehicle.mission().download() })
-            .map_err(to_py_err)?;
-        Ok(PyMissionDownloadOp {
-            inner: Arc::new(op),
-        })
-    }
-
-    fn clear(&self) -> PyResult<PyMissionClearOp> {
-        let vehicle = self.inner.clone();
-        let op = pyo3_async_runtimes::tokio::get_runtime()
-            .block_on(async move { vehicle.mission().clear() })
-            .map_err(to_py_err)?;
-        Ok(PyMissionClearOp {
-            inner: Arc::new(op),
-        })
-    }
-
-    fn verify(&self, plan: &PyMissionPlan) -> PyResult<PyMissionVerifyOp> {
-        let vehicle = self.inner.clone();
-        let plan = plan.inner.clone();
-        let op = pyo3_async_runtimes::tokio::get_runtime()
-            .block_on(async move { vehicle.mission().verify(plan) })
-            .map_err(to_py_err)?;
-        Ok(PyMissionVerifyOp {
-            inner: Arc::new(op),
-        })
-    }
-
-    fn set_current<'py>(&self, py: Python<'py>, index: u16) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle
-                .mission()
-                .set_current(index)
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
-    }
-
-    fn __repr__(&self) -> String {
-        format!("MissionHandle({})", vehicle_label(&self.inner))
-    }
-}
-
-#[pyclass(name = "FenceHandle", frozen, skip_from_py_object)]
-#[derive(Clone)]
-pub struct PyFenceHandle {
-    inner: mavkit::Vehicle,
-}
-
-impl PyFenceHandle {
-    fn new(inner: mavkit::Vehicle) -> Self {
-        Self { inner }
-    }
-}
-
-#[pymethods]
-impl PyFenceHandle {
-    fn support(&self) -> PySupportStateHandle {
-        PySupportStateHandle::new(self.inner.fence().support())
-    }
-
-    fn latest(&self) -> Option<PyFenceState> {
-        self.inner
-            .fence()
-            .latest()
-            .map(|inner| PyFenceState { inner })
-    }
-
-    fn wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let inner = vehicle.fence().wait().await;
-            Ok(PyFenceState { inner })
-        })
-    }
-
-    fn wait_timeout<'py>(&self, py: Python<'py>, timeout_secs: f64) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        let timeout = duration_from_secs(timeout_secs)?;
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let inner = vehicle
-                .fence()
-                .wait_timeout(timeout)
-                .await
-                .map_err(to_py_err)?;
-            Ok(PyFenceState { inner })
-        })
-    }
-
-    fn subscribe(&self) -> PyFenceStateSubscription {
-        PyFenceStateSubscription {
-            inner: Arc::new(tokio::sync::Mutex::new(self.inner.fence().subscribe())),
+define_vehicle_plan_handle!(
+    handle = PyFenceHandle,
+    py_name = "FenceHandle",
+    state = PyFenceState,
+    subscription = PyFenceStateSubscription,
+    plan = PyFencePlan,
+    upload_op = PyFenceUploadOp,
+    download_op = PyFenceDownloadOp,
+    clear_op = PyFenceClearOp,
+    access = fence,
+    extras = {
+        fn support(&self) -> PySupportStateHandle {
+            PySupportStateHandle::new(self.inner.fence().support())
         }
     }
+);
 
-    fn upload(&self, plan: &PyFencePlan) -> PyResult<PyFenceUploadOp> {
-        let vehicle = self.inner.clone();
-        let plan = plan.inner.clone();
-        let op = pyo3_async_runtimes::tokio::get_runtime()
-            .block_on(async move { vehicle.fence().upload(plan) })
-            .map_err(to_py_err)?;
-        Ok(PyFenceUploadOp {
-            inner: Arc::new(op),
-        })
-    }
-
-    fn download(&self) -> PyResult<PyFenceDownloadOp> {
-        let vehicle = self.inner.clone();
-        let op = pyo3_async_runtimes::tokio::get_runtime()
-            .block_on(async move { vehicle.fence().download() })
-            .map_err(to_py_err)?;
-        Ok(PyFenceDownloadOp {
-            inner: Arc::new(op),
-        })
-    }
-
-    fn clear(&self) -> PyResult<PyFenceClearOp> {
-        let vehicle = self.inner.clone();
-        let op = pyo3_async_runtimes::tokio::get_runtime()
-            .block_on(async move { vehicle.fence().clear() })
-            .map_err(to_py_err)?;
-        Ok(PyFenceClearOp {
-            inner: Arc::new(op),
-        })
-    }
-
-    fn __repr__(&self) -> String {
-        format!("FenceHandle({})", vehicle_label(&self.inner))
-    }
-}
-
-#[pyclass(name = "RallyHandle", frozen, skip_from_py_object)]
-#[derive(Clone)]
-pub struct PyRallyHandle {
-    inner: mavkit::Vehicle,
-}
-
-impl PyRallyHandle {
-    fn new(inner: mavkit::Vehicle) -> Self {
-        Self { inner }
-    }
-}
-
-#[pymethods]
-impl PyRallyHandle {
-    fn support(&self) -> PySupportStateHandle {
-        PySupportStateHandle::new(self.inner.rally().support())
-    }
-
-    fn latest(&self) -> Option<PyRallyState> {
-        self.inner
-            .rally()
-            .latest()
-            .map(|inner| PyRallyState { inner })
-    }
-
-    fn wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let inner = vehicle.rally().wait().await;
-            Ok(PyRallyState { inner })
-        })
-    }
-
-    fn wait_timeout<'py>(&self, py: Python<'py>, timeout_secs: f64) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        let timeout = duration_from_secs(timeout_secs)?;
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let inner = vehicle
-                .rally()
-                .wait_timeout(timeout)
-                .await
-                .map_err(to_py_err)?;
-            Ok(PyRallyState { inner })
-        })
-    }
-
-    fn subscribe(&self) -> PyRallyStateSubscription {
-        PyRallyStateSubscription {
-            inner: Arc::new(tokio::sync::Mutex::new(self.inner.rally().subscribe())),
+define_vehicle_plan_handle!(
+    handle = PyRallyHandle,
+    py_name = "RallyHandle",
+    state = PyRallyState,
+    subscription = PyRallyStateSubscription,
+    plan = PyRallyPlan,
+    upload_op = PyRallyUploadOp,
+    download_op = PyRallyDownloadOp,
+    clear_op = PyRallyClearOp,
+    access = rally,
+    extras = {
+        fn support(&self) -> PySupportStateHandle {
+            PySupportStateHandle::new(self.inner.rally().support())
         }
     }
-
-    fn upload(&self, plan: &PyRallyPlan) -> PyResult<PyRallyUploadOp> {
-        let vehicle = self.inner.clone();
-        let plan = plan.inner.clone();
-        let op = pyo3_async_runtimes::tokio::get_runtime()
-            .block_on(async move { vehicle.rally().upload(plan) })
-            .map_err(to_py_err)?;
-        Ok(PyRallyUploadOp {
-            inner: Arc::new(op),
-        })
-    }
-
-    fn download(&self) -> PyResult<PyRallyDownloadOp> {
-        let vehicle = self.inner.clone();
-        let op = pyo3_async_runtimes::tokio::get_runtime()
-            .block_on(async move { vehicle.rally().download() })
-            .map_err(to_py_err)?;
-        Ok(PyRallyDownloadOp {
-            inner: Arc::new(op),
-        })
-    }
-
-    fn clear(&self) -> PyResult<PyRallyClearOp> {
-        let vehicle = self.inner.clone();
-        let op = pyo3_async_runtimes::tokio::get_runtime()
-            .block_on(async move { vehicle.rally().clear() })
-            .map_err(to_py_err)?;
-        Ok(PyRallyClearOp {
-            inner: Arc::new(op),
-        })
-    }
-
-    fn __repr__(&self) -> String {
-        format!("RallyHandle({})", vehicle_label(&self.inner))
-    }
-}
+);
 
 #[pyclass(name = "RawHandle", frozen, skip_from_py_object)]
 #[derive(Clone)]

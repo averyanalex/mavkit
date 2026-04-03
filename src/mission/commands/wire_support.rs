@@ -99,6 +99,26 @@ pub(super) fn u32_from_param(value: f32) -> u32 {
     value.round() as u32
 }
 
+pub(super) fn u16_from_param_saturating_cast(value: f32) -> u16 {
+    value as u16
+}
+
+pub(super) fn i16_to_wire_i32(value: i16) -> i32 {
+    i32::from(value)
+}
+
+pub(super) fn saturating_i32_to_i16(value: i32) -> i16 {
+    i16::try_from(value).unwrap_or(if value > 0 { i16::MAX } else { i16::MIN })
+}
+
+pub(super) fn round_f32_to_i32(value: f32) -> i32 {
+    value.round() as i32
+}
+
+pub(super) fn wire_i32_to_f32(value: i32) -> f32 {
+    value as f32
+}
+
 pub(super) fn empty_unit_from_wire(
     _frame: MissionFrame,
     _params: [f32; 4],

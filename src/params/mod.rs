@@ -8,13 +8,15 @@ pub use types::{Param, ParamState, ParamStore, ParamType, ParamWriteResult};
 
 use crate::command::Command;
 use crate::error::VehicleError;
-use crate::mission::{MissionProtocolScope, OperationReservation, send_domain_command};
+use crate::mission::{
+    MissionProtocolScope, OperationReservation, send_domain_command, spawn_watch_progress_bridge,
+};
 use crate::observation::{ObservationHandle, ObservationSubscription, ObservationWriter};
 use crate::types::{ParamOperationKind, ParamOperationProgress, SyncState};
 use crate::vehicle::VehicleInner;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::sync::{oneshot, watch};
+use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
@@ -118,30 +120,6 @@ impl ParamsDomain {
     }
 }
 
-pub(crate) fn spawn_param_progress_bridge(
-    mut param_progress_rx: watch::Receiver<Option<ParamOperationProgress>>,
-    progress_writer: ObservationWriter<ParamOperationProgress>,
-    stop: CancellationToken,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        let _ = param_progress_rx.borrow_and_update();
-
-        loop {
-            tokio::select! {
-                _ = stop.cancelled() => break,
-                changed = param_progress_rx.changed() => {
-                    if changed.is_err() {
-                        break;
-                    }
-                    if let Some(progress) = param_progress_rx.borrow_and_update().clone() {
-                        let _ = progress_writer.publish(progress);
-                    }
-                }
-            }
-        }
-    })
-}
-
 /// Accessor for parameter cache state and parameter operations.
 ///
 /// Obtained from [`Vehicle::params`](crate::Vehicle::params).
@@ -237,10 +215,11 @@ impl<'a> ParamsHandle<'a> {
 
         tokio::spawn(async move {
             let progress_stop = CancellationToken::new();
-            let progress_task = spawn_param_progress_bridge(
+            let progress_task = spawn_watch_progress_bridge(
                 param_progress_rx,
                 progress_writer.clone(),
                 progress_stop.clone(),
+                std::convert::identity,
             );
 
             let command_result = tokio::select! {
@@ -332,10 +311,11 @@ impl<'a> ParamsHandle<'a> {
 
         tokio::spawn(async move {
             let progress_stop = CancellationToken::new();
-            let progress_task = spawn_param_progress_bridge(
+            let progress_task = spawn_watch_progress_bridge(
                 param_progress_rx,
                 progress_writer.clone(),
                 progress_stop.clone(),
+                std::convert::identity,
             );
 
             let command_result = tokio::select! {

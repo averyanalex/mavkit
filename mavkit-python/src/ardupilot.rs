@@ -2,6 +2,7 @@ use pyo3::prelude::*;
 
 use crate::error::to_py_err;
 use crate::guided::PyArduGuidedSession;
+use crate::macros::py_async_unit;
 use crate::vehicle::vehicle_label;
 
 macro_rules! define_vehicle_handle {
@@ -111,15 +112,7 @@ impl PyArduPilotHandle {
     }
 
     fn request_prearm_checks<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle
-                .ardupilot()
-                .request_prearm_checks()
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.ardupilot().request_prearm_checks())
     }
 
     fn motor_test<'py>(
@@ -129,15 +122,11 @@ impl PyArduPilotHandle {
         throttle_pct: f32,
         duration_s: u16,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle
-                .ardupilot()
-                .motor_test(instance, throttle_pct, duration_s)
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(
+            py,
+            vehicle = self.inner.clone();
+            vehicle.ardupilot().motor_test(instance, throttle_pct, duration_s)
+        )
     }
 
     fn preflight_calibration<'py>(
@@ -148,71 +137,33 @@ impl PyArduPilotHandle {
         baro: bool,
         accel_trim: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        py_async_unit!(
+            py,
+            vehicle = self.inner.clone();
             vehicle
                 .ardupilot()
                 .preflight_calibration(gyro, accel, baro, accel_trim)
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        )
     }
 
     fn start_mag_cal<'py>(&self, py: Python<'py>, compass_mask: u8) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle
-                .ardupilot()
-                .start_mag_cal(compass_mask)
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.ardupilot().start_mag_cal(compass_mask))
     }
 
     fn accept_mag_cal<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle
-                .ardupilot()
-                .accept_mag_cal()
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.ardupilot().accept_mag_cal())
     }
 
     fn cancel_mag_cal<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle
-                .ardupilot()
-                .cancel_mag_cal()
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.ardupilot().cancel_mag_cal())
     }
 
     fn reboot<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle.ardupilot().reboot().await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.ardupilot().reboot())
     }
 
     fn reboot_to_bootloader<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle
-                .ardupilot()
-                .reboot_to_bootloader()
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.ardupilot().reboot_to_bootloader())
     }
 
     fn __repr__(&self) -> String {

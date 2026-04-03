@@ -1,5 +1,3 @@
-#[allow(unused_imports)]
-use super::MavCmd::*;
 use super::MissionFrame;
 use super::wire_support::{bool_from_param, bool_to_param, mission_command_to_wire};
 use mavkit_macros::mavkit_command;
@@ -29,7 +27,7 @@ pub(super) fn yaw_direction_from_param(value: f32) -> YawDirection {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_CONDITION_DELAY, category = Condition)]
+#[mavkit_command(id = 112, category = Condition)]
 #[derive(Copy)]
 pub struct CondDelay {
     #[param(1)]
@@ -37,7 +35,7 @@ pub struct CondDelay {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_CONDITION_DISTANCE, category = Condition)]
+#[mavkit_command(id = 114, category = Condition)]
 #[derive(Copy)]
 pub struct CondDistance {
     #[param(1)]
@@ -45,7 +43,7 @@ pub struct CondDistance {
 }
 
 /// Typed mission command API item used by plan serialization and validation.
-#[mavkit_command(id = MAV_CMD_CONDITION_YAW, category = Condition)]
+#[mavkit_command(id = 115, category = Condition)]
 #[derive(Copy)]
 pub struct CondYaw {
     #[param(1)]

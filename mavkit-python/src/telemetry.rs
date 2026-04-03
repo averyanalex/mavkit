@@ -724,494 +724,130 @@ impl PyMessageSample {
     }
 }
 
-enum MetricSampleValue {
-    Bool(mavkit::MetricSample<bool>),
-    F64(mavkit::MetricSample<f64>),
-    U8(mavkit::MetricSample<u8>),
-    I32(mavkit::MetricSample<i32>),
-    U16(mavkit::MetricSample<u16>),
-    GlobalPosition(mavkit::MetricSample<mavkit::GlobalPosition>),
-    EulerAttitude(mavkit::MetricSample<mavkit::EulerAttitude>),
-    GpsQuality(mavkit::MetricSample<mavkit::GpsQuality>),
-    GeoPoint3dMsl(mavkit::MetricSample<mavkit::GeoPoint3dMsl>),
-    CellVoltages(mavkit::MetricSample<mavkit::CellVoltages>),
-    WaypointProgress(mavkit::MetricSample<mavkit::WaypointProgress>),
-    GuidanceState(mavkit::MetricSample<mavkit::GuidanceState>),
-    TerrainClearance(mavkit::MetricSample<mavkit::TerrainClearance>),
-    SensorHealthSummary(mavkit::MetricSample<mavkit::SensorHealthSummary>),
+macro_rules! metric_sample_py_value {
+    ($py:expr, scalar, $value:expr) => {
+        $value.into_pyobject($py)?.to_owned().into_any().unbind()
+    };
+    ($py:expr, pyclass, $py_type:ty, $value:expr) => {
+        Py::new($py, <$py_type>::from($value))?.into_any()
+    };
 }
 
-impl MetricSampleValue {
-    fn into_py(self, py: Python<'_>) -> PyResult<PyMetricSample> {
-        match self {
-            Self::Bool(sample) => Ok(PyMetricSample::new(
-                sample
-                    .value
-                    .into_pyobject(py)?
-                    .to_owned()
-                    .into_any()
-                    .unbind(),
-                telemetry_message_kind_name(sample.source).to_string(),
-                vehicle_timestamp_to_py(py, sample.vehicle_time)?,
-                monotonic_seconds(sample.received_at),
-            )),
-            Self::F64(sample) => Ok(PyMetricSample::new(
-                sample
-                    .value
-                    .into_pyobject(py)?
-                    .to_owned()
-                    .into_any()
-                    .unbind(),
-                telemetry_message_kind_name(sample.source).to_string(),
-                vehicle_timestamp_to_py(py, sample.vehicle_time)?,
-                monotonic_seconds(sample.received_at),
-            )),
-            Self::U8(sample) => Ok(PyMetricSample::new(
-                sample
-                    .value
-                    .into_pyobject(py)?
-                    .to_owned()
-                    .into_any()
-                    .unbind(),
-                telemetry_message_kind_name(sample.source).to_string(),
-                vehicle_timestamp_to_py(py, sample.vehicle_time)?,
-                monotonic_seconds(sample.received_at),
-            )),
-            Self::I32(sample) => Ok(PyMetricSample::new(
-                sample
-                    .value
-                    .into_pyobject(py)?
-                    .to_owned()
-                    .into_any()
-                    .unbind(),
-                telemetry_message_kind_name(sample.source).to_string(),
-                vehicle_timestamp_to_py(py, sample.vehicle_time)?,
-                monotonic_seconds(sample.received_at),
-            )),
-            Self::U16(sample) => Ok(PyMetricSample::new(
-                sample
-                    .value
-                    .into_pyobject(py)?
-                    .to_owned()
-                    .into_any()
-                    .unbind(),
-                telemetry_message_kind_name(sample.source).to_string(),
-                vehicle_timestamp_to_py(py, sample.vehicle_time)?,
-                monotonic_seconds(sample.received_at),
-            )),
-            Self::GlobalPosition(sample) => Ok(PyMetricSample::new(
-                Py::new(py, PyGlobalPosition::from(sample.value))?.into_any(),
-                telemetry_message_kind_name(sample.source).to_string(),
-                vehicle_timestamp_to_py(py, sample.vehicle_time)?,
-                monotonic_seconds(sample.received_at),
-            )),
-            Self::EulerAttitude(sample) => Ok(PyMetricSample::new(
-                Py::new(py, PyEulerAttitude::from(sample.value))?.into_any(),
-                telemetry_message_kind_name(sample.source).to_string(),
-                vehicle_timestamp_to_py(py, sample.vehicle_time)?,
-                monotonic_seconds(sample.received_at),
-            )),
-            Self::GpsQuality(sample) => Ok(PyMetricSample::new(
-                Py::new(py, PyGpsQuality::from(sample.value))?.into_any(),
-                telemetry_message_kind_name(sample.source).to_string(),
-                vehicle_timestamp_to_py(py, sample.vehicle_time)?,
-                monotonic_seconds(sample.received_at),
-            )),
-            Self::GeoPoint3dMsl(sample) => Ok(PyMetricSample::new(
-                Py::new(py, PyGeoPoint3dMsl::from(sample.value))?.into_any(),
-                telemetry_message_kind_name(sample.source).to_string(),
-                vehicle_timestamp_to_py(py, sample.vehicle_time)?,
-                monotonic_seconds(sample.received_at),
-            )),
-            Self::CellVoltages(sample) => Ok(PyMetricSample::new(
-                Py::new(py, PyCellVoltages::from(sample.value))?.into_any(),
-                telemetry_message_kind_name(sample.source).to_string(),
-                vehicle_timestamp_to_py(py, sample.vehicle_time)?,
-                monotonic_seconds(sample.received_at),
-            )),
-            Self::WaypointProgress(sample) => Ok(PyMetricSample::new(
-                Py::new(py, PyWaypointProgress::from(sample.value))?.into_any(),
-                telemetry_message_kind_name(sample.source).to_string(),
-                vehicle_timestamp_to_py(py, sample.vehicle_time)?,
-                monotonic_seconds(sample.received_at),
-            )),
-            Self::GuidanceState(sample) => Ok(PyMetricSample::new(
-                Py::new(py, PyGuidanceState::from(sample.value))?.into_any(),
-                telemetry_message_kind_name(sample.source).to_string(),
-                vehicle_timestamp_to_py(py, sample.vehicle_time)?,
-                monotonic_seconds(sample.received_at),
-            )),
-            Self::TerrainClearance(sample) => Ok(PyMetricSample::new(
-                Py::new(py, PyTerrainClearance::from(sample.value))?.into_any(),
-                telemetry_message_kind_name(sample.source).to_string(),
-                vehicle_timestamp_to_py(py, sample.vehicle_time)?,
-                monotonic_seconds(sample.received_at),
-            )),
-            Self::SensorHealthSummary(sample) => Ok(PyMetricSample::new(
-                Py::new(py, PySensorHealthSummary::from(sample.value))?.into_any(),
-                telemetry_message_kind_name(sample.source).to_string(),
-                vehicle_timestamp_to_py(py, sample.vehicle_time)?,
-                monotonic_seconds(sample.received_at),
-            )),
+/// Rows are: enum variant, `PyMetricHandle` constructor name, sample type, conversion mode.
+macro_rules! define_metric_wrapper_stack {
+    (
+        $(
+            $variant:ident,
+            $fn_name:tt,
+            $sample_ty:ty,
+            $py_conv_kind:ident $(, $py_conv_type:ty)?;
+        )+
+    ) => {
+        enum MetricSampleValue {
+            $($variant(mavkit::MetricSample<$sample_ty>),)+
         }
-    }
+
+        impl MetricSampleValue {
+            fn into_py(self, py: Python<'_>) -> PyResult<PyMetricSample> {
+                match self {
+                    $(Self::$variant(sample) => Ok(PyMetricSample::new(
+                        metric_sample_py_value!(py, $py_conv_kind $(, $py_conv_type)?, sample.value),
+                        telemetry_message_kind_name(sample.source).to_string(),
+                        vehicle_timestamp_to_py(py, sample.vehicle_time)?,
+                        monotonic_seconds(sample.received_at),
+                    )),)+
+                }
+            }
+        }
+
+        #[derive(Clone)]
+        enum MetricHandleKind {
+            $($variant(mavkit::MetricHandle<$sample_ty>),)+
+        }
+
+        impl MetricHandleKind {
+            fn latest_value(&self) -> Option<MetricSampleValue> {
+                match self {
+                    $(Self::$variant(handle) => handle.latest().map(MetricSampleValue::$variant),)+
+                }
+            }
+
+            async fn wait_value(self) -> Result<MetricSampleValue, mavkit::VehicleError> {
+                match self {
+                    $(Self::$variant(handle) => handle.wait().await.map(MetricSampleValue::$variant),)+
+                }
+            }
+
+            async fn wait_timeout_value(
+                self,
+                timeout: Duration,
+            ) -> Result<MetricSampleValue, mavkit::VehicleError> {
+                match self {
+                    $(Self::$variant(handle) => handle
+                        .wait_timeout(timeout)
+                        .await
+                        .map(MetricSampleValue::$variant),)+
+                }
+            }
+
+            fn subscribe_value(&self) -> MetricSubscriptionKind {
+                match self {
+                    $(Self::$variant(handle) => MetricSubscriptionKind::$variant(handle.subscribe()),)+
+                }
+            }
+
+            fn support_name(&self) -> Option<&'static str> {
+                match self {
+                    $(Self::$variant(handle) => support_state_name(handle.support().latest()),)+
+                }
+            }
+        }
+
+        enum MetricSubscriptionKind {
+            $($variant(mavkit::ObservationSubscription<mavkit::MetricSample<$sample_ty>>),)+
+        }
+
+        impl MetricSubscriptionKind {
+            async fn recv_value(&mut self) -> Option<MetricSampleValue> {
+                match self {
+                    $(Self::$variant(subscription) => {
+                        subscription.recv().await.map(MetricSampleValue::$variant)
+                    },)+
+                }
+            }
+        }
+
+        impl PyMetricHandle {
+            $(fn $fn_name(inner: mavkit::MetricHandle<$sample_ty>) -> Self {
+                Self {
+                    inner: MetricHandleKind::$variant(inner),
+                }
+            })+
+        }
+    };
 }
 
-#[derive(Clone)]
-enum MetricHandleKind {
-    Bool(mavkit::MetricHandle<bool>),
-    F64(mavkit::MetricHandle<f64>),
-    U8(mavkit::MetricHandle<u8>),
-    I32(mavkit::MetricHandle<i32>),
-    U16(mavkit::MetricHandle<u16>),
-    GlobalPosition(mavkit::MetricHandle<mavkit::GlobalPosition>),
-    EulerAttitude(mavkit::MetricHandle<mavkit::EulerAttitude>),
-    GpsQuality(mavkit::MetricHandle<mavkit::GpsQuality>),
-    GeoPoint3dMsl(mavkit::MetricHandle<mavkit::GeoPoint3dMsl>),
-    CellVoltages(mavkit::MetricHandle<mavkit::CellVoltages>),
-    WaypointProgress(mavkit::MetricHandle<mavkit::WaypointProgress>),
-    GuidanceState(mavkit::MetricHandle<mavkit::GuidanceState>),
-    TerrainClearance(mavkit::MetricHandle<mavkit::TerrainClearance>),
-    SensorHealthSummary(mavkit::MetricHandle<mavkit::SensorHealthSummary>),
-}
-
-impl MetricHandleKind {
-    fn latest_value(&self) -> Option<MetricSampleValue> {
-        match self {
-            Self::Bool(handle) => handle.latest().map(MetricSampleValue::Bool),
-            Self::F64(handle) => handle.latest().map(MetricSampleValue::F64),
-            Self::U8(handle) => handle.latest().map(MetricSampleValue::U8),
-            Self::I32(handle) => handle.latest().map(MetricSampleValue::I32),
-            Self::U16(handle) => handle.latest().map(MetricSampleValue::U16),
-            Self::GlobalPosition(handle) => handle.latest().map(MetricSampleValue::GlobalPosition),
-            Self::EulerAttitude(handle) => handle.latest().map(MetricSampleValue::EulerAttitude),
-            Self::GpsQuality(handle) => handle.latest().map(MetricSampleValue::GpsQuality),
-            Self::GeoPoint3dMsl(handle) => handle.latest().map(MetricSampleValue::GeoPoint3dMsl),
-            Self::CellVoltages(handle) => handle.latest().map(MetricSampleValue::CellVoltages),
-            Self::WaypointProgress(handle) => {
-                handle.latest().map(MetricSampleValue::WaypointProgress)
-            }
-            Self::GuidanceState(handle) => handle.latest().map(MetricSampleValue::GuidanceState),
-            Self::TerrainClearance(handle) => {
-                handle.latest().map(MetricSampleValue::TerrainClearance)
-            }
-            Self::SensorHealthSummary(handle) => {
-                handle.latest().map(MetricSampleValue::SensorHealthSummary)
-            }
-        }
-    }
-
-    async fn wait_value(self) -> Result<MetricSampleValue, mavkit::VehicleError> {
-        match self {
-            Self::Bool(handle) => handle.wait().await.map(MetricSampleValue::Bool),
-            Self::F64(handle) => handle.wait().await.map(MetricSampleValue::F64),
-            Self::U8(handle) => handle.wait().await.map(MetricSampleValue::U8),
-            Self::I32(handle) => handle.wait().await.map(MetricSampleValue::I32),
-            Self::U16(handle) => handle.wait().await.map(MetricSampleValue::U16),
-            Self::GlobalPosition(handle) => {
-                handle.wait().await.map(MetricSampleValue::GlobalPosition)
-            }
-            Self::EulerAttitude(handle) => {
-                handle.wait().await.map(MetricSampleValue::EulerAttitude)
-            }
-            Self::GpsQuality(handle) => handle.wait().await.map(MetricSampleValue::GpsQuality),
-            Self::GeoPoint3dMsl(handle) => {
-                handle.wait().await.map(MetricSampleValue::GeoPoint3dMsl)
-            }
-            Self::CellVoltages(handle) => handle.wait().await.map(MetricSampleValue::CellVoltages),
-            Self::WaypointProgress(handle) => {
-                handle.wait().await.map(MetricSampleValue::WaypointProgress)
-            }
-            Self::GuidanceState(handle) => {
-                handle.wait().await.map(MetricSampleValue::GuidanceState)
-            }
-            Self::TerrainClearance(handle) => {
-                handle.wait().await.map(MetricSampleValue::TerrainClearance)
-            }
-            Self::SensorHealthSummary(handle) => handle
-                .wait()
-                .await
-                .map(MetricSampleValue::SensorHealthSummary),
-        }
-    }
-
-    async fn wait_timeout_value(
-        self,
-        timeout: Duration,
-    ) -> Result<MetricSampleValue, mavkit::VehicleError> {
-        match self {
-            Self::Bool(handle) => handle
-                .wait_timeout(timeout)
-                .await
-                .map(MetricSampleValue::Bool),
-            Self::F64(handle) => handle
-                .wait_timeout(timeout)
-                .await
-                .map(MetricSampleValue::F64),
-            Self::U8(handle) => handle
-                .wait_timeout(timeout)
-                .await
-                .map(MetricSampleValue::U8),
-            Self::I32(handle) => handle
-                .wait_timeout(timeout)
-                .await
-                .map(MetricSampleValue::I32),
-            Self::U16(handle) => handle
-                .wait_timeout(timeout)
-                .await
-                .map(MetricSampleValue::U16),
-            Self::GlobalPosition(handle) => handle
-                .wait_timeout(timeout)
-                .await
-                .map(MetricSampleValue::GlobalPosition),
-            Self::EulerAttitude(handle) => handle
-                .wait_timeout(timeout)
-                .await
-                .map(MetricSampleValue::EulerAttitude),
-            Self::GpsQuality(handle) => handle
-                .wait_timeout(timeout)
-                .await
-                .map(MetricSampleValue::GpsQuality),
-            Self::GeoPoint3dMsl(handle) => handle
-                .wait_timeout(timeout)
-                .await
-                .map(MetricSampleValue::GeoPoint3dMsl),
-            Self::CellVoltages(handle) => handle
-                .wait_timeout(timeout)
-                .await
-                .map(MetricSampleValue::CellVoltages),
-            Self::WaypointProgress(handle) => handle
-                .wait_timeout(timeout)
-                .await
-                .map(MetricSampleValue::WaypointProgress),
-            Self::GuidanceState(handle) => handle
-                .wait_timeout(timeout)
-                .await
-                .map(MetricSampleValue::GuidanceState),
-            Self::TerrainClearance(handle) => handle
-                .wait_timeout(timeout)
-                .await
-                .map(MetricSampleValue::TerrainClearance),
-            Self::SensorHealthSummary(handle) => handle
-                .wait_timeout(timeout)
-                .await
-                .map(MetricSampleValue::SensorHealthSummary),
-        }
-    }
-
-    fn subscribe_value(&self) -> MetricSubscriptionKind {
-        match self {
-            Self::Bool(handle) => MetricSubscriptionKind::Bool(handle.subscribe()),
-            Self::F64(handle) => MetricSubscriptionKind::F64(handle.subscribe()),
-            Self::U8(handle) => MetricSubscriptionKind::U8(handle.subscribe()),
-            Self::I32(handle) => MetricSubscriptionKind::I32(handle.subscribe()),
-            Self::U16(handle) => MetricSubscriptionKind::U16(handle.subscribe()),
-            Self::GlobalPosition(handle) => {
-                MetricSubscriptionKind::GlobalPosition(handle.subscribe())
-            }
-            Self::EulerAttitude(handle) => {
-                MetricSubscriptionKind::EulerAttitude(handle.subscribe())
-            }
-            Self::GpsQuality(handle) => MetricSubscriptionKind::GpsQuality(handle.subscribe()),
-            Self::GeoPoint3dMsl(handle) => {
-                MetricSubscriptionKind::GeoPoint3dMsl(handle.subscribe())
-            }
-            Self::CellVoltages(handle) => MetricSubscriptionKind::CellVoltages(handle.subscribe()),
-            Self::WaypointProgress(handle) => {
-                MetricSubscriptionKind::WaypointProgress(handle.subscribe())
-            }
-            Self::GuidanceState(handle) => {
-                MetricSubscriptionKind::GuidanceState(handle.subscribe())
-            }
-            Self::TerrainClearance(handle) => {
-                MetricSubscriptionKind::TerrainClearance(handle.subscribe())
-            }
-            Self::SensorHealthSummary(handle) => {
-                MetricSubscriptionKind::SensorHealthSummary(handle.subscribe())
-            }
-        }
-    }
-
-    fn support_name(&self) -> Option<&'static str> {
-        match self {
-            Self::Bool(handle) => support_state_name(handle.support().latest()),
-            Self::F64(handle) => support_state_name(handle.support().latest()),
-            Self::U8(handle) => support_state_name(handle.support().latest()),
-            Self::I32(handle) => support_state_name(handle.support().latest()),
-            Self::U16(handle) => support_state_name(handle.support().latest()),
-            Self::GlobalPosition(handle) => support_state_name(handle.support().latest()),
-            Self::EulerAttitude(handle) => support_state_name(handle.support().latest()),
-            Self::GpsQuality(handle) => support_state_name(handle.support().latest()),
-            Self::GeoPoint3dMsl(handle) => support_state_name(handle.support().latest()),
-            Self::CellVoltages(handle) => support_state_name(handle.support().latest()),
-            Self::WaypointProgress(handle) => support_state_name(handle.support().latest()),
-            Self::GuidanceState(handle) => support_state_name(handle.support().latest()),
-            Self::TerrainClearance(handle) => support_state_name(handle.support().latest()),
-            Self::SensorHealthSummary(handle) => support_state_name(handle.support().latest()),
-        }
-    }
-}
-
-enum MetricSubscriptionKind {
-    Bool(mavkit::ObservationSubscription<mavkit::MetricSample<bool>>),
-    F64(mavkit::ObservationSubscription<mavkit::MetricSample<f64>>),
-    U8(mavkit::ObservationSubscription<mavkit::MetricSample<u8>>),
-    I32(mavkit::ObservationSubscription<mavkit::MetricSample<i32>>),
-    U16(mavkit::ObservationSubscription<mavkit::MetricSample<u16>>),
-    GlobalPosition(mavkit::ObservationSubscription<mavkit::MetricSample<mavkit::GlobalPosition>>),
-    EulerAttitude(mavkit::ObservationSubscription<mavkit::MetricSample<mavkit::EulerAttitude>>),
-    GpsQuality(mavkit::ObservationSubscription<mavkit::MetricSample<mavkit::GpsQuality>>),
-    GeoPoint3dMsl(mavkit::ObservationSubscription<mavkit::MetricSample<mavkit::GeoPoint3dMsl>>),
-    CellVoltages(mavkit::ObservationSubscription<mavkit::MetricSample<mavkit::CellVoltages>>),
-    WaypointProgress(
-        mavkit::ObservationSubscription<mavkit::MetricSample<mavkit::WaypointProgress>>,
-    ),
-    GuidanceState(mavkit::ObservationSubscription<mavkit::MetricSample<mavkit::GuidanceState>>),
-    TerrainClearance(
-        mavkit::ObservationSubscription<mavkit::MetricSample<mavkit::TerrainClearance>>,
-    ),
-    SensorHealthSummary(
-        mavkit::ObservationSubscription<mavkit::MetricSample<mavkit::SensorHealthSummary>>,
-    ),
-}
-
-impl MetricSubscriptionKind {
-    async fn recv_value(&mut self) -> Option<MetricSampleValue> {
-        match self {
-            Self::Bool(subscription) => subscription.recv().await.map(MetricSampleValue::Bool),
-            Self::F64(subscription) => subscription.recv().await.map(MetricSampleValue::F64),
-            Self::U8(subscription) => subscription.recv().await.map(MetricSampleValue::U8),
-            Self::I32(subscription) => subscription.recv().await.map(MetricSampleValue::I32),
-            Self::U16(subscription) => subscription.recv().await.map(MetricSampleValue::U16),
-            Self::GlobalPosition(subscription) => subscription
-                .recv()
-                .await
-                .map(MetricSampleValue::GlobalPosition),
-            Self::EulerAttitude(subscription) => subscription
-                .recv()
-                .await
-                .map(MetricSampleValue::EulerAttitude),
-            Self::GpsQuality(subscription) => {
-                subscription.recv().await.map(MetricSampleValue::GpsQuality)
-            }
-            Self::GeoPoint3dMsl(subscription) => subscription
-                .recv()
-                .await
-                .map(MetricSampleValue::GeoPoint3dMsl),
-            Self::CellVoltages(subscription) => subscription
-                .recv()
-                .await
-                .map(MetricSampleValue::CellVoltages),
-            Self::WaypointProgress(subscription) => subscription
-                .recv()
-                .await
-                .map(MetricSampleValue::WaypointProgress),
-            Self::GuidanceState(subscription) => subscription
-                .recv()
-                .await
-                .map(MetricSampleValue::GuidanceState),
-            Self::TerrainClearance(subscription) => subscription
-                .recv()
-                .await
-                .map(MetricSampleValue::TerrainClearance),
-            Self::SensorHealthSummary(subscription) => subscription
-                .recv()
-                .await
-                .map(MetricSampleValue::SensorHealthSummary),
-        }
-    }
+define_metric_wrapper_stack! {
+    Bool, bool, bool, scalar;
+    F64, f64, f64, scalar;
+    U8, u8, u8, scalar;
+    I32, i32, i32, scalar;
+    U16, u16, u16, scalar;
+    GlobalPosition, global_position, mavkit::GlobalPosition, pyclass, PyGlobalPosition;
+    EulerAttitude, euler_attitude, mavkit::EulerAttitude, pyclass, PyEulerAttitude;
+    GpsQuality, gps_quality, mavkit::GpsQuality, pyclass, PyGpsQuality;
+    GeoPoint3dMsl, geo_point_3d_msl, mavkit::GeoPoint3dMsl, pyclass, PyGeoPoint3dMsl;
+    CellVoltages, cell_voltages, mavkit::CellVoltages, pyclass, PyCellVoltages;
+    WaypointProgress, waypoint_progress, mavkit::WaypointProgress, pyclass, PyWaypointProgress;
+    GuidanceState, guidance_state, mavkit::GuidanceState, pyclass, PyGuidanceState;
+    TerrainClearance, terrain_clearance, mavkit::TerrainClearance, pyclass, PyTerrainClearance;
+    SensorHealthSummary, sensor_health_summary, mavkit::SensorHealthSummary, pyclass, PySensorHealthSummary;
 }
 
 #[pyclass(name = "MetricHandle", frozen, skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyMetricHandle {
     inner: MetricHandleKind,
-}
-
-impl PyMetricHandle {
-    fn bool(inner: mavkit::MetricHandle<bool>) -> Self {
-        Self {
-            inner: MetricHandleKind::Bool(inner),
-        }
-    }
-
-    fn f64(inner: mavkit::MetricHandle<f64>) -> Self {
-        Self {
-            inner: MetricHandleKind::F64(inner),
-        }
-    }
-
-    fn u8(inner: mavkit::MetricHandle<u8>) -> Self {
-        Self {
-            inner: MetricHandleKind::U8(inner),
-        }
-    }
-
-    fn i32(inner: mavkit::MetricHandle<i32>) -> Self {
-        Self {
-            inner: MetricHandleKind::I32(inner),
-        }
-    }
-
-    fn u16(inner: mavkit::MetricHandle<u16>) -> Self {
-        Self {
-            inner: MetricHandleKind::U16(inner),
-        }
-    }
-
-    fn global_position(inner: mavkit::MetricHandle<mavkit::GlobalPosition>) -> Self {
-        Self {
-            inner: MetricHandleKind::GlobalPosition(inner),
-        }
-    }
-
-    fn euler_attitude(inner: mavkit::MetricHandle<mavkit::EulerAttitude>) -> Self {
-        Self {
-            inner: MetricHandleKind::EulerAttitude(inner),
-        }
-    }
-
-    fn gps_quality(inner: mavkit::MetricHandle<mavkit::GpsQuality>) -> Self {
-        Self {
-            inner: MetricHandleKind::GpsQuality(inner),
-        }
-    }
-
-    pub(crate) fn geo_point_3d_msl(inner: mavkit::MetricHandle<mavkit::GeoPoint3dMsl>) -> Self {
-        Self {
-            inner: MetricHandleKind::GeoPoint3dMsl(inner),
-        }
-    }
-
-    fn cell_voltages(inner: mavkit::MetricHandle<mavkit::CellVoltages>) -> Self {
-        Self {
-            inner: MetricHandleKind::CellVoltages(inner),
-        }
-    }
-
-    fn waypoint_progress(inner: mavkit::MetricHandle<mavkit::WaypointProgress>) -> Self {
-        Self {
-            inner: MetricHandleKind::WaypointProgress(inner),
-        }
-    }
-
-    fn guidance_state(inner: mavkit::MetricHandle<mavkit::GuidanceState>) -> Self {
-        Self {
-            inner: MetricHandleKind::GuidanceState(inner),
-        }
-    }
-
-    fn terrain_clearance(inner: mavkit::MetricHandle<mavkit::TerrainClearance>) -> Self {
-        Self {
-            inner: MetricHandleKind::TerrainClearance(inner),
-        }
-    }
-
-    fn sensor_health_summary(inner: mavkit::MetricHandle<mavkit::SensorHealthSummary>) -> Self {
-        Self {
-            inner: MetricHandleKind::SensorHealthSummary(inner),
-        }
-    }
 }
 
 #[pymethods]

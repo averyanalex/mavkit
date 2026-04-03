@@ -153,6 +153,125 @@ macro_rules! define_observation_wrapper {
     };
 }
 
+/// Generates a `mavkit::Vehicle` plan-handle wrapper used by mission/fence/rally bindings.
+///
+/// This is intentionally specialized, not a general PyO3 wrapper macro. It assumes:
+/// - the wrapper owns a `mavkit::Vehicle`,
+/// - state wrappers implement `From<...>`,
+/// - plan wrappers expose an `inner` field,
+/// - operation wrappers store `inner: Arc<_>`, and
+/// - `crate::vehicle::vehicle_label` is the desired `__repr__` label source.
+///
+/// The generated handle includes common observation and plan transfer methods, while allowing
+/// each handle to inject additional `#[pymethods]` items (e.g. mission verify/set_current,
+/// fence/rally support accessors). Keep the `extras` block small so the macro stays readable.
+macro_rules! define_vehicle_plan_handle {
+    (
+        handle = $handle_name:ident,
+        py_name = $py_name:literal,
+        state = $state_py_ty:ty,
+        subscription = $subscription_ty:ident,
+        plan = $plan_ty:ty,
+        upload_op = $upload_op_ty:ident,
+        download_op = $download_op_ty:ident,
+        clear_op = $clear_op_ty:ident,
+        access = $accessor:ident,
+        extras = { $($extra_methods:item)* }
+    ) => {
+        #[pyo3::pyclass(name = $py_name, frozen, skip_from_py_object)]
+        #[derive(Clone)]
+        pub struct $handle_name {
+            inner: mavkit::Vehicle,
+        }
+
+        impl $handle_name {
+            fn new(inner: mavkit::Vehicle) -> Self {
+                Self { inner }
+            }
+        }
+
+        #[pyo3::pymethods]
+        impl $handle_name {
+            fn latest(&self) -> Option<$state_py_ty> {
+                self.inner.$accessor().latest().map(Into::into)
+            }
+
+            fn wait<'py>(
+                &self,
+                py: pyo3::Python<'py>,
+            ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::types::PyAny>> {
+                let vehicle = self.inner.clone();
+                pyo3_async_runtimes::tokio::future_into_py(py, async move {
+                    let inner = vehicle.$accessor().wait().await;
+                    Ok(<$state_py_ty>::from(inner))
+                })
+            }
+
+            fn wait_timeout<'py>(
+                &self,
+                py: pyo3::Python<'py>,
+                timeout_secs: f64,
+            ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::types::PyAny>> {
+                let vehicle = self.inner.clone();
+                let timeout = crate::error::duration_from_secs(timeout_secs)?;
+                pyo3_async_runtimes::tokio::future_into_py(py, async move {
+                    let inner = vehicle
+                        .$accessor()
+                        .wait_timeout(timeout)
+                        .await
+                        .map_err(crate::error::to_py_err)?;
+                    Ok(<$state_py_ty>::from(inner))
+                })
+            }
+
+            fn subscribe(&self) -> $subscription_ty {
+                $subscription_ty {
+                    inner: std::sync::Arc::new(tokio::sync::Mutex::new(
+                        self.inner.$accessor().subscribe(),
+                    )),
+                }
+            }
+
+            fn upload(&self, plan: &$plan_ty) -> pyo3::PyResult<$upload_op_ty> {
+                let vehicle = self.inner.clone();
+                let plan = plan.inner.clone();
+                let op = pyo3_async_runtimes::tokio::get_runtime()
+                    .block_on(async move { vehicle.$accessor().upload(plan) })
+                    .map_err(crate::error::to_py_err)?;
+                Ok($upload_op_ty {
+                    inner: std::sync::Arc::new(op),
+                })
+            }
+
+            fn download(&self) -> pyo3::PyResult<$download_op_ty> {
+                let vehicle = self.inner.clone();
+                let op = pyo3_async_runtimes::tokio::get_runtime()
+                    .block_on(async move { vehicle.$accessor().download() })
+                    .map_err(crate::error::to_py_err)?;
+                Ok($download_op_ty {
+                    inner: std::sync::Arc::new(op),
+                })
+            }
+
+            fn clear(&self) -> pyo3::PyResult<$clear_op_ty> {
+                let vehicle = self.inner.clone();
+                let op = pyo3_async_runtimes::tokio::get_runtime()
+                    .block_on(async move { vehicle.$accessor().clear() })
+                    .map_err(crate::error::to_py_err)?;
+                Ok($clear_op_ty {
+                    inner: std::sync::Arc::new(op),
+                })
+            }
+
+            $($extra_methods)*
+
+            fn __repr__(&self) -> String {
+                format!(concat!($py_name, "({})"), crate::vehicle::vehicle_label(&self.inner))
+            }
+        }
+    };
+}
+
 /// Generates a frozen pyclass wrapper with keyword-only constructor, getters, and `__repr__`.
 ///
 /// Covers the common case where every field is a scalar passed straight through to the
@@ -197,6 +316,25 @@ macro_rules! py_frozen_wrapper {
     };
 }
 
+/// Runs a Rust future in Python and maps `Result<(), VehicleError>` to `None`.
+///
+/// Use this for thin PyO3 async wrappers that only clone/capture values and then
+/// forward to an async Rust API returning `Result<(), mavkit::VehicleError>`.
+///
+/// Example:
+/// `py_async_unit!(py, vehicle = self.inner.clone(); vehicle.ardupilot().reboot())`
+macro_rules! py_async_unit {
+    ($py:expr, $($name:ident = $value:expr),+ ; $future:expr $(,)?) => {{
+        $(let $name = $value;)+
+        ::pyo3_async_runtimes::tokio::future_into_py($py, async move {
+            let (): () = $future.await.map_err($crate::error::to_py_err)?;
+            Ok(())
+        })
+    }};
+}
+
 pub(crate) use define_observation_wrapper;
+pub(crate) use define_vehicle_plan_handle;
+pub(crate) use py_async_unit;
 pub(crate) use py_frozen_wrapper;
 pub(crate) use py_subscription;

@@ -1,6 +1,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
+use std::collections::HashMap;
 use syn::{
     Attribute, DeriveInput, ExprPath, Field, Ident, LitInt, Token, Type, parse_macro_input,
     parse_quote,
@@ -8,14 +9,15 @@ use syn::{
 
 /// Generates wire conversion functions for a mission command struct.
 ///
-/// Annotate a struct with `#[mavkit_command(id = MAV_CMD_..., category = Nav)]`
+/// Annotate a struct with `#[mavkit_command(id = 16, category = Nav)]`
 /// and its fields with `#[param(N)]`, `#[wire_x]`, `#[wire_y]`, `#[wire_z]`,
 /// or `#[position]` to generate `to_wire` and `from_wire` functions.
+/// Path-style IDs remain supported for compatibility.
 ///
 /// # Examples
 ///
 /// ```ignore
-/// #[mavkit_command(id = MAV_CMD_NAV_WAYPOINT, category = Nav)]
+/// #[mavkit_command(id = 16, category = Nav)]
 /// pub struct NavWaypoint {
 ///     #[position]
 ///     pub position: GeoPoint3d,
@@ -35,9 +37,9 @@ use syn::{
 #[proc_macro_attribute]
 pub fn mavkit_command(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
-    let _cmd_attr = parse_macro_input!(attr as CommandAttr);
+    let cmd_attr = parse_macro_input!(attr as CommandAttr);
 
-    match mavkit_command_impl(input) {
+    match mavkit_command_impl(input, cmd_attr) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }
@@ -45,13 +47,27 @@ pub fn mavkit_command(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 /// Parsed struct-level `mavkit_command(id = ..., category = ...)` attribute.
 struct CommandAttr {
-    _id: ExprPath,
+    id: CommandId,
     _category: Ident,
+}
+
+enum CommandId {
+    Path(ExprPath),
+    Int(u16),
+}
+
+impl CommandId {
+    fn as_tokens(&self) -> TokenStream2 {
+        match self {
+            Self::Path(path) => quote! { #path },
+            Self::Int(int) => quote! { #int },
+        }
+    }
 }
 
 impl syn::parse::Parse for CommandAttr {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let mut id: Option<ExprPath> = None;
+        let mut id: Option<CommandId> = None;
         let mut category: Option<Ident> = None;
 
         while !input.is_empty() {
@@ -60,7 +76,24 @@ impl syn::parse::Parse for CommandAttr {
 
             match key.to_string().as_str() {
                 "id" => {
-                    id = Some(input.parse()?);
+                    if input.peek(LitInt) {
+                        let id_lit: LitInt = input.parse()?;
+                        let parsed = id_lit.base10_parse::<u32>().map_err(|_| {
+                            syn::Error::new(
+                                id_lit.span(),
+                                "id literal must be an integer in range 0..=65535",
+                            )
+                        })?;
+                        if parsed > u16::MAX as u32 {
+                            return Err(syn::Error::new(
+                                id_lit.span(),
+                                "id literal exceeds u16::MAX (65535)",
+                            ));
+                        }
+                        id = Some(CommandId::Int(parsed as u16));
+                    } else {
+                        id = Some(CommandId::Path(input.parse()?));
+                    }
                 }
                 "category" => {
                     category = Some(input.parse()?);
@@ -79,20 +112,21 @@ impl syn::parse::Parse for CommandAttr {
         }
 
         Ok(CommandAttr {
-            _id: id.ok_or_else(|| input.error("missing `id` attribute"))?,
+            id: id.ok_or_else(|| input.error("missing `id` attribute"))?,
             _category: category.ok_or_else(|| input.error("missing `category` attribute"))?,
         })
     }
 }
 
-fn mavkit_command_impl(input: DeriveInput) -> syn::Result<TokenStream2> {
+fn mavkit_command_impl(input: DeriveInput, cmd_attr: CommandAttr) -> syn::Result<TokenStream2> {
     let struct_name = &input.ident;
+    let command_id = cmd_attr.id.as_tokens();
 
     let fields = match &input.data {
         syn::Data::Struct(data) => match &data.fields {
             syn::Fields::Named(named) => &named.named,
             syn::Fields::Unit => {
-                return Ok(generate_unit_command(input));
+                return Ok(generate_unit_command(input, &command_id));
             }
             syn::Fields::Unnamed(_) => {
                 return Err(syn::Error::new_spanned(
@@ -110,7 +144,7 @@ fn mavkit_command_impl(input: DeriveInput) -> syn::Result<TokenStream2> {
     };
 
     if fields.is_empty() {
-        return Ok(generate_unit_command(input));
+        return Ok(generate_unit_command(input, &command_id));
     }
 
     // Parse field annotations
@@ -118,6 +152,8 @@ fn mavkit_command_impl(input: DeriveInput) -> syn::Result<TokenStream2> {
     for field in fields {
         parsed_fields.push(parse_field(field)?);
     }
+
+    validate_unique_field_mappings(&parsed_fields)?;
 
     let has_position = parsed_fields
         .iter()
@@ -139,8 +175,27 @@ fn mavkit_command_impl(input: DeriveInput) -> syn::Result<TokenStream2> {
     Ok(quote! {
         #struct_output
 
+        impl #struct_name {
+            pub(crate) const COMMAND_ID: u16 = (#command_id) as u16;
+
+            pub(crate) fn into_wire(self) -> (MissionFrame, [f32; 4], i32, i32, f32) {
+                let command = self;
+                #to_wire_body
+            }
+
+            pub(crate) fn from_wire(
+                frame: MissionFrame,
+                params: [f32; 4],
+                x: i32,
+                y: i32,
+                z: f32,
+            ) -> Self {
+                #from_wire_body
+            }
+        }
+
         pub(crate) fn #to_wire_fn(command: #struct_name) -> (MissionFrame, [f32; 4], i32, i32, f32) {
-            #to_wire_body
+            command.into_wire()
         }
 
         pub(crate) fn #from_wire_fn(
@@ -150,13 +205,13 @@ fn mavkit_command_impl(input: DeriveInput) -> syn::Result<TokenStream2> {
             y: i32,
             z: f32,
         ) -> #struct_name {
-            #from_wire_body
+            #struct_name::from_wire(frame, params, x, y, z)
         }
     })
 }
 
 /// Generate code for a unit command (no fields).
-fn generate_unit_command(input: DeriveInput) -> TokenStream2 {
+fn generate_unit_command(input: DeriveInput, command_id: &TokenStream2) -> TokenStream2 {
     let struct_name = &input.ident;
     let struct_output = emit_struct_with_derives(&input);
 
@@ -167,8 +222,26 @@ fn generate_unit_command(input: DeriveInput) -> TokenStream2 {
     quote! {
         #struct_output
 
+        impl #struct_name {
+            pub(crate) const COMMAND_ID: u16 = (#command_id) as u16;
+
+            pub(crate) fn into_wire(self) -> (MissionFrame, [f32; 4], i32, i32, f32) {
+                unit_command_to_wire()
+            }
+
+            pub(crate) fn from_wire(
+                _frame: MissionFrame,
+                _params: [f32; 4],
+                _x: i32,
+                _y: i32,
+                _z: f32,
+            ) -> Self {
+                #struct_name
+            }
+        }
+
         pub(crate) fn #to_wire_fn(_command: #struct_name) -> (MissionFrame, [f32; 4], i32, i32, f32) {
-            unit_command_to_wire()
+            _command.into_wire()
         }
 
         pub(crate) fn #from_wire_fn(
@@ -178,7 +251,7 @@ fn generate_unit_command(input: DeriveInput) -> TokenStream2 {
             _y: i32,
             _z: f32,
         ) -> #struct_name {
-            #struct_name
+            #struct_name::from_wire(_frame, _params, _x, _y, _z)
         }
     }
 }
@@ -192,12 +265,21 @@ enum FieldKind {
         custom_encode: Option<Box<ExprPath>>,
         custom_decode: Option<Box<ExprPath>>,
     },
-    /// `#[wire_x]`
-    WireX,
-    /// `#[wire_y]`
-    WireY,
-    /// `#[wire_z]`
-    WireZ,
+    /// `#[wire_x]` with optional via/from
+    WireX {
+        custom_encode: Option<Box<ExprPath>>,
+        custom_decode: Option<Box<ExprPath>>,
+    },
+    /// `#[wire_y]` with optional via/from
+    WireY {
+        custom_encode: Option<Box<ExprPath>>,
+        custom_decode: Option<Box<ExprPath>>,
+    },
+    /// `#[wire_z]` with optional via/from
+    WireZ {
+        custom_encode: Option<Box<ExprPath>>,
+        custom_decode: Option<Box<ExprPath>>,
+    },
     /// `#[position]`
     Position,
 }
@@ -206,6 +288,82 @@ struct ParsedField {
     ident: Ident,
     ty: Type,
     kind: FieldKind,
+}
+
+fn validate_unique_field_mappings(fields: &[ParsedField]) -> syn::Result<()> {
+    let mut seen_params: HashMap<usize, &Ident> = HashMap::new();
+    let mut seen_wire_x: Option<&Ident> = None;
+    let mut seen_wire_y: Option<&Ident> = None;
+    let mut seen_wire_z: Option<&Ident> = None;
+    let mut seen_position: Option<&Ident> = None;
+
+    for field in fields {
+        match &field.kind {
+            FieldKind::Param { index, .. } => {
+                if let Some(first) = seen_params.get(index) {
+                    return Err(syn::Error::new_spanned(
+                        &field.ident,
+                        format!(
+                            "duplicate #[param({})] mapping: field `{}` already owns this wire slot",
+                            index + 1,
+                            first
+                        ),
+                    ));
+                }
+                seen_params.insert(*index, &field.ident);
+            }
+            FieldKind::WireX { .. } => {
+                if let Some(first) = seen_wire_x {
+                    return Err(syn::Error::new_spanned(
+                        &field.ident,
+                        format!(
+                            "duplicate #[wire_x] mapping: field `{}` already owns wire x",
+                            first
+                        ),
+                    ));
+                }
+                seen_wire_x = Some(&field.ident);
+            }
+            FieldKind::WireY { .. } => {
+                if let Some(first) = seen_wire_y {
+                    return Err(syn::Error::new_spanned(
+                        &field.ident,
+                        format!(
+                            "duplicate #[wire_y] mapping: field `{}` already owns wire y",
+                            first
+                        ),
+                    ));
+                }
+                seen_wire_y = Some(&field.ident);
+            }
+            FieldKind::WireZ { .. } => {
+                if let Some(first) = seen_wire_z {
+                    return Err(syn::Error::new_spanned(
+                        &field.ident,
+                        format!(
+                            "duplicate #[wire_z] mapping: field `{}` already owns wire z",
+                            first
+                        ),
+                    ));
+                }
+                seen_wire_z = Some(&field.ident);
+            }
+            FieldKind::Position => {
+                if let Some(first) = seen_position {
+                    return Err(syn::Error::new_spanned(
+                        &field.ident,
+                        format!(
+                            "duplicate #[position] mapping: field `{}` already owns position wire slots",
+                            first
+                        ),
+                    ));
+                }
+                seen_position = Some(&field.ident);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn parse_field(field: &Field) -> syn::Result<ParsedField> {
@@ -246,13 +404,49 @@ fn parse_field_attr(attr: &Attribute) -> syn::Result<Option<FieldKind>> {
         return Ok(Some(FieldKind::Position));
     }
     if path.is_ident("wire_x") {
-        return Ok(Some(FieldKind::WireX));
+        if matches!(&attr.meta, syn::Meta::Path(_)) {
+            return Ok(Some(FieldKind::WireX {
+                custom_encode: None,
+                custom_decode: None,
+            }));
+        }
+        return parse_wire_attr(attr, "wire_x", |custom_encode, custom_decode| {
+            FieldKind::WireX {
+                custom_encode,
+                custom_decode,
+            }
+        })
+        .map(Some);
     }
     if path.is_ident("wire_y") {
-        return Ok(Some(FieldKind::WireY));
+        if matches!(&attr.meta, syn::Meta::Path(_)) {
+            return Ok(Some(FieldKind::WireY {
+                custom_encode: None,
+                custom_decode: None,
+            }));
+        }
+        return parse_wire_attr(attr, "wire_y", |custom_encode, custom_decode| {
+            FieldKind::WireY {
+                custom_encode,
+                custom_decode,
+            }
+        })
+        .map(Some);
     }
     if path.is_ident("wire_z") {
-        return Ok(Some(FieldKind::WireZ));
+        if matches!(&attr.meta, syn::Meta::Path(_)) {
+            return Ok(Some(FieldKind::WireZ {
+                custom_encode: None,
+                custom_decode: None,
+            }));
+        }
+        return parse_wire_attr(attr, "wire_z", |custom_encode, custom_decode| {
+            FieldKind::WireZ {
+                custom_encode,
+                custom_decode,
+            }
+        })
+        .map(Some);
     }
     if path.is_ident("param") {
         return parse_param_attr(attr).map(Some);
@@ -260,6 +454,48 @@ fn parse_field_attr(attr: &Attribute) -> syn::Result<Option<FieldKind>> {
 
     // Not one of our attributes — ignore it (could be doc, serde, etc.)
     Ok(None)
+}
+
+/// Parse `#[wire_x]` / `#[wire_y]` / `#[wire_z]` or
+/// `#[wire_x(via = encode, from = decode)]` forms.
+fn parse_wire_attr<F>(attr: &Attribute, attr_name: &str, constructor: F) -> syn::Result<FieldKind>
+where
+    F: FnOnce(Option<Box<ExprPath>>, Option<Box<ExprPath>>) -> FieldKind,
+{
+    attr.parse_args_with(|input: syn::parse::ParseStream| {
+        let mut custom_encode = None;
+        let mut custom_decode = None;
+
+        while !input.is_empty() {
+            let key: Ident = input.parse()?;
+            input.parse::<Token![=]>()?;
+
+            match key.to_string().as_str() {
+                "via" => {
+                    custom_encode = Some(Box::new(input.parse::<ExprPath>()?));
+                }
+                "from" => {
+                    custom_decode = Some(Box::new(input.parse::<ExprPath>()?));
+                }
+                other => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!("unknown {attr_name} option `{other}`, expected `via` or `from`"),
+                    ));
+                }
+            }
+
+            if !input.is_empty() {
+                input.parse::<Token![,]>()?;
+            }
+        }
+
+        if custom_encode.is_some() != custom_decode.is_some() {
+            return Err(input.error("`via` and `from` must both be specified"));
+        }
+
+        Ok(constructor(custom_encode, custom_decode))
+    })
 }
 
 /// Parse `#[param(N)]` or `#[param(N, via = encode, from = decode)]`.
@@ -358,7 +594,7 @@ fn generate_position_command(
                 let from_expr = param_from_wire_expr(field, *index, custom_decode.as_deref());
                 field_inits.push(quote! { #ident: #from_expr });
             }
-            FieldKind::WireX | FieldKind::WireY | FieldKind::WireZ => {
+            FieldKind::WireX { .. } | FieldKind::WireY { .. } | FieldKind::WireZ { .. } => {
                 return Err(syn::Error::new_spanned(
                     ident,
                     "wire_x/wire_y/wire_z cannot be used together with #[position] (position owns x, y, z)",
@@ -418,19 +654,28 @@ fn generate_non_position_command(
                 let from_expr = param_from_wire_expr(field, *index, custom_decode.as_deref());
                 field_inits.push(quote! { #ident: #from_expr });
             }
-            FieldKind::WireX => {
-                x_to_wire = wire_x_to_wire_expr(field);
-                let from_expr = wire_x_from_wire_expr(field);
+            FieldKind::WireX {
+                custom_encode,
+                custom_decode,
+            } => {
+                x_to_wire = wire_x_to_wire_expr(field, custom_encode.as_deref());
+                let from_expr = wire_x_from_wire_expr(field, custom_decode.as_deref());
                 field_inits.push(quote! { #ident: #from_expr });
             }
-            FieldKind::WireY => {
-                y_to_wire = wire_y_to_wire_expr(field);
-                let from_expr = wire_y_from_wire_expr(field);
+            FieldKind::WireY {
+                custom_encode,
+                custom_decode,
+            } => {
+                y_to_wire = wire_y_to_wire_expr(field, custom_encode.as_deref());
+                let from_expr = wire_y_from_wire_expr(field, custom_decode.as_deref());
                 field_inits.push(quote! { #ident: #from_expr });
             }
-            FieldKind::WireZ => {
-                z_to_wire = wire_z_to_wire_expr(field);
-                let from_expr = wire_z_from_wire_expr(field);
+            FieldKind::WireZ {
+                custom_encode,
+                custom_decode,
+            } => {
+                z_to_wire = wire_z_to_wire_expr(field, custom_encode.as_deref());
+                let from_expr = wire_z_from_wire_expr(field, custom_decode.as_deref());
                 field_inits.push(quote! { #ident: #from_expr });
             }
             FieldKind::Position => {
@@ -511,8 +756,13 @@ fn param_from_wire_expr(
 }
 
 /// Build the expression for converting a field to wire x (i32).
-fn wire_x_to_wire_expr(field: &ParsedField) -> TokenStream2 {
+fn wire_x_to_wire_expr(field: &ParsedField, custom_encode: Option<&ExprPath>) -> TokenStream2 {
     let ident = &field.ident;
+
+    if let Some(encode_fn) = custom_encode {
+        return quote! { #encode_fn(command.#ident) };
+    }
+
     let type_name = type_name_str(&field.ty);
     match type_name.as_str() {
         "i32" => quote! { command.#ident },
@@ -524,7 +774,11 @@ fn wire_x_to_wire_expr(field: &ParsedField) -> TokenStream2 {
 }
 
 /// Build the expression for converting wire x (i32) back to field type.
-fn wire_x_from_wire_expr(field: &ParsedField) -> TokenStream2 {
+fn wire_x_from_wire_expr(field: &ParsedField, custom_decode: Option<&ExprPath>) -> TokenStream2 {
+    if let Some(decode_fn) = custom_decode {
+        return quote! { #decode_fn(x) };
+    }
+
     let type_name = type_name_str(&field.ty);
     match type_name.as_str() {
         "i32" => quote! { x },
@@ -536,8 +790,13 @@ fn wire_x_from_wire_expr(field: &ParsedField) -> TokenStream2 {
 }
 
 /// Build the expression for converting a field to wire y (i32).
-fn wire_y_to_wire_expr(field: &ParsedField) -> TokenStream2 {
+fn wire_y_to_wire_expr(field: &ParsedField, custom_encode: Option<&ExprPath>) -> TokenStream2 {
     let ident = &field.ident;
+
+    if let Some(encode_fn) = custom_encode {
+        return quote! { #encode_fn(command.#ident) };
+    }
+
     let type_name = type_name_str(&field.ty);
     match type_name.as_str() {
         "i32" => quote! { command.#ident },
@@ -549,7 +808,11 @@ fn wire_y_to_wire_expr(field: &ParsedField) -> TokenStream2 {
 }
 
 /// Build the expression for converting wire y (i32) back to field type.
-fn wire_y_from_wire_expr(field: &ParsedField) -> TokenStream2 {
+fn wire_y_from_wire_expr(field: &ParsedField, custom_decode: Option<&ExprPath>) -> TokenStream2 {
+    if let Some(decode_fn) = custom_decode {
+        return quote! { #decode_fn(y) };
+    }
+
     let type_name = type_name_str(&field.ty);
     match type_name.as_str() {
         "i32" => quote! { y },
@@ -561,8 +824,13 @@ fn wire_y_from_wire_expr(field: &ParsedField) -> TokenStream2 {
 }
 
 /// Build the expression for converting a field to wire z (f32).
-fn wire_z_to_wire_expr(field: &ParsedField) -> TokenStream2 {
+fn wire_z_to_wire_expr(field: &ParsedField, custom_encode: Option<&ExprPath>) -> TokenStream2 {
     let ident = &field.ident;
+
+    if let Some(encode_fn) = custom_encode {
+        return quote! { #encode_fn(command.#ident) };
+    }
+
     let type_name = type_name_str(&field.ty);
     match type_name.as_str() {
         "f32" => quote! { command.#ident },
@@ -572,7 +840,11 @@ fn wire_z_to_wire_expr(field: &ParsedField) -> TokenStream2 {
 }
 
 /// Build the expression for converting wire z (f32) back to field type.
-fn wire_z_from_wire_expr(field: &ParsedField) -> TokenStream2 {
+fn wire_z_from_wire_expr(field: &ParsedField, custom_decode: Option<&ExprPath>) -> TokenStream2 {
+    if let Some(decode_fn) = custom_decode {
+        return quote! { #decode_fn(z) };
+    }
+
     let type_name = type_name_str(&field.ty);
     match type_name.as_str() {
         "f32" => quote! { z },

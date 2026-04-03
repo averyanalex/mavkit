@@ -7,7 +7,7 @@ fn all_cond_roundtrip() {
         (
             MissionCommand::from(CondDelay { delay_s: 8.5 }),
             (
-                u16::from(MAV_CMD_CONDITION_DELAY),
+                CondDelay::COMMAND_ID,
                 MissionFrame::Mission,
                 [8.5, 0.0, 0.0, 0.0],
                 0,
@@ -18,7 +18,7 @@ fn all_cond_roundtrip() {
         (
             MissionCommand::from(CondDistance { distance_m: 125.0 }),
             (
-                u16::from(MAV_CMD_CONDITION_DISTANCE),
+                CondDistance::COMMAND_ID,
                 MissionFrame::Mission,
                 [125.0, 0.0, 0.0, 0.0],
                 0,
@@ -34,7 +34,7 @@ fn all_cond_roundtrip() {
                 relative: true,
             }),
             (
-                u16::from(MAV_CMD_CONDITION_YAW),
+                CondYaw::COMMAND_ID,
                 MissionFrame::Mission,
                 [135.0, 20.0, -1.0, 1.0],
                 0,
