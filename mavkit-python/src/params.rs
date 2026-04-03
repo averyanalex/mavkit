@@ -328,91 +328,78 @@ py_subscription!(
     "param-progress subscription closed"
 );
 
-#[pyclass(name = "ParamDownloadOp", frozen, skip_from_py_object)]
-#[derive(Clone)]
-pub struct PyParamDownloadOp {
-    inner: Arc<mavkit::ParamDownloadOp>,
-}
-
-#[pymethods]
-impl PyParamDownloadOp {
-    fn latest(&self) -> Option<PyParamProgress> {
-        self.inner.latest().map(|inner| PyParamProgress { inner })
-    }
-
-    fn subscribe(&self) -> PyParamProgressSubscription {
-        PyParamProgressSubscription {
-            inner: Arc::new(tokio::sync::Mutex::new(self.inner.subscribe())),
+/// Local param-operation wrapper helper.
+///
+/// This intentionally mirrors the mission/fence/rally progress-op pattern in `vehicle.rs`,
+/// but stays local until there is enough shared shape to justify a cross-file macro.
+macro_rules! define_param_op {
+    ($rust_name:ident, $py_name:literal, $inner:ty, $map:expr) => {
+        #[pyclass(name = $py_name, frozen, skip_from_py_object)]
+        #[derive(Clone)]
+        pub struct $rust_name {
+            inner: Arc<$inner>,
         }
-    }
 
-    fn cancel(&self) {
-        self.inner.cancel();
-    }
+        #[pymethods]
+        impl $rust_name {
+            fn latest(&self) -> Option<PyParamProgress> {
+                self.inner.latest().map(|inner| PyParamProgress { inner })
+            }
 
-    fn wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let store = inner.wait().await.map_err(to_py_err)?;
-            Ok(PyParamStore { inner: store })
-        })
-    }
+            fn subscribe(&self) -> PyParamProgressSubscription {
+                PyParamProgressSubscription {
+                    inner: Arc::new(tokio::sync::Mutex::new(self.inner.subscribe())),
+                }
+            }
 
-    fn wait_timeout<'py>(&self, py: Python<'py>, timeout_secs: f64) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        let timeout = duration_from_secs(timeout_secs)?;
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let store = inner.wait_timeout(timeout).await.map_err(to_py_err)?;
-            Ok(PyParamStore { inner: store })
-        })
-    }
-}
+            fn cancel(&self) {
+                self.inner.cancel();
+            }
 
-#[pyclass(name = "ParamWriteBatchOp", frozen, skip_from_py_object)]
-#[derive(Clone)]
-pub struct PyParamWriteBatchOp {
-    inner: Arc<mavkit::ParamWriteBatchOp>,
-}
+            fn wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+                let inner = self.inner.clone();
+                let map = $map;
+                pyo3_async_runtimes::tokio::future_into_py(py, async move {
+                    let value = inner.wait().await.map_err(to_py_err)?;
+                    map(value)
+                })
+            }
 
-#[pymethods]
-impl PyParamWriteBatchOp {
-    fn latest(&self) -> Option<PyParamProgress> {
-        self.inner.latest().map(|inner| PyParamProgress { inner })
-    }
-
-    fn subscribe(&self) -> PyParamProgressSubscription {
-        PyParamProgressSubscription {
-            inner: Arc::new(tokio::sync::Mutex::new(self.inner.subscribe())),
+            fn wait_timeout<'py>(
+                &self,
+                py: Python<'py>,
+                timeout_secs: f64,
+            ) -> PyResult<Bound<'py, PyAny>> {
+                let inner = self.inner.clone();
+                let timeout = duration_from_secs(timeout_secs)?;
+                let map = $map;
+                pyo3_async_runtimes::tokio::future_into_py(py, async move {
+                    let value = inner.wait_timeout(timeout).await.map_err(to_py_err)?;
+                    map(value)
+                })
+            }
         }
-    }
-
-    fn cancel(&self) {
-        self.inner.cancel();
-    }
-
-    fn wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let results = inner.wait().await.map_err(to_py_err)?;
-            Ok(results
-                .into_iter()
-                .map(|inner| PyParamWriteResult { inner })
-                .collect::<Vec<_>>())
-        })
-    }
-
-    fn wait_timeout<'py>(&self, py: Python<'py>, timeout_secs: f64) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        let timeout = duration_from_secs(timeout_secs)?;
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let results = inner.wait_timeout(timeout).await.map_err(to_py_err)?;
-            Ok(results
-                .into_iter()
-                .map(|inner| PyParamWriteResult { inner })
-                .collect::<Vec<_>>())
-        })
-    }
+    };
 }
+
+define_param_op!(
+    PyParamDownloadOp,
+    "ParamDownloadOp",
+    mavkit::ParamDownloadOp,
+    |value: mavkit::ParamStore| Ok(PyParamStore { inner: value })
+);
+
+define_param_op!(
+    PyParamWriteBatchOp,
+    "ParamWriteBatchOp",
+    mavkit::ParamWriteBatchOp,
+    |value: Vec<mavkit::ParamWriteResult>| {
+        Ok(value
+            .into_iter()
+            .map(|inner| PyParamWriteResult { inner })
+            .collect::<Vec<_>>())
+    }
+);
 
 #[pyclass(name = "ParamsHandle", frozen, skip_from_py_object)]
 #[derive(Clone)]
