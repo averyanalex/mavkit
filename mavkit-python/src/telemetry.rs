@@ -1180,42 +1180,66 @@ pub struct PyPeriodicMessageHandle {
     inner: PeriodicMessageHandleKind,
 }
 
-#[pymethods]
-impl PyPeriodicMessageHandle {
-    fn latest(&self, py: Python<'_>) -> PyResult<Option<PyMessageSample>> {
-        self.inner
-            .latest_value()
-            .map(|sample| sample.into_py(py))
-            .transpose()
-    }
+#[pyclass(name = "EventMessageHandle", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyEventMessageHandle {
+    inner: EventMessageHandleKind,
+}
 
-    fn support(&self) -> Option<String> {
-        self.inner.support_name().map(str::to_string)
-    }
+#[pyclass(name = "MessageHandle", frozen, skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyMessageHandle {
+    inner: PushMessageHandleKind,
+}
 
-    fn wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let sample = inner.wait_value().await.map_err(to_py_err)?;
-            Python::attach(|py| sample.into_py(py))
-        })
-    }
+macro_rules! impl_message_handle_pymethods {
+    ($py_type:ty, {$($extras:item)*}) => {
+        #[pymethods]
+        impl $py_type {
+            fn latest(&self, py: Python<'_>) -> PyResult<Option<PyMessageSample>> {
+                self.inner
+                    .latest_value()
+                    .map(|sample| sample.into_py(py))
+                    .transpose()
+            }
 
-    fn wait_timeout<'py>(&self, py: Python<'py>, timeout_secs: f64) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        let timeout = duration_from_secs(timeout_secs)?;
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let sample = inner.wait_timeout_value(timeout).await.map_err(to_py_err)?;
-            Python::attach(|py| sample.into_py(py))
-        })
-    }
+            fn support(&self) -> Option<String> {
+                self.inner.support_name().map(str::to_string)
+            }
 
-    fn subscribe(&self) -> PyMessageSubscription {
-        PyMessageSubscription {
-            inner: Arc::new(tokio::sync::Mutex::new(self.inner.subscribe_value())),
+            fn wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+                let inner = self.inner.clone();
+                pyo3_async_runtimes::tokio::future_into_py(py, async move {
+                    let sample = inner.wait_value().await.map_err(to_py_err)?;
+                    Python::attach(|py| sample.into_py(py))
+                })
+            }
+
+            fn wait_timeout<'py>(
+                &self,
+                py: Python<'py>,
+                timeout_secs: f64,
+            ) -> PyResult<Bound<'py, PyAny>> {
+                let inner = self.inner.clone();
+                let timeout = duration_from_secs(timeout_secs)?;
+                pyo3_async_runtimes::tokio::future_into_py(py, async move {
+                    let sample = inner.wait_timeout_value(timeout).await.map_err(to_py_err)?;
+                    Python::attach(|py| sample.into_py(py))
+                })
+            }
+
+            fn subscribe(&self) -> PyMessageSubscription {
+                PyMessageSubscription {
+                    inner: Arc::new(tokio::sync::Mutex::new(self.inner.subscribe_value())),
+                }
+            }
+
+            $($extras)*
         }
-    }
+    };
+}
 
+impl_message_handle_pymethods!(PyPeriodicMessageHandle, {
     fn request<'py>(&self, py: Python<'py>, timeout_secs: f64) -> PyResult<Bound<'py, PyAny>> {
         let inner = self.inner.clone();
         let timeout = duration_from_secs(timeout_secs)?;
@@ -1232,50 +1256,9 @@ impl PyPeriodicMessageHandle {
             Ok(())
         })
     }
-}
+});
 
-#[pyclass(name = "EventMessageHandle", frozen, skip_from_py_object)]
-#[derive(Clone)]
-pub struct PyEventMessageHandle {
-    inner: EventMessageHandleKind,
-}
-
-#[pymethods]
-impl PyEventMessageHandle {
-    fn latest(&self, py: Python<'_>) -> PyResult<Option<PyMessageSample>> {
-        self.inner
-            .latest_value()
-            .map(|sample| sample.into_py(py))
-            .transpose()
-    }
-
-    fn support(&self) -> Option<String> {
-        self.inner.support_name().map(str::to_string)
-    }
-
-    fn wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let sample = inner.wait_value().await.map_err(to_py_err)?;
-            Python::attach(|py| sample.into_py(py))
-        })
-    }
-
-    fn wait_timeout<'py>(&self, py: Python<'py>, timeout_secs: f64) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        let timeout = duration_from_secs(timeout_secs)?;
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let sample = inner.wait_timeout_value(timeout).await.map_err(to_py_err)?;
-            Python::attach(|py| sample.into_py(py))
-        })
-    }
-
-    fn subscribe(&self) -> PyMessageSubscription {
-        PyMessageSubscription {
-            inner: Arc::new(tokio::sync::Mutex::new(self.inner.subscribe_value())),
-        }
-    }
-
+impl_message_handle_pymethods!(PyEventMessageHandle, {
     fn request<'py>(&self, py: Python<'py>, timeout_secs: f64) -> PyResult<Bound<'py, PyAny>> {
         let inner = self.inner.clone();
         let timeout = duration_from_secs(timeout_secs)?;
@@ -1284,83 +1267,13 @@ impl PyEventMessageHandle {
             Python::attach(|py| sample.into_py(py))
         })
     }
-}
+});
 
-#[pyclass(name = "MessageHandle", frozen, skip_from_py_object)]
-#[derive(Clone)]
-pub struct PyMessageHandle {
-    inner: PushMessageHandleKind,
-}
-
-#[pymethods]
-impl PyMessageHandle {
-    fn latest(&self, py: Python<'_>) -> PyResult<Option<PyMessageSample>> {
-        self.inner
-            .latest_value()
-            .map(|sample| sample.into_py(py))
-            .transpose()
-    }
-
-    fn support(&self) -> Option<String> {
-        self.inner.support_name().map(str::to_string)
-    }
-
-    fn wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let sample = inner.wait_value().await.map_err(to_py_err)?;
-            Python::attach(|py| sample.into_py(py))
-        })
-    }
-
-    fn wait_timeout<'py>(&self, py: Python<'py>, timeout_secs: f64) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        let timeout = duration_from_secs(timeout_secs)?;
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let sample = inner.wait_timeout_value(timeout).await.map_err(to_py_err)?;
-            Python::attach(|py| sample.into_py(py))
-        })
-    }
-
-    fn subscribe(&self) -> PyMessageSubscription {
-        PyMessageSubscription {
-            inner: Arc::new(tokio::sync::Mutex::new(self.inner.subscribe_value())),
-        }
-    }
-}
+impl_message_handle_pymethods!(PyMessageHandle, {});
 
 #[pyclass(name = "MetricSubscription", frozen, skip_from_py_object)]
 pub struct PyMetricSubscription {
     inner: Arc<tokio::sync::Mutex<MetricSubscriptionKind>>,
-}
-
-#[pymethods]
-impl PyMetricSubscription {
-    fn recv<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            match guard.recv_value().await {
-                Some(sample) => Python::attach(|py| sample.into_py(py)),
-                None => Err(PyStopAsyncIteration::new_err("metric subscription closed")),
-            }
-        })
-    }
-
-    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    fn __anext__<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = slf.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            match guard.recv_value().await {
-                Some(sample) => Python::attach(|py| sample.into_py(py)),
-                None => Err(PyStopAsyncIteration::new_err("metric subscription closed")),
-            }
-        })
-    }
 }
 
 #[pyclass(name = "MessageSubscription", frozen, skip_from_py_object)]
@@ -1368,34 +1281,37 @@ pub struct PyMessageSubscription {
     inner: Arc<tokio::sync::Mutex<MessageSubscriptionKind>>,
 }
 
-#[pymethods]
-impl PyMessageSubscription {
-    fn recv<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            match guard.recv_value().await {
-                Some(sample) => Python::attach(|py| sample.into_py(py)),
-                None => Err(PyStopAsyncIteration::new_err("message subscription closed")),
+macro_rules! impl_sample_subscription_pymethods {
+    ($py_type:ty, $closed_message:literal) => {
+        #[pymethods]
+        impl $py_type {
+            fn recv<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+                let inner = self.inner.clone();
+                pyo3_async_runtimes::tokio::future_into_py(py, async move {
+                    let mut guard = inner.lock().await;
+                    match guard.recv_value().await {
+                        Some(sample) => Python::attach(|py| sample.into_py(py)),
+                        None => Err(PyStopAsyncIteration::new_err($closed_message)),
+                    }
+                })
             }
-        })
-    }
 
-    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    fn __anext__<'py>(slf: PyRef<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let inner = slf.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut guard = inner.lock().await;
-            match guard.recv_value().await {
-                Some(sample) => Python::attach(|py| sample.into_py(py)),
-                None => Err(PyStopAsyncIteration::new_err("message subscription closed")),
+            fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+                slf
             }
-        })
-    }
+
+            fn __anext__<'py>(
+                slf: PyRef<'py, Self>,
+                py: Python<'py>,
+            ) -> PyResult<Bound<'py, PyAny>> {
+                slf.recv(py)
+            }
+        }
+    };
 }
+
+impl_sample_subscription_pymethods!(PyMetricSubscription, "metric subscription closed");
+impl_sample_subscription_pymethods!(PyMessageSubscription, "message subscription closed");
 
 #[pyclass(name = "TelemetryHandle", frozen, skip_from_py_object)]
 #[derive(Clone)]
