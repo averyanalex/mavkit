@@ -207,6 +207,30 @@ class TestTypedMissionCommandMarshaling:
         assert item.param3 == pytest.approx(1.0)
         assert item.param4 == pytest.approx(0.0)
 
+    def test_counterclockwise_alias_spelling_is_still_accepted(self):
+        yaw_command = mavkit.CondYaw(
+            angle_deg=45.0,
+            direction="counterclockwise",
+        )
+        assert yaw_command.direction == "counter_clockwise"
+
+        loiter_command = mavkit.NavLoiterTime(
+            latitude_deg=47.71,
+            longitude_deg=-122.41,
+            altitude_m=45.0,
+            direction="counterclockwise",
+        )
+        assert loiter_command.direction == "counter_clockwise"
+
+    def test_cond_yaw_invalid_direction_error_text_is_stable(self):
+        with pytest.raises(ValueError) as exc_info:
+            mavkit.CondYaw(angle_deg=10.0, direction="invalid")
+
+        assert (
+            str(exc_info.value)
+            == "direction must be 'clockwise' or 'counter_clockwise'"
+        )
+
     def test_geo_point3d_helper_preserves_frame_semantics(self):
         item = mavkit.MissionItem(
             command=mavkit.NavWaypoint.from_point(

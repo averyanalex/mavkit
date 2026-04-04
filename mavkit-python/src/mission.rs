@@ -90,179 +90,135 @@ fn position_from_components(
     }
 }
 
-fn speed_type_from_name(speed_type: &str) -> PyResult<mavkit::mission::commands::SpeedType> {
-    if speed_type.eq_ignore_ascii_case("airspeed") {
-        Ok(mavkit::mission::commands::SpeedType::Airspeed)
-    } else if speed_type.eq_ignore_ascii_case("groundspeed") {
-        Ok(mavkit::mission::commands::SpeedType::Groundspeed)
-    } else {
-        Err(pyo3::exceptions::PyValueError::new_err(
-            "speed_type must be 'airspeed' or 'groundspeed'",
-        ))
-    }
+macro_rules! string_enum_translators {
+    (
+        $from_fn:ident,
+        $name_fn:ident,
+        $enum_ty:path,
+        $error_message:literal,
+        {
+            $(
+                $variant:path => [$canonical:literal $(, $alias:literal)* $(,)?]
+            ),+ $(,)?
+        }
+    ) => {
+        fn $from_fn(value: &str) -> PyResult<$enum_ty> {
+            match () {
+                $(
+                    _ if value.eq_ignore_ascii_case($canonical)
+                        $(|| value.eq_ignore_ascii_case($alias))* => Ok($variant),
+                )+
+                _ => Err(pyo3::exceptions::PyValueError::new_err($error_message)),
+            }
+        }
+
+        fn $name_fn(value: $enum_ty) -> &'static str {
+            match value {
+                $(
+                    $variant => $canonical,
+                )+
+            }
+        }
+    };
 }
 
-fn speed_type_name(speed_type: mavkit::mission::commands::SpeedType) -> &'static str {
-    match speed_type {
-        mavkit::mission::commands::SpeedType::Airspeed => "airspeed",
-        mavkit::mission::commands::SpeedType::Groundspeed => "groundspeed",
-    }
-}
-
-fn yaw_direction_from_name(direction: &str) -> PyResult<mavkit::mission::commands::YawDirection> {
-    if direction.eq_ignore_ascii_case("clockwise") {
-        Ok(mavkit::mission::commands::YawDirection::Clockwise)
-    } else if direction.eq_ignore_ascii_case("counter_clockwise")
-        || direction.eq_ignore_ascii_case("counterclockwise")
+string_enum_translators!(
+    speed_type_from_name,
+    speed_type_name,
+    mavkit::mission::commands::SpeedType,
+    "speed_type must be 'airspeed' or 'groundspeed'",
     {
-        Ok(mavkit::mission::commands::YawDirection::CounterClockwise)
-    } else {
-        Err(pyo3::exceptions::PyValueError::new_err(
-            "direction must be 'clockwise' or 'counter_clockwise'",
-        ))
+        mavkit::mission::commands::SpeedType::Airspeed => ["airspeed"],
+        mavkit::mission::commands::SpeedType::Groundspeed => ["groundspeed"],
     }
-}
+);
 
-fn yaw_direction_name(direction: mavkit::mission::commands::YawDirection) -> &'static str {
-    match direction {
-        mavkit::mission::commands::YawDirection::Clockwise => "clockwise",
-        mavkit::mission::commands::YawDirection::CounterClockwise => "counter_clockwise",
-    }
-}
-
-fn loiter_direction_from_name(
-    direction: &str,
-) -> PyResult<mavkit::mission::commands::LoiterDirection> {
-    if direction.eq_ignore_ascii_case("clockwise") {
-        Ok(mavkit::mission::commands::LoiterDirection::Clockwise)
-    } else if direction.eq_ignore_ascii_case("counter_clockwise")
-        || direction.eq_ignore_ascii_case("counterclockwise")
+string_enum_translators!(
+    yaw_direction_from_name,
+    yaw_direction_name,
+    mavkit::mission::commands::YawDirection,
+    "direction must be 'clockwise' or 'counter_clockwise'",
     {
-        Ok(mavkit::mission::commands::LoiterDirection::CounterClockwise)
-    } else {
-        Err(pyo3::exceptions::PyValueError::new_err(
-            "direction must be 'clockwise' or 'counter_clockwise'",
-        ))
+        mavkit::mission::commands::YawDirection::Clockwise => ["clockwise"],
+        mavkit::mission::commands::YawDirection::CounterClockwise => [
+            "counter_clockwise",
+            "counterclockwise",
+        ],
     }
-}
+);
 
-fn loiter_direction_name(direction: mavkit::mission::commands::LoiterDirection) -> &'static str {
-    match direction {
-        mavkit::mission::commands::LoiterDirection::Clockwise => "clockwise",
-        mavkit::mission::commands::LoiterDirection::CounterClockwise => "counter_clockwise",
+string_enum_translators!(
+    loiter_direction_from_name,
+    loiter_direction_name,
+    mavkit::mission::commands::LoiterDirection,
+    "direction must be 'clockwise' or 'counter_clockwise'",
+    {
+        mavkit::mission::commands::LoiterDirection::Clockwise => ["clockwise"],
+        mavkit::mission::commands::LoiterDirection::CounterClockwise => [
+            "counter_clockwise",
+            "counterclockwise",
+        ],
     }
-}
+);
 
-fn alt_change_action_from_name(
-    action: &str,
-) -> PyResult<mavkit::mission::commands::AltChangeAction> {
-    if action.eq_ignore_ascii_case("neutral") {
-        Ok(mavkit::mission::commands::AltChangeAction::Neutral)
-    } else if action.eq_ignore_ascii_case("climb") {
-        Ok(mavkit::mission::commands::AltChangeAction::Climb)
-    } else if action.eq_ignore_ascii_case("descend") {
-        Ok(mavkit::mission::commands::AltChangeAction::Descend)
-    } else {
-        Err(pyo3::exceptions::PyValueError::new_err(
-            "action must be 'neutral', 'climb', or 'descend'",
-        ))
+string_enum_translators!(
+    alt_change_action_from_name,
+    alt_change_action_name,
+    mavkit::mission::commands::AltChangeAction,
+    "action must be 'neutral', 'climb', or 'descend'",
+    {
+        mavkit::mission::commands::AltChangeAction::Neutral => ["neutral"],
+        mavkit::mission::commands::AltChangeAction::Climb => ["climb"],
+        mavkit::mission::commands::AltChangeAction::Descend => ["descend"],
     }
-}
+);
 
-fn alt_change_action_name(action: mavkit::mission::commands::AltChangeAction) -> &'static str {
-    match action {
-        mavkit::mission::commands::AltChangeAction::Neutral => "neutral",
-        mavkit::mission::commands::AltChangeAction::Climb => "climb",
-        mavkit::mission::commands::AltChangeAction::Descend => "descend",
+string_enum_translators!(
+    fence_action_from_name,
+    fence_action_name,
+    mavkit::mission::commands::FenceAction,
+    "action must be 'disable', 'enable', or 'disable_floor'",
+    {
+        mavkit::mission::commands::FenceAction::Disable => ["disable"],
+        mavkit::mission::commands::FenceAction::Enable => ["enable"],
+        mavkit::mission::commands::FenceAction::DisableFloor => ["disable_floor"],
     }
-}
+);
 
-fn fence_action_from_name(action: &str) -> PyResult<mavkit::mission::commands::FenceAction> {
-    if action.eq_ignore_ascii_case("disable") {
-        Ok(mavkit::mission::commands::FenceAction::Disable)
-    } else if action.eq_ignore_ascii_case("enable") {
-        Ok(mavkit::mission::commands::FenceAction::Enable)
-    } else if action.eq_ignore_ascii_case("disable_floor") {
-        Ok(mavkit::mission::commands::FenceAction::DisableFloor)
-    } else {
-        Err(pyo3::exceptions::PyValueError::new_err(
-            "action must be 'disable', 'enable', or 'disable_floor'",
-        ))
+string_enum_translators!(
+    parachute_action_from_name,
+    parachute_action_name,
+    mavkit::mission::commands::ParachuteAction,
+    "action must be 'disable', 'enable', or 'release'",
+    {
+        mavkit::mission::commands::ParachuteAction::Disable => ["disable"],
+        mavkit::mission::commands::ParachuteAction::Enable => ["enable"],
+        mavkit::mission::commands::ParachuteAction::Release => ["release"],
     }
-}
+);
 
-fn fence_action_name(action: mavkit::mission::commands::FenceAction) -> &'static str {
-    match action {
-        mavkit::mission::commands::FenceAction::Disable => "disable",
-        mavkit::mission::commands::FenceAction::Enable => "enable",
-        mavkit::mission::commands::FenceAction::DisableFloor => "disable_floor",
+string_enum_translators!(
+    gripper_action_from_name,
+    gripper_action_name,
+    mavkit::mission::commands::GripperAction,
+    "action must be 'release' or 'grab'",
+    {
+        mavkit::mission::commands::GripperAction::Release => ["release"],
+        mavkit::mission::commands::GripperAction::Grab => ["grab"],
     }
-}
+);
 
-fn parachute_action_from_name(
-    action: &str,
-) -> PyResult<mavkit::mission::commands::ParachuteAction> {
-    if action.eq_ignore_ascii_case("disable") {
-        Ok(mavkit::mission::commands::ParachuteAction::Disable)
-    } else if action.eq_ignore_ascii_case("enable") {
-        Ok(mavkit::mission::commands::ParachuteAction::Enable)
-    } else if action.eq_ignore_ascii_case("release") {
-        Ok(mavkit::mission::commands::ParachuteAction::Release)
-    } else {
-        Err(pyo3::exceptions::PyValueError::new_err(
-            "action must be 'disable', 'enable', or 'release'",
-        ))
+string_enum_translators!(
+    winch_action_from_name,
+    winch_action_name,
+    mavkit::mission::commands::WinchAction,
+    "action must be 'relax', 'length_control', or 'rate_control'",
+    {
+        mavkit::mission::commands::WinchAction::Relax => ["relax"],
+        mavkit::mission::commands::WinchAction::LengthControl => ["length_control"],
+        mavkit::mission::commands::WinchAction::RateControl => ["rate_control"],
     }
-}
-
-fn parachute_action_name(action: mavkit::mission::commands::ParachuteAction) -> &'static str {
-    match action {
-        mavkit::mission::commands::ParachuteAction::Disable => "disable",
-        mavkit::mission::commands::ParachuteAction::Enable => "enable",
-        mavkit::mission::commands::ParachuteAction::Release => "release",
-    }
-}
-
-fn gripper_action_from_name(action: &str) -> PyResult<mavkit::mission::commands::GripperAction> {
-    if action.eq_ignore_ascii_case("release") {
-        Ok(mavkit::mission::commands::GripperAction::Release)
-    } else if action.eq_ignore_ascii_case("grab") {
-        Ok(mavkit::mission::commands::GripperAction::Grab)
-    } else {
-        Err(pyo3::exceptions::PyValueError::new_err(
-            "action must be 'release' or 'grab'",
-        ))
-    }
-}
-
-fn gripper_action_name(action: mavkit::mission::commands::GripperAction) -> &'static str {
-    match action {
-        mavkit::mission::commands::GripperAction::Release => "release",
-        mavkit::mission::commands::GripperAction::Grab => "grab",
-    }
-}
-
-fn winch_action_from_name(action: &str) -> PyResult<mavkit::mission::commands::WinchAction> {
-    if action.eq_ignore_ascii_case("relax") {
-        Ok(mavkit::mission::commands::WinchAction::Relax)
-    } else if action.eq_ignore_ascii_case("length_control") {
-        Ok(mavkit::mission::commands::WinchAction::LengthControl)
-    } else if action.eq_ignore_ascii_case("rate_control") {
-        Ok(mavkit::mission::commands::WinchAction::RateControl)
-    } else {
-        Err(pyo3::exceptions::PyValueError::new_err(
-            "action must be 'relax', 'length_control', or 'rate_control'",
-        ))
-    }
-}
-
-fn winch_action_name(action: mavkit::mission::commands::WinchAction) -> &'static str {
-    match action {
-        mavkit::mission::commands::WinchAction::Relax => "relax",
-        mavkit::mission::commands::WinchAction::LengthControl => "length_control",
-        mavkit::mission::commands::WinchAction::RateControl => "rate_control",
-    }
-}
+);
 
 #[pyclass(name = "RawMissionCommand", frozen, from_py_object)]
 #[derive(Clone)]
