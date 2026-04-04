@@ -57,7 +57,7 @@ impl VehicleInner {
         custom_mode: u32,
         wait_for_observation: bool,
     ) -> Result<(), VehicleError> {
-        crate::mission::send_domain_command(self.command_tx.clone(), |reply| Command::SetMode {
+        crate::operation::send_domain_command(self.command_tx.clone(), |reply| Command::SetMode {
             custom_mode,
             reply,
         })

@@ -1,9 +1,10 @@
 use std::future::Future;
 use std::time::Duration;
 
+use crate::command::Command;
 use crate::error::VehicleError;
 use crate::observation::{ObservationHandle, ObservationSubscription, ObservationWriter};
-use tokio::sync::{Mutex, oneshot, watch};
+use tokio::sync::{Mutex, mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -137,4 +138,17 @@ where
     let _ = progress_task.await;
 
     command_result
+}
+
+pub(crate) async fn send_domain_command<T>(
+    command_tx: mpsc::Sender<Command>,
+    make: impl FnOnce(oneshot::Sender<Result<T, VehicleError>>) -> Command,
+) -> Result<T, VehicleError> {
+    let (tx, rx) = oneshot::channel();
+    command_tx
+        .send(make(tx))
+        .await
+        .map_err(|_| VehicleError::Disconnected)?;
+
+    rx.await.map_err(|_| VehicleError::Disconnected)?
 }

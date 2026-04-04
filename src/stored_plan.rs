@@ -2,10 +2,9 @@ use std::time::Duration;
 
 use crate::command::Command;
 use crate::error::VehicleError;
-use crate::mission::{
-    MissionProtocolScope, MissionType, OperationReservation, WireMissionPlan, run_domain_operation,
-};
+use crate::mission::{MissionType, WireMissionPlan, run_domain_operation};
 use crate::observation::{ObservationHandle, ObservationSubscription, ObservationWriter};
+use crate::protocol_scope::{MissionProtocolScope, OperationReservation};
 use crate::types::{StoredPlanOperationKind, SupportState, SyncState};
 use crate::vehicle::VehicleInner;
 use std::sync::{Arc, Mutex};
@@ -154,7 +153,7 @@ where
 ///
 /// # Conflict model
 ///
-/// The fence and rally domains share the same [`MissionProtocolScope`] as the mission domain.
+/// The fence and rally domains share the same `MissionProtocolScope` as the mission domain.
 /// ArduPilot's MAVLink mission protocol permits only one transfer at a time across all domains,
 /// so starting a transfer while another is active (for any domain) returns
 /// [`VehicleError::OperationConflict`] immediately.

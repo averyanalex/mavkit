@@ -93,7 +93,7 @@ impl StoredPlanAccess for RallyState {
 ///
 /// # Conflict model
 ///
-/// Rally transfers share the same [`MissionProtocolScope`](crate::mission::MissionProtocolScope)
+/// Rally transfers share the same `MissionProtocolScope`
 /// as the mission and fence domains.  Starting a rally transfer while any other domain transfer
 /// is active returns [`VehicleError::OperationConflict`] immediately.
 pub struct RallyHandle<'a> {
@@ -303,7 +303,8 @@ fn rally_decode_error(detail: &str) -> VehicleError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mission::{MissionDomain, MissionProtocolScope};
+    use crate::mission::MissionDomain;
+    use crate::protocol_scope::MissionProtocolScope;
 
     fn sample_plan() -> RallyPlan {
         RallyPlan {

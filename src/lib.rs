@@ -14,6 +14,7 @@ pub mod modes;
 pub mod observation;
 pub(crate) mod operation;
 pub mod params;
+pub(crate) mod protocol_scope;
 pub mod rally;
 pub mod raw;
 mod state;

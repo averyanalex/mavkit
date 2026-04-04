@@ -69,7 +69,8 @@ impl StoredPlanAccess for FenceState {
 #[cfg(test)]
 mod tests {
     use crate::error::VehicleError;
-    use crate::mission::{MissionDomain, MissionProtocolScope};
+    use crate::mission::MissionDomain;
+    use crate::protocol_scope::MissionProtocolScope;
     use crate::stored_plan::StoredPlanDomain;
     use crate::types::StoredPlanOperationKind;
 

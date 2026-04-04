@@ -3,7 +3,7 @@ use crate::command::{Command, CommandIntPayload, send_typed_command_int};
 use crate::dialect;
 use crate::error::VehicleError;
 use crate::geo::{GeoPoint3dMsl, GeoPoint3dRelHome, try_latitude_e7, try_longitude_e7};
-use crate::mission::send_domain_command;
+use crate::operation::send_domain_command;
 
 const POSITION_ONLY_TYPE_MASK: u16 = 0x07F8;
 const VELOCITY_ONLY_TYPE_MASK: u16 = 0x0DC7;

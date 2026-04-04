@@ -25,7 +25,7 @@ pub type FenceClearOp = MissionOperationHandle<()>;
 ///
 /// # Conflict model
 ///
-/// Fence transfers share the same [`MissionProtocolScope`](crate::mission::MissionProtocolScope)
+/// Fence transfers share the same `MissionProtocolScope`
 /// as the mission and rally domains.  Starting a fence transfer while any other domain transfer
 /// is active returns [`VehicleError::OperationConflict`] immediately.
 pub struct FenceHandle<'a> {

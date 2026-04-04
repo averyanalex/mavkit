@@ -21,8 +21,8 @@ pub use sub::ArduSubHandle;
 use crate::command::Command;
 use crate::dialect;
 use crate::error::VehicleError;
-use crate::mission::send_domain_command;
 use crate::observation::ObservationHandle;
+use crate::operation::send_domain_command;
 use crate::state::{StateChannels, VehicleType};
 use crate::vehicle::VehicleInner;
 use calibration::{

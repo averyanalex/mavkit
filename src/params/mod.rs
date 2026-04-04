@@ -8,9 +8,9 @@ pub use types::{Param, ParamState, ParamStore, ParamType, ParamWriteResult};
 
 use crate::command::Command;
 use crate::error::VehicleError;
-use crate::mission::{MissionProtocolScope, OperationReservation, send_domain_command};
 use crate::observation::{ObservationHandle, ObservationSubscription, ObservationWriter};
-use crate::operation::run_with_progress_bridge;
+use crate::operation::{run_with_progress_bridge, send_domain_command};
+use crate::protocol_scope::{MissionProtocolScope, OperationReservation};
 use crate::types::{ParamOperationKind, ParamOperationProgress, SyncState};
 use crate::vehicle::VehicleInner;
 use std::sync::{Arc, Mutex};
@@ -129,7 +129,7 @@ impl ParamsDomain {
 /// # Conflict model
 ///
 /// Parameter operations (`download_all`, `write_batch`, `write`) share the same
-/// [`MissionProtocolScope`](crate::mission::MissionProtocolScope) as mission/fence/rally
+/// `MissionProtocolScope` as mission/fence/rally
 /// transfers. Starting a param operation while any other protocol operation is active
 /// returns [`VehicleError::OperationConflict`] immediately.
 pub struct ParamsHandle<'a> {
