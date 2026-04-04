@@ -27,7 +27,7 @@ use crate::geo::{
 };
 use crate::info::PyInfoHandle;
 use crate::link::PyLinkHandle;
-use crate::macros::{define_vehicle_plan_handle, py_subscription};
+use crate::macros::{define_vehicle_plan_handle, py_async_unit, py_subscription};
 use crate::mission::PyMissionPlan;
 use crate::modes::PyModesHandle;
 use crate::params::{PyParamsHandle, PySyncState};
@@ -1470,75 +1470,39 @@ impl PyVehicle {
     }
 
     fn arm<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle.arm().await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.arm())
     }
 
     fn arm_no_wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle.arm_no_wait().await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.arm_no_wait())
     }
 
     fn force_arm<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle.force_arm().await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.force_arm())
     }
 
     fn force_arm_no_wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle.force_arm_no_wait().await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.force_arm_no_wait())
     }
 
     fn disarm<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle.disarm().await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.disarm())
     }
 
     fn disarm_no_wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle.disarm_no_wait().await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.disarm_no_wait())
     }
 
     fn force_disarm<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle.force_disarm().await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.force_disarm())
     }
 
     fn force_disarm_no_wait<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle.force_disarm_no_wait().await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.force_disarm_no_wait())
     }
 
     fn set_mode<'py>(&self, py: Python<'py>, custom_mode: u32) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle.set_mode(custom_mode).await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.set_mode(custom_mode))
     }
 
     fn set_mode_no_wait<'py>(
@@ -1546,26 +1510,12 @@ impl PyVehicle {
         py: Python<'py>,
         custom_mode: u32,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle
-                .set_mode_no_wait(custom_mode)
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.set_mode_no_wait(custom_mode))
     }
 
     fn set_mode_by_name<'py>(&self, py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
         let mode_name = name.to_string();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle
-                .set_mode_by_name(&mode_name)
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.set_mode_by_name(&mode_name))
     }
 
     fn set_mode_by_name_no_wait<'py>(
@@ -1573,15 +1523,12 @@ impl PyVehicle {
         py: Python<'py>,
         name: &str,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
         let mode_name = name.to_string();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle
-                .set_mode_by_name_no_wait(&mode_name)
-                .await
-                .map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(
+            py,
+            vehicle = self.inner.clone();
+            vehicle.set_mode_by_name_no_wait(&mode_name)
+        )
     }
 
     #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_msl_m))]
@@ -1592,20 +1539,12 @@ impl PyVehicle {
         longitude_deg: f64,
         altitude_msl_m: f64,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
         let point = geo_point_msl(latitude_deg, longitude_deg, altitude_msl_m);
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle.set_home(point).await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.set_home(point))
     }
 
     fn set_home_current<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle.set_home_current().await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.set_home_current())
     }
 
     #[pyo3(signature = (*, latitude_deg, longitude_deg, altitude_msl_m))]
@@ -1616,20 +1555,12 @@ impl PyVehicle {
         longitude_deg: f64,
         altitude_msl_m: f64,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
         let point = geo_point_msl(latitude_deg, longitude_deg, altitude_msl_m);
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle.set_origin(point).await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.set_origin(point))
     }
 
     fn disconnect<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let vehicle = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            vehicle.disconnect().await.map_err(to_py_err)?;
-            Ok(())
-        })
+        py_async_unit!(py, vehicle = self.inner.clone(); vehicle.disconnect())
     }
 
     fn __aenter__<'py>(slf: &Bound<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
