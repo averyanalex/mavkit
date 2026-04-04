@@ -4,10 +4,10 @@ use crate::mission::{MissionType, WireMissionPlan};
 use crate::params::{ParamStore, ParamWriteResult};
 use crate::raw::CommandAck;
 use std::time::Instant;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
-pub(crate) struct RawCommandIntPayload {
+pub(crate) struct CommandIntPayload {
     pub(crate) command: MavCmd,
     pub(crate) frame: MavFrame,
     pub(crate) current: u8,
@@ -52,7 +52,7 @@ pub(crate) enum Command {
         reply: oneshot::Sender<Result<CommandAck, VehicleError>>,
     },
     RawCommandInt {
-        payload: RawCommandIntPayload,
+        payload: CommandIntPayload,
         reply: oneshot::Sender<Result<CommandAck, VehicleError>>,
     },
     RawSend {
@@ -103,4 +103,24 @@ pub(crate) enum Command {
         reply: oneshot::Sender<Result<Vec<ParamWriteResult>, VehicleError>>,
     },
     Shutdown,
+}
+
+pub(crate) async fn send_command_int_ack(
+    command_tx: mpsc::Sender<Command>,
+    payload: CommandIntPayload,
+) -> Result<CommandAck, VehicleError> {
+    let (tx, rx) = oneshot::channel();
+    command_tx
+        .send(Command::RawCommandInt { payload, reply: tx })
+        .await
+        .map_err(|_| VehicleError::Disconnected)?;
+
+    rx.await.map_err(|_| VehicleError::Disconnected)?
+}
+
+pub(crate) async fn send_typed_command_int(
+    command_tx: mpsc::Sender<Command>,
+    payload: CommandIntPayload,
+) -> Result<(), VehicleError> {
+    send_command_int_ack(command_tx, payload).await.map(|_| ())
 }

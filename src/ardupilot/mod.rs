@@ -847,6 +847,88 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn plane_reposition_rel_home_command_encoding() {
+        let (vehicle, msg_tx, sent) = connect_mock_vehicle_with_sent_for_type_and_mode(
+            dialect::MavType::MAV_TYPE_FIXED_WING,
+            15,
+        )
+        .await;
+
+        let session = vehicle
+            .ardupilot()
+            .guided()
+            .await
+            .expect("plane guided session should acquire");
+        let task_session = session.clone();
+        let reposition_task = tokio::spawn(async move {
+            let GuidedSpecific::Plane(plane) = task_session.specific() else {
+                panic!("plane guided session should expose plane handle");
+            };
+            plane
+                .reposition_rel_home(crate::GeoPoint3dRelHome {
+                    latitude_deg: 47.397742,
+                    longitude_deg: 8.545594,
+                    relative_alt_m: 42.5,
+                })
+                .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        msg_tx
+            .send((
+                default_header(),
+                ack_msg(
+                    dialect::MavCmd::MAV_CMD_DO_REPOSITION,
+                    dialect::MavResult::MAV_RESULT_ACCEPTED,
+                ),
+            ))
+            .await
+            .expect("plane reposition ack should be delivered");
+
+        assert!(
+            reposition_task
+                .await
+                .expect("plane reposition task should join")
+                .is_ok()
+        );
+
+        let reposition = sent
+            .lock()
+            .expect("sent messages lock should not poison")
+            .iter()
+            .find_map(|(_, msg)| match msg {
+                dialect::MavMessage::COMMAND_INT(data)
+                    if data.command == dialect::MavCmd::MAV_CMD_DO_REPOSITION =>
+                {
+                    Some(data.clone())
+                }
+                _ => None,
+            })
+            .expect("plane reposition should send command_int");
+
+        assert_eq!(
+            reposition.frame,
+            dialect::MavFrame::MAV_FRAME_GLOBAL_RELATIVE_ALT
+        );
+        assert_eq!(reposition.x, 473_977_420);
+        assert_eq!(reposition.y, 85_455_940);
+        assert_eq!(reposition.z, 42.5);
+        assert_eq!(reposition.param1, 0.0);
+        assert_eq!(reposition.param2, 1.0);
+        assert_eq!(reposition.param3, 0.0);
+        assert_eq!(reposition.param4, 0.0);
+
+        session
+            .close()
+            .await
+            .expect("guided session should close cleanly");
+        vehicle
+            .disconnect()
+            .await
+            .expect("disconnect should succeed");
+    }
+
+    #[tokio::test]
     async fn vtol_takeoff_command_encoding() {
         let (vehicle, msg_tx, sent) = connect_mock_vehicle_with_sent_for_type_and_mode(
             dialect::MavType::MAV_TYPE_VTOL_FIXEDROTOR,

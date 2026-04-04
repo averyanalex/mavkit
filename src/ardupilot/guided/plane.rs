@@ -1,9 +1,8 @@
 use super::RelativeClimbTarget;
-use crate::command::{Command, RawCommandIntPayload};
+use crate::command::{CommandIntPayload, send_typed_command_int};
 use crate::dialect;
 use crate::error::VehicleError;
 use crate::geo::{GeoPoint3dMsl, GeoPoint3dRelHome, try_latitude_e7, try_longitude_e7};
-use crate::mission::send_domain_command;
 
 const MAV_DO_REPOSITION_FLAGS_CHANGE_MODE: f32 = 1.0;
 
@@ -76,8 +75,9 @@ impl<'a> ArduPlaneVtolGuidedHandle<'a> {
         self._session.ensure_active()?;
         validate_positive_f32(target.relative_climb_m, "relative_climb_m")?;
 
-        send_domain_command(self._session.command_tx(), |reply| Command::RawCommandInt {
-            payload: RawCommandIntPayload {
+        send_typed_command_int(
+            self._session.command_tx(),
+            CommandIntPayload {
                 command: dialect::MavCmd::MAV_CMD_NAV_TAKEOFF,
                 frame: dialect::MavFrame::MAV_FRAME_LOCAL_OFFSET_NED,
                 current: 0,
@@ -87,17 +87,16 @@ impl<'a> ArduPlaneVtolGuidedHandle<'a> {
                 y: 0,
                 z: -target.relative_climb_m,
             },
-            reply,
-        })
+        )
         .await
-        .map(|_| ())
     }
 
     pub async fn hold(&self) -> Result<(), VehicleError> {
         self._session.ensure_active()?;
 
-        send_domain_command(self._session.command_tx(), |reply| Command::RawCommandInt {
-            payload: RawCommandIntPayload {
+        send_typed_command_int(
+            self._session.command_tx(),
+            CommandIntPayload {
                 command: dialect::MavCmd::MAV_CMD_NAV_LOITER_UNLIM,
                 frame: dialect::MavFrame::MAV_FRAME_MISSION,
                 current: 0,
@@ -107,10 +106,8 @@ impl<'a> ArduPlaneVtolGuidedHandle<'a> {
                 y: 0,
                 z: 0.0,
             },
-            reply,
-        })
+        )
         .await
-        .map(|_| ())
     }
 }
 
@@ -121,8 +118,9 @@ async fn send_reposition(
     lon_e7: i32,
     alt_m: f32,
 ) -> Result<(), VehicleError> {
-    send_domain_command(session.command_tx(), |reply| Command::RawCommandInt {
-        payload: RawCommandIntPayload {
+    send_typed_command_int(
+        session.command_tx(),
+        CommandIntPayload {
             command: dialect::MavCmd::MAV_CMD_DO_REPOSITION,
             frame,
             current: 0,
@@ -132,10 +130,8 @@ async fn send_reposition(
             y: lon_e7,
             z: alt_m,
         },
-        reply,
-    })
+    )
     .await
-    .map(|_| ())
 }
 
 fn finite_f32(value: f64, field: &str) -> Result<f32, VehicleError> {

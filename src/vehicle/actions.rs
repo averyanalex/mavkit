@@ -1,4 +1,4 @@
-use crate::command::{Command, RawCommandIntPayload};
+use crate::command::{Command, CommandIntPayload, send_typed_command_int};
 use crate::dialect;
 use crate::error::VehicleError;
 use crate::geo::{GeoPoint3dMsl, try_latitude_e7, try_longitude_e7};
@@ -292,8 +292,9 @@ impl Vehicle {
     pub async fn set_home(&self, position: GeoPoint3dMsl) -> Result<(), VehicleError> {
         let lat_e7 = try_latitude_e7(position.latitude_deg)?;
         let lon_e7 = try_longitude_e7(position.longitude_deg)?;
-        self.send_command(|reply| Command::RawCommandInt {
-            payload: RawCommandIntPayload {
+        send_typed_command_int(
+            self.inner.command_tx.clone(),
+            CommandIntPayload {
                 command: dialect::MavCmd::MAV_CMD_DO_SET_HOME,
                 frame: dialect::MavFrame::MAV_FRAME_GLOBAL,
                 current: 0,
@@ -304,10 +305,8 @@ impl Vehicle {
                 // Altitude narrowed to f32 at wire boundary (MAVLink z field).
                 z: position.altitude_msl_m as f32,
             },
-            reply,
-        })
+        )
         .await
-        .map(|_| ())
     }
 
     /// Set the vehicle's home position to its current GPS location.

@@ -1,5 +1,5 @@
 use crate::VehicleError;
-use crate::command::{Command, RawCommandIntPayload};
+use crate::command::{Command, CommandIntPayload, send_command_int_ack};
 use crate::dialect::{self, MavCmd};
 use crate::observation::ObservationSubscription;
 use crate::state::LinkState;
@@ -168,21 +168,20 @@ impl<'a> RawHandle<'a> {
         let command = parse_command(command)?;
         let frame = parse_frame(frame)?;
 
-        self.vehicle
-            .send_command(|reply| Command::RawCommandInt {
-                payload: RawCommandIntPayload {
-                    command,
-                    frame,
-                    current,
-                    autocontinue,
-                    params,
-                    x,
-                    y,
-                    z,
-                },
-                reply,
-            })
-            .await
+        send_command_int_ack(
+            self.vehicle.inner.command_tx.clone(),
+            CommandIntPayload {
+                command,
+                frame,
+                current,
+                autocontinue,
+                params,
+                x,
+                y,
+                z,
+            },
+        )
+        .await
     }
 
     /// Sends `MAV_CMD_REQUEST_MESSAGE` for `message_id` and returns the first matching message.

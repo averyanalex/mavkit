@@ -1,5 +1,5 @@
 use super::{ArduSubGuidedHandle, SubGotoDepthTarget};
-use crate::command::{Command, RawCommandIntPayload};
+use crate::command::{Command, CommandIntPayload, send_typed_command_int};
 use crate::dialect;
 use crate::error::VehicleError;
 use crate::geo::{try_latitude_e7, try_longitude_e7};
@@ -14,8 +14,9 @@ impl<'a> ArduSubGuidedHandle<'a> {
         let lon_e7 = try_longitude_e7(target.point.longitude_deg)?;
         let depth_m = validate_non_negative_f32(target.depth_m, "depth_m")?;
 
-        send_domain_command(self._session.command_tx(), |reply| Command::RawCommandInt {
-            payload: RawCommandIntPayload {
+        send_typed_command_int(
+            self._session.command_tx(),
+            CommandIntPayload {
                 command: dialect::MavCmd::MAV_CMD_DO_REPOSITION,
                 frame: dialect::MavFrame::MAV_FRAME_GLOBAL_RELATIVE_ALT,
                 current: 0,
@@ -25,10 +26,8 @@ impl<'a> ArduSubGuidedHandle<'a> {
                 y: lon_e7,
                 z: -depth_m,
             },
-            reply,
-        })
+        )
         .await
-        .map(|_| ())
     }
 
     pub async fn set_velocity_body(
@@ -76,8 +75,9 @@ impl<'a> ArduSubGuidedHandle<'a> {
     pub async fn hold(&self) -> Result<(), VehicleError> {
         self._session.ensure_active()?;
 
-        send_domain_command(self._session.command_tx(), |reply| Command::RawCommandInt {
-            payload: RawCommandIntPayload {
+        send_typed_command_int(
+            self._session.command_tx(),
+            CommandIntPayload {
                 command: dialect::MavCmd::MAV_CMD_NAV_LOITER_UNLIM,
                 frame: dialect::MavFrame::MAV_FRAME_MISSION,
                 current: 0,
@@ -87,10 +87,8 @@ impl<'a> ArduSubGuidedHandle<'a> {
                 y: 0,
                 z: 0.0,
             },
-            reply,
-        })
+        )
         .await
-        .map(|_| ())
     }
 }
 

@@ -1,5 +1,5 @@
 use super::ArduRoverGuidedHandle;
-use crate::command::{Command, RawCommandIntPayload};
+use crate::command::{Command, CommandIntPayload, send_typed_command_int};
 use crate::dialect;
 use crate::error::VehicleError;
 use crate::geo::{GeoPoint2d, try_latitude_e7, try_longitude_e7};
@@ -13,8 +13,9 @@ impl<'a> ArduRoverGuidedHandle<'a> {
         let lat_e7 = try_latitude_e7(target.latitude_deg)?;
         let lon_e7 = try_longitude_e7(target.longitude_deg)?;
 
-        send_domain_command(self._session.command_tx(), |reply| Command::RawCommandInt {
-            payload: RawCommandIntPayload {
+        send_typed_command_int(
+            self._session.command_tx(),
+            CommandIntPayload {
                 command: dialect::MavCmd::MAV_CMD_DO_REPOSITION,
                 frame: dialect::MavFrame::MAV_FRAME_GLOBAL,
                 current: 0,
@@ -24,10 +25,8 @@ impl<'a> ArduRoverGuidedHandle<'a> {
                 y: lon_e7,
                 z: 0.0,
             },
-            reply,
-        })
+        )
         .await
-        .map(|_| ())
     }
 
     pub async fn drive(&self, forward_mps: f32, turn_rate_dps: f32) -> Result<(), VehicleError> {

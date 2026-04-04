@@ -3,7 +3,7 @@ use super::{
     dispatcher::{CommandIntRequest, CommandLongRequest},
     get_target, send_message,
 };
-use crate::command::RawCommandIntPayload;
+use crate::command::CommandIntPayload;
 use crate::dialect::{self, MavCmd};
 use crate::error::VehicleError;
 use crate::raw::CommandAck;
@@ -113,7 +113,7 @@ pub(super) async fn handle_command_long_raw(
 }
 
 pub(super) async fn handle_command_int(
-    payload: RawCommandIntPayload,
+    payload: CommandIntPayload,
     ctx: &mut CommandContext,
 ) -> Result<CommandAck, VehicleError> {
     let target = get_target(&ctx.vehicle_target)?;
