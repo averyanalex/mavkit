@@ -60,6 +60,8 @@ impl PyVehicleConfig {
         transfer_timeout_secs = 30.0,
         retry_policy = None,
     ))]
+    // Mirrors the public Python keyword-only constructor shape.
+    #[allow(clippy::too_many_arguments)]
     fn new(
         gcs_system_id: u8,
         gcs_component_id: u8,

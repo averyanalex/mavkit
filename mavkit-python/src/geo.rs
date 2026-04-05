@@ -18,7 +18,7 @@ impl PyGeoPoint2d {
         Self { inner }
     }
 
-    pub(crate) fn into_inner(&self) -> mavkit::GeoPoint2d {
+    pub(crate) fn to_inner(&self) -> mavkit::GeoPoint2d {
         self.inner.clone()
     }
 }
@@ -28,7 +28,7 @@ impl PyGeoPoint2d {
 /// Returns a `TypeError` if the object is not a `GeoPoint2d`.
 pub(crate) fn geo_point2d_from_py(point: &Bound<'_, PyAny>) -> PyResult<mavkit::GeoPoint2d> {
     if let Ok(point) = point.extract::<PyRef<'_, PyGeoPoint2d>>() {
-        Ok(point.into_inner())
+        Ok(point.to_inner())
     } else {
         Err(PyTypeError::new_err("expected GeoPoint2d"))
     }
@@ -81,7 +81,7 @@ impl From<mavkit::GeoPoint3dMsl> for PyGeoPoint3dMsl {
 }
 
 impl PyGeoPoint3dMsl {
-    pub(crate) fn into_inner(&self) -> mavkit::GeoPoint3dMsl {
+    pub(crate) fn to_inner(&self) -> mavkit::GeoPoint3dMsl {
         mavkit::GeoPoint3dMsl {
             latitude_deg: self.latitude_deg,
             longitude_deg: self.longitude_deg,
@@ -133,7 +133,7 @@ impl PyGeoPoint3dRelHome {
         Self { inner }
     }
 
-    pub(crate) fn into_inner(&self) -> mavkit::GeoPoint3dRelHome {
+    pub(crate) fn to_inner(&self) -> mavkit::GeoPoint3dRelHome {
         self.inner.clone()
     }
 }
@@ -183,7 +183,7 @@ impl PyGeoPoint3dTerrain {
         Self { inner }
     }
 
-    pub(crate) fn into_inner(&self) -> mavkit::GeoPoint3dTerrain {
+    pub(crate) fn to_inner(&self) -> mavkit::GeoPoint3dTerrain {
         self.inner.clone()
     }
 }

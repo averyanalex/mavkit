@@ -67,6 +67,8 @@ impl From<mavkit::SensorHealthSummary> for PySensorHealthSummary {
 impl PySensorHealthSummary {
     #[new]
     #[pyo3(signature = (*, gyro, accel, mag, baro, gps, airspeed, rc_receiver, battery, terrain, geofence))]
+    // Mirrors the public Python keyword-only constructor shape.
+    #[allow(clippy::too_many_arguments)]
     fn new(
         gyro: PySensorHealthState,
         accel: PySensorHealthState,

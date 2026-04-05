@@ -2,7 +2,7 @@ use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 
 use crate::geo::{
-    PyGeoPoint2d, PyGeoPoint3dMsl, PyGeoPoint3dRelHome, PyGeoPoint3dTerrain, geo_point2d_from_py,
+    geo_point2d_from_py, PyGeoPoint2d, PyGeoPoint3dMsl, PyGeoPoint3dRelHome, PyGeoPoint3dTerrain,
 };
 
 #[pyclass(name = "FenceInclusionPolygon", frozen, skip_from_py_object)]
@@ -261,13 +261,13 @@ impl PyFencePlan {
 
 fn rally_point_from_py(point: &Bound<'_, PyAny>) -> PyResult<mavkit::GeoPoint3d> {
     if let Ok(point) = point.extract::<PyRef<'_, PyGeoPoint3dMsl>>() {
-        return Ok(mavkit::GeoPoint3d::Msl(point.into_inner()));
+        return Ok(mavkit::GeoPoint3d::Msl(point.to_inner()));
     }
     if let Ok(point) = point.extract::<PyRef<'_, PyGeoPoint3dRelHome>>() {
-        return Ok(mavkit::GeoPoint3d::RelHome(point.into_inner()));
+        return Ok(mavkit::GeoPoint3d::RelHome(point.to_inner()));
     }
     if let Ok(point) = point.extract::<PyRef<'_, PyGeoPoint3dTerrain>>() {
-        return Ok(mavkit::GeoPoint3d::Terrain(point.into_inner()));
+        return Ok(mavkit::GeoPoint3d::Terrain(point.to_inner()));
     }
     Err(PyTypeError::new_err(
         "expected GeoPoint3dMsl, GeoPoint3dRelHome, or GeoPoint3dTerrain",
