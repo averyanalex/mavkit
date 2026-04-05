@@ -91,7 +91,8 @@ async fn periodic_request_waits_for_fresh_sample() {
     );
     let stale = handle.latest().expect("stale sample should exist");
 
-    let request_task = tokio::spawn(async move { handle.request(Duration::from_millis(250)).await });
+    let request_task =
+        tokio::spawn(async move { handle.request(Duration::from_millis(250)).await });
 
     let reply = match command_rx
         .recv()
@@ -165,7 +166,8 @@ async fn event_driven_request_sends_request_message() {
     let (writers, telemetry, mut command_rx) = telemetry_with_commands();
     let handle = telemetry.messages().home_position();
 
-    let request_task = tokio::spawn(async move { handle.request(Duration::from_millis(250)).await });
+    let request_task =
+        tokio::spawn(async move { handle.request(Duration::from_millis(250)).await });
 
     let reply = match command_rx
         .recv()
@@ -287,8 +289,14 @@ async fn status_text_subscribe_does_not_coalesce_repeated_events() {
             None,
         );
 
-    let first = subscription.recv().await.expect("first event should arrive");
-    let second = subscription.recv().await.expect("second event should arrive");
+    let first = subscription
+        .recv()
+        .await
+        .expect("first event should arrive");
+    let second = subscription
+        .recv()
+        .await
+        .expect("second event should arrive");
     assert_eq!(first.value.text, "repeat");
     assert_eq!(second.value.text, "repeat");
 }

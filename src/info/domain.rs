@@ -1,6 +1,7 @@
 use crate::event_loop::{InitManager, InitSnapshot};
 use crate::info::logic::{
-    firmware_from_init_state, hardware_from_init_state, persistent_identity, unique_ids_from_init_state,
+    firmware_from_init_state, hardware_from_init_state, persistent_identity,
+    unique_ids_from_init_state,
 };
 use crate::info::{FirmwareInfo, HardwareInfo, PersistentIdentity, UniqueIds};
 use crate::observation::{ObservationHandle, ObservationWriter};

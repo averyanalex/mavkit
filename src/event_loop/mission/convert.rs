@@ -1,5 +1,5 @@
 use crate::dialect;
-use crate::mission::{commands, MissionFrame, MissionItem, MissionType};
+use crate::mission::{MissionFrame, MissionItem, MissionType, commands};
 
 pub(in crate::event_loop) fn to_mav_mission_type(
     mission_type: MissionType,

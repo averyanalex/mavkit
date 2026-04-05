@@ -57,7 +57,8 @@ where
     let _ = progress_writer.publish(MissionOperationProgress::RequestCount);
     let (result_tx, result_rx) = oneshot::channel();
 
-    let op = operations::MissionOperationHandle::new(progress, result_rx, reservation.cancel.clone());
+    let op =
+        operations::MissionOperationHandle::new(progress, result_rx, reservation.cancel.clone());
 
     let cancel = reservation.cancel;
 
@@ -89,8 +90,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::map_transfer_progress;
-    use crate::mission::transfer::{TransferDirection, TransferPhase, TransferProgress};
     use crate::mission::MissionType;
+    use crate::mission::transfer::{TransferDirection, TransferPhase, TransferProgress};
     use crate::types::MissionOperationProgress;
 
     #[test]

@@ -20,7 +20,11 @@ impl MissionDomain {
         }
     }
 
-    pub(crate) fn start(&self, stores: &StateChannels, cancel: CancellationToken) -> JoinHandle<()> {
+    pub(crate) fn start(
+        &self,
+        stores: &StateChannels,
+        cancel: CancellationToken,
+    ) -> JoinHandle<()> {
         self.update_current_index(stores.mission_state.borrow().current_seq);
         let mut mission_state_rx = stores.mission_state.clone();
         let domain = self.clone();
@@ -103,11 +107,11 @@ mod tests {
         let first = domain
             .begin_operation(&scope, MissionOperationKind::Upload, "upload")
             .unwrap();
-        let conflict = match domain.begin_operation(&scope, MissionOperationKind::Download, "download")
-        {
-            Ok(_) => panic!("expected operation conflict"),
-            Err(err) => err,
-        };
+        let conflict =
+            match domain.begin_operation(&scope, MissionOperationKind::Download, "download") {
+                Ok(_) => panic!("expected operation conflict"),
+                Err(err) => err,
+            };
 
         assert!(matches!(
             conflict,

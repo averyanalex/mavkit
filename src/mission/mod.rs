@@ -12,14 +12,14 @@ pub mod wire;
 pub(crate) mod test_support;
 
 pub use commands::{MissionCommand, RawMissionCommand};
+pub(crate) use domain::MissionDomain;
 pub use handle::MissionHandle;
 pub use operations::{MissionClearOp, MissionDownloadOp, MissionUploadOp, MissionVerifyOp};
+pub(crate) use runner::run_domain_operation;
 pub use transfer::{
     MissionTransferMachine, RetryPolicy, TransferDirection, TransferError, TransferEvent,
     TransferPhase, TransferProgress,
 };
-pub(crate) use domain::MissionDomain;
-pub(crate) use runner::run_domain_operation;
 pub(crate) use types::WireMissionPlan;
 pub use types::{
     HomePosition, IssueSeverity, MissionFrame, MissionIssue, MissionItem, MissionPlan,

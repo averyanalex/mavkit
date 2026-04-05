@@ -1,11 +1,15 @@
 use super::super::{CommandContext, get_target, recv_routed, send_message};
 use crate::dialect;
 use crate::error::VehicleError;
-use crate::mission::{MissionItem, MissionTransferMachine, MissionType, WireMissionPlan, commands, wire};
+use crate::mission::{
+    MissionItem, MissionTransferMachine, MissionType, WireMissionPlan, commands, wire,
+};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
-use super::convert::{from_mav_frame, from_mission_item_int, mission_type_matches, to_mav_mission_type};
+use super::convert::{
+    from_mav_frame, from_mission_item_int, mission_type_matches, to_mav_mission_type,
+};
 use super::protocol::transfer_failed;
 
 // MAVLink crate deprecated this type/variant, but the wire protocol still requires it.

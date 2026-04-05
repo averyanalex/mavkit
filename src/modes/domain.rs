@@ -174,7 +174,8 @@ impl ModeTracker {
         match message {
             dialect::MavMessage::AVAILABLE_MODES(data) => {
                 self.expected_available_modes = Some(data.number_modes);
-                self.pending_available_modes.insert(data.mode_index, data.clone());
+                self.pending_available_modes
+                    .insert(data.mode_index, data.clone());
 
                 let expected = usize::from(data.number_modes);
                 if expected == 0 || self.pending_available_modes.len() >= expected {

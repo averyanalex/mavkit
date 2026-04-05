@@ -1,7 +1,9 @@
 use super::backing::MessageCommandHub;
-use crate::dialect::MavCmd;
-use crate::observation::{MessageHandle, MessageSample, ObservationHandle, ObservationSubscription, SupportState};
 use crate::VehicleError;
+use crate::dialect::MavCmd;
+use crate::observation::{
+    MessageHandle, MessageSample, ObservationHandle, ObservationSubscription, SupportState,
+};
 use std::time::{Duration, Instant};
 
 async fn wait_for_fresh_sample<M: Clone + Send + Sync + 'static>(

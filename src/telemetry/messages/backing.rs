@@ -1,7 +1,11 @@
 use crate::command::Command;
 use crate::dialect::{self, MavCmd};
-use crate::observation::{MessageHandle, MessageSample, ObservationHandle, ObservationWriter, SupportState};
-use crate::telemetry::status_text::{StatusTextEvent, StatusTextWriter, create_status_text_backing_store};
+use crate::observation::{
+    MessageHandle, MessageSample, ObservationHandle, ObservationWriter, SupportState,
+};
+use crate::telemetry::status_text::{
+    StatusTextEvent, StatusTextWriter, create_status_text_backing_store,
+};
 use crate::{VehicleError, VehicleTimestamp};
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -32,7 +36,8 @@ impl<M: Clone + Send + Sync + 'static> MessageSlotWriter<M> {
     }
 }
 
-fn message_slot_watch<M: Clone + Send + Sync + 'static>() -> (MessageSlotWriter<M>, MessageHandle<M>) {
+fn message_slot_watch<M: Clone + Send + Sync + 'static>() -> (MessageSlotWriter<M>, MessageHandle<M>)
+{
     let (sample_writer, sample_observation) = ObservationHandle::watch();
     let (support_writer, support_observation) = ObservationHandle::watch();
     let _ = support_writer.publish(SupportState::Unknown);
