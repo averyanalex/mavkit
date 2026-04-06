@@ -1,6 +1,7 @@
 use crate::dialect::{self, MavProtocolCapability};
 use crate::event_loop::{InitManager, InitSnapshot, InitState};
 use crate::observation::{ObservationHandle, ObservationWriter};
+use crate::shared_state::recover_lock;
 use crate::state::{AutopilotType, StateChannels, VehicleState};
 use crate::types::SupportState;
 use crate::vehicle::VehicleInner;
@@ -108,6 +109,20 @@ struct SupportTracker {
     ardupilot: Option<SupportState>,
 }
 
+impl SupportTracker {
+    fn seeded_unknowns() -> Self {
+        Self {
+            command_int: Some(SupportState::Unknown),
+            ftp: Some(SupportState::Unknown),
+            terrain: Some(SupportState::Unknown),
+            mission_fence: Some(SupportState::Unknown),
+            mission_rally: Some(SupportState::Unknown),
+            ardupilot: Some(SupportState::Unknown),
+            ..Self::default()
+        }
+    }
+}
+
 impl SupportDomain {
     pub(crate) fn new() -> Self {
         let (command_int_writer, command_int) = ObservationHandle::watch();
@@ -131,7 +146,7 @@ impl SupportDomain {
                 mission_rally,
                 ardupilot_writer,
                 ardupilot,
-                tracker: Mutex::new(SupportTracker::default()),
+                tracker: Mutex::new(SupportTracker::seeded_unknowns()),
             }),
         };
 
@@ -236,14 +251,20 @@ impl SupportDomain {
 
 impl SupportDomainInner {
     fn handle_vehicle_state(&self, vehicle_state: &VehicleState) {
-        let mut tracker = self.tracker.lock().unwrap();
-        tracker.vehicle_state = vehicle_state.clone();
-        self.recompute(&mut tracker);
+        self.update_tracker(|tracker| {
+            tracker.vehicle_state = vehicle_state.clone();
+        });
     }
 
     fn handle_init_snapshot(&self, init_snapshot: &InitSnapshot) {
-        let mut tracker = self.tracker.lock().unwrap();
-        tracker.init_snapshot = init_snapshot.clone();
+        self.update_tracker(|tracker| {
+            tracker.init_snapshot = init_snapshot.clone();
+        });
+    }
+
+    fn update_tracker(&self, edit: impl FnOnce(&mut SupportTracker)) {
+        let mut tracker = recover_lock(&self.tracker);
+        edit(&mut tracker);
         self.recompute(&mut tracker);
     }
 
@@ -348,6 +369,7 @@ mod tests {
     use crate::dialect::{self, MavProtocolCapability};
     use crate::event_loop::{InitState, InitUnavailableReason};
     use crate::state::AutopilotType;
+    use std::time::Duration;
 
     fn vehicle_state(autopilot: AutopilotType) -> VehicleState {
         VehicleState {
@@ -355,6 +377,44 @@ mod tests {
             autopilot,
             ..VehicleState::default()
         }
+    }
+
+    #[tokio::test]
+    async fn seeded_unknown_does_not_republish_when_inputs_still_unknown() {
+        let domain = SupportDomain::new();
+        let mut command_int = domain.command_int().subscribe();
+        let mut ardupilot = domain.ardupilot().subscribe();
+
+        assert_eq!(
+            tokio::time::timeout(Duration::from_millis(100), command_int.recv())
+                .await
+                .expect("initial command_int state should be published")
+                .expect("command_int subscription should remain open"),
+            SupportState::Unknown,
+        );
+        assert_eq!(
+            tokio::time::timeout(Duration::from_millis(100), ardupilot.recv())
+                .await
+                .expect("initial ardupilot state should be published")
+                .expect("ardupilot subscription should remain open"),
+            SupportState::Unknown,
+        );
+
+        domain.handle_vehicle_state(&VehicleState::default());
+        domain.handle_init_snapshot(&InitSnapshot::default());
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), command_int.recv())
+                .await
+                .is_err(),
+            "expected no duplicate Unknown publish for command_int"
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), ardupilot.recv())
+                .await
+                .is_err(),
+            "expected no duplicate Unknown publish for ardupilot"
+        );
     }
 
     #[test]

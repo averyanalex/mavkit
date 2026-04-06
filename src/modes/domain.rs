@@ -3,6 +3,7 @@ use crate::dialect;
 use crate::modes::catalog::{catalog_name_or_fallback, dynamic_catalog, static_catalog};
 use crate::modes::{CurrentMode, CurrentModeSource, ModeDescriptor};
 use crate::observation::{ObservationHandle, ObservationWriter};
+use crate::shared_state::recover_lock;
 use crate::state::{AutopilotType, StateChannels, VehicleState, VehicleType};
 use crate::types::SupportState;
 use std::collections::BTreeMap;
@@ -135,13 +136,16 @@ impl ModeDomain {
 
 impl ModeDomainInner {
     fn handle_vehicle_state(&self, state: &VehicleState) {
-        let mut tracker = self.tracker.lock().unwrap();
-        tracker.handle_vehicle_state(state, self);
+        self.with_tracker(|tracker| tracker.handle_vehicle_state(state, self));
     }
 
     fn handle_message(&self, message: &dialect::MavMessage) -> ModeAction {
-        let mut tracker = self.tracker.lock().unwrap();
-        tracker.handle_message(message, self)
+        self.with_tracker(|tracker| tracker.handle_message(message, self))
+    }
+
+    fn with_tracker<R>(&self, apply: impl FnOnce(&mut ModeTracker) -> R) -> R {
+        let mut tracker = recover_lock(&self.tracker);
+        apply(&mut tracker)
     }
 }
 

@@ -1,6 +1,18 @@
 use crate::observation::{ObservationHandle, ObservationWriter};
 use std::sync::{Mutex, MutexGuard};
 
+/// Recovers a mutex guard even when the lock was poisoned by a prior panic.
+///
+/// Internal state trackers and caches should keep making progress after test or task panics, so
+/// the explicit lock policy across shared-core domains is to recover with `into_inner()` instead
+/// of propagating panics through unrelated observation paths.
+pub(crate) fn recover_lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
 /// Small crate-private helper for watch-backed cached domain state.
 ///
 /// Poisoned mutex state is recovered with `into_inner()` instead of panicking: this cache is a
@@ -53,9 +65,6 @@ where
     }
 
     fn latest_guard(&self) -> MutexGuard<'_, T> {
-        match self.latest.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        }
+        recover_lock(&self.latest)
     }
 }

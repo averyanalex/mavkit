@@ -5,6 +5,7 @@ use crate::info::logic::{
 };
 use crate::info::{FirmwareInfo, HardwareInfo, PersistentIdentity, UniqueIds};
 use crate::observation::{ObservationHandle, ObservationWriter};
+use crate::shared_state::recover_lock;
 use crate::state::{StateChannels, VehicleState};
 use std::sync::{Arc, Mutex};
 use tokio::task::JoinHandle;
@@ -112,30 +113,46 @@ impl InfoDomain {
         self.inner.unique_ids_writer.close();
         self.inner.persistent_identity_writer.close();
     }
+
+    #[cfg(test)]
+    fn handle_vehicle_state(&self, vehicle_state: &VehicleState) {
+        self.inner.handle_vehicle_state(vehicle_state);
+    }
+
+    #[cfg(test)]
+    fn handle_init_snapshot(&self, init_snapshot: &InitSnapshot) {
+        self.inner.handle_init_snapshot(init_snapshot);
+    }
 }
 
 impl InfoDomainInner {
     fn handle_vehicle_state(&self, vehicle_state: &VehicleState) {
-        let mut tracker = self.tracker.lock().unwrap();
-        tracker.vehicle_state = vehicle_state.clone();
-        self.recompute(&mut tracker);
+        self.update_tracker(|tracker| {
+            tracker.vehicle_state = vehicle_state.clone();
+        });
     }
 
     fn handle_init_snapshot(&self, init_snapshot: &InitSnapshot) {
-        let mut tracker = self.tracker.lock().unwrap();
-        tracker.init_snapshot = init_snapshot.clone();
+        self.update_tracker(|tracker| {
+            tracker.init_snapshot = init_snapshot.clone();
+        });
+    }
+
+    fn update_tracker(&self, edit: impl FnOnce(&mut InfoTracker)) {
+        let mut tracker = recover_lock(&self.tracker);
+        edit(&mut tracker);
         self.recompute(&mut tracker);
     }
 
     fn recompute(&self, tracker: &mut InfoTracker) {
         let firmware = firmware_from_init_state(&tracker.init_snapshot.autopilot_version);
-        publish_if_changed(&mut tracker.firmware, firmware, &self.firmware_writer);
+        publish_option_if_changed(&mut tracker.firmware, firmware, &self.firmware_writer);
 
         let hardware = hardware_from_init_state(&tracker.init_snapshot.autopilot_version);
-        publish_if_changed(&mut tracker.hardware, hardware, &self.hardware_writer);
+        publish_option_if_changed(&mut tracker.hardware, hardware, &self.hardware_writer);
 
         let unique_ids = unique_ids_from_init_state(&tracker.init_snapshot.autopilot_version);
-        publish_if_changed(
+        publish_option_if_changed(
             &mut tracker.unique_ids,
             unique_ids.clone(),
             &self.unique_ids_writer,
@@ -150,7 +167,7 @@ impl InfoDomainInner {
     }
 }
 
-fn publish_if_changed<T: Clone + Send + Sync + PartialEq + 'static>(
+fn publish_option_if_changed<T: Clone + Send + Sync + PartialEq + 'static>(
     slot: &mut Option<T>,
     next: Option<T>,
     writer: &ObservationWriter<T>,
@@ -176,4 +193,69 @@ fn publish_value_if_changed<T: Clone + Send + Sync + PartialEq + 'static>(
 
     *slot = Some(next.clone());
     let _ = writer.publish(next);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dialect;
+    use crate::event_loop::InitState;
+    use std::time::Duration;
+
+    fn vehicle_state(system_id: u8, component_id: u8) -> VehicleState {
+        VehicleState {
+            system_id,
+            component_id,
+            ..VehicleState::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn persistent_identity_tracks_pending_then_ready_identity() {
+        let domain = InfoDomain::new();
+        let mut sub = domain.persistent_identity().subscribe();
+        let ready = PersistentIdentity::Ready {
+            canonical_id: "uid64:0123456789abcdef".into(),
+            aliases: vec!["uid64:0123456789abcdef".into()],
+        };
+
+        domain.handle_vehicle_state(&vehicle_state(1, 1));
+
+        assert_eq!(
+            tokio::time::timeout(Duration::from_millis(100), sub.recv())
+                .await
+                .expect("pending identity should be published")
+                .expect("identity subscription should remain open"),
+            PersistentIdentity::Pending {
+                system_id: 1,
+                component_id: 1,
+            }
+        );
+
+        domain.handle_init_snapshot(&InitSnapshot {
+            autopilot_version: InitState::Available(dialect::AUTOPILOT_VERSION_DATA {
+                uid: 0x0123_4567_89ab_cdef,
+                ..dialect::AUTOPILOT_VERSION_DATA::default()
+            }),
+            ..InitSnapshot::default()
+        });
+
+        assert_eq!(
+            tokio::time::timeout(Duration::from_millis(100), sub.recv())
+                .await
+                .expect("ready identity should be published")
+                .expect("identity subscription should remain open"),
+            ready,
+        );
+
+        domain.handle_vehicle_state(&vehicle_state(9, 9));
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), sub.recv())
+                .await
+                .is_err(),
+            "expected ready identity to stay stable after later vehicle-state updates"
+        );
+        assert_eq!(domain.persistent_identity().latest(), Some(ready));
+    }
 }
