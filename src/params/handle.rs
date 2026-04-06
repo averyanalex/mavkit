@@ -50,7 +50,7 @@ impl<'a> ParamsHandle<'a> {
         self.inner.params.state().latest()
     }
 
-    /// Waits for the next parameter state update and returns it.
+    /// Waits until a parameter state is available and returns the current value.
     ///
     /// Returns the default state if the vehicle disconnects before an update arrives.
     pub async fn wait(&self) -> ParamState {

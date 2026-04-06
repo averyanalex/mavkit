@@ -52,7 +52,7 @@ impl<'a> FenceHandle<'a> {
         self.handle.latest()
     }
 
-    /// Waits for the next fence state update and returns it.
+    /// Waits until a fence state is available and returns the current value.
     ///
     /// Returns the default state if the vehicle disconnects before an update arrives.
     pub async fn wait(&self) -> FenceState {
