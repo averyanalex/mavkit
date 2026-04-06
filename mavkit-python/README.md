@@ -28,13 +28,16 @@ async def main():
     armed = vehicle.telemetry().armed().latest()
     print(f"mode={mode.name if mode else 'unknown'} armed={armed.value if armed else None}")
 
-    # Wait for next position update
+    # Wait for a position sample (returns immediately if one is already cached)
     position = (await vehicle.telemetry().position().global_pos().wait()).value
     print(f"lat={position.latitude_deg:.7f} alt={position.relative_alt_m:.1f}m")
 
-    # Arm and set mode
+    # set_mode_by_name() waits for ACK plus matching mode telemetry
     await vehicle.set_mode_by_name("GUIDED")
-    await vehicle.arm(force=False)
+
+    # arm() returns on command ACK only; subscribe before arming if you need
+    # a fresh armed-state update as well.
+    await vehicle.arm()
 
     await vehicle.disconnect()
 
@@ -77,7 +80,8 @@ position = vehicle.telemetry().position().global_pos().latest()
 armed = vehicle.telemetry().armed().latest()
 mode = vehicle.available_modes().current().latest()
 
-# Async wait (blocks until next update)
+# Async wait (returns immediately if a value is already cached,
+# otherwise waits for the first update)
 position = await vehicle.telemetry().position().global_pos().wait()
 battery = await vehicle.telemetry().battery().voltage_v().wait()
 ```
@@ -137,6 +141,13 @@ The `examples/` directory contains runnable scripts demonstrating each feature:
 ## Links
 
 - [GitHub Repository](https://github.com/AveryanAlex/mavkit)
+- [Rust API Documentation](https://docs.rs/mavkit)
+- [Rust Crate](https://crates.io/crates/mavkit)
+
+## License
+
+MIT
+eryanAlex/mavkit)
 - [Rust API Documentation](https://docs.rs/mavkit)
 - [Rust Crate](https://crates.io/crates/mavkit)
 

@@ -1,4 +1,4 @@
-"""Set flight mode and arm the vehicle."""
+"""Set flight mode, then send an arm command with truthful ACK semantics."""
 
 import asyncio
 import os
@@ -14,23 +14,26 @@ async def main():
         current_mode_handle = vehicle.available_modes().current()
         armed_handle = vehicle.telemetry().armed()
 
-        before_mode = current_mode_handle.latest()
-        before_armed = armed_handle.latest()
-        before_mode_name = before_mode.name if before_mode is not None else "unknown"
-        before_armed_value = before_armed.value if before_armed is not None else None
-        print(f"before: mode={before_mode_name} armed={before_armed_value}")
+        before_mode = await current_mode_handle.wait()
+        before_armed = await armed_handle.wait()
+        print(f"before: mode={before_mode.name} armed={before_armed.value}")
 
         print(f"setting mode to {mode}...")
         await vehicle.set_mode_by_name(mode)
+        confirmed_mode = current_mode_handle.latest()
+        if confirmed_mode is None:
+            raise RuntimeError("mode observation missing after set_mode_by_name")
+        print(
+            "mode confirmed by telemetry: "
+            f"{confirmed_mode.name} ({confirmed_mode.custom_mode})"
+        )
 
-        print("arming...")
+        print("sending arm command...")
         await vehicle.arm()
-
-        after_mode = current_mode_handle.latest()
-        after_armed = armed_handle.latest()
-        after_mode_name = after_mode.name if after_mode is not None else "unknown"
-        after_armed_value = after_armed.value if after_armed is not None else None
-        print(f"after:  mode={after_mode_name} armed={after_armed_value}")
+        print(
+            "arm command acknowledged. Subscribe to telemetry().armed() "
+            "before arming if you need a fresh armed update."
+        )
 
 
 asyncio.run(main())
