@@ -1,6 +1,18 @@
 [workspace]
 members = [".", "mavkit-python", "mavkit-macros"]
 
+[workspace.lints.rust]
+# Intentionally narrow S01 baseline: start with high-signal rules the workspace can carry.
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+
 [package]
 name = "mavkit"
 version = "0.5.0"
@@ -14,6 +26,9 @@ homepage = "https://github.com/AveryanAlex/mavkit"
 documentation = "https://docs.rs/mavkit"
 keywords = ["mavlink", "uav", "drone", "ardupilot"]
 categories = ["aerospace", "asynchronous", "api-bindings"]
+
+[lints]
+workspace = true
 
 [features]
 default = ["udp", "serial", "ardupilot"]

@@ -143,8 +143,10 @@ pub(super) async fn handle_raw_send(
     send_message(ctx.connection.as_ref(), &ctx.config, message).await
 }
 
-// MAVLink crate deprecated this type/variant, but the wire protocol still requires it.
-#[allow(deprecated)]
+#[allow(
+    deprecated,
+    reason = "the MAVLink crate deprecated this message type, but the MAVLink wire protocol still requires it"
+)]
 pub(super) async fn handle_set_origin(
     latitude: i32,
     longitude: i32,

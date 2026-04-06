@@ -6,6 +6,9 @@ rust-version = "1.87"
 description = "Proc-macros for MAVKit mission command generation"
 license = "MIT OR Apache-2.0"
 
+[lints]
+workspace = true
+
 [lib]
 proc-macro = true
 

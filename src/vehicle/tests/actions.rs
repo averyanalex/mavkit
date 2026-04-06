@@ -6,8 +6,24 @@ use crate::vehicle::actions::quantize_meters_mm;
 use std::time::Duration;
 
 #[tokio::test]
-async fn arm_ack_flow() {
+async fn arm_variants_remain_ack_only() {
     let (vehicle, msg_tx, sent) = connect_mock_vehicle_with_sent().await;
+
+    let last_arm_disarm_command = || {
+        sent.lock()
+            .expect("sent messages lock should not poison")
+            .iter()
+            .rev()
+            .find_map(|(_, msg)| match msg {
+                dialect::MavMessage::COMMAND_LONG(data)
+                    if data.command == dialect::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM =>
+                {
+                    Some(data.clone())
+                }
+                _ => None,
+            })
+            .expect("arm/disarm command should be sent")
+    };
 
     let arm_task = {
         let vehicle = vehicle.clone();
@@ -26,24 +42,115 @@ async fn arm_ack_flow() {
         .await
         .expect("arm ack should be delivered");
 
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    assert!(
+        arm_task.is_finished(),
+        "arm should resolve after the ACK without waiting for armed telemetry"
+    );
     assert!(arm_task.await.expect("arm task should join").is_ok());
 
-    let arm_sent = sent
-        .lock()
-        .expect("sent messages lock should not poison")
-        .iter()
-        .find_map(|(_, msg)| match msg {
-            dialect::MavMessage::COMMAND_LONG(data)
-                if data.command == dialect::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM =>
-            {
-                Some(data.clone())
-            }
-            _ => None,
-        })
-        .expect("arm command should be sent");
-
+    let arm_sent = last_arm_disarm_command();
     assert_eq!(arm_sent.param1, 1.0);
     assert_eq!(arm_sent.param2, 0.0);
+
+    let arm_no_wait_task = {
+        let vehicle = vehicle.clone();
+        tokio::spawn(async move { vehicle.arm_no_wait().await })
+    };
+
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    msg_tx
+        .send((
+            crate::test_support::default_header(),
+            ack_msg(
+                dialect::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+                dialect::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+        ))
+        .await
+        .expect("arm_no_wait ack should be delivered");
+
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    assert!(
+        arm_no_wait_task.is_finished(),
+        "arm_no_wait should still resolve after the ACK without waiting for armed telemetry"
+    );
+    assert!(
+        arm_no_wait_task
+            .await
+            .expect("arm_no_wait task should join")
+            .is_ok()
+    );
+
+    let arm_no_wait_sent = last_arm_disarm_command();
+    assert_eq!(arm_no_wait_sent.param1, arm_sent.param1);
+    assert_eq!(arm_no_wait_sent.param2, arm_sent.param2);
+
+    let force_arm_task = {
+        let vehicle = vehicle.clone();
+        tokio::spawn(async move { vehicle.force_arm().await })
+    };
+
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    msg_tx
+        .send((
+            crate::test_support::default_header(),
+            ack_msg(
+                dialect::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+                dialect::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+        ))
+        .await
+        .expect("force_arm ack should be delivered");
+
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    assert!(
+        force_arm_task.is_finished(),
+        "force_arm should resolve after the ACK without waiting for armed telemetry"
+    );
+    assert!(
+        force_arm_task
+            .await
+            .expect("force_arm task should join")
+            .is_ok()
+    );
+
+    let force_arm_sent = last_arm_disarm_command();
+    assert_eq!(force_arm_sent.param1, 1.0);
+    assert_ne!(force_arm_sent.param2, 0.0);
+
+    let force_arm_no_wait_task = {
+        let vehicle = vehicle.clone();
+        tokio::spawn(async move { vehicle.force_arm_no_wait().await })
+    };
+
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    msg_tx
+        .send((
+            crate::test_support::default_header(),
+            ack_msg(
+                dialect::MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+                dialect::MavResult::MAV_RESULT_ACCEPTED,
+            ),
+        ))
+        .await
+        .expect("force_arm_no_wait ack should be delivered");
+
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    assert!(
+        force_arm_no_wait_task.is_finished(),
+        "force_arm_no_wait should still resolve after the ACK without waiting for armed telemetry"
+    );
+    assert!(
+        force_arm_no_wait_task
+            .await
+            .expect("force_arm_no_wait task should join")
+            .is_ok()
+    );
+
+    let force_arm_no_wait_sent = last_arm_disarm_command();
+    assert_eq!(force_arm_no_wait_sent.param1, force_arm_sent.param1);
+    assert_eq!(force_arm_no_wait_sent.param2, force_arm_sent.param2);
 
     let disarm_task = {
         let vehicle = vehicle.clone();
@@ -338,8 +445,10 @@ async fn set_home_ack_flow() {
         .expect("disconnect should succeed");
 }
 
-// MAVLink crate deprecated this type/variant, but the wire protocol still requires it.
-#[allow(deprecated)]
+#[allow(
+    deprecated,
+    reason = "tests exercise deprecated MAVLink wire types that the protocol still requires"
+)]
 #[tokio::test]
 async fn set_home_current_ack_flow() {
     let (vehicle, msg_tx, sent) = connect_mock_vehicle_with_sent().await;
@@ -392,8 +501,10 @@ async fn set_home_current_ack_flow() {
         .expect("disconnect should succeed");
 }
 
-// MAVLink crate deprecated this type/variant, but the wire protocol still requires it.
-#[allow(deprecated)]
+#[allow(
+    deprecated,
+    reason = "tests exercise deprecated MAVLink wire types that the protocol still requires"
+)]
 #[tokio::test]
 async fn set_origin_observation() {
     let (vehicle, msg_tx, sent) = connect_mock_vehicle_with_sent().await;

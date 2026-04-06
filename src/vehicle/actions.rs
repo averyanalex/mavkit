@@ -188,9 +188,10 @@ impl Vehicle {
         .await
     }
 
-    /// Send the arm command and wait for acknowledgment.
+    /// Send the arm command and wait for command acknowledgment.
     ///
-    /// In future versions this may also confirm the armed state via telemetry.
+    /// This returns after the vehicle ACKs or rejects the command. It does not wait for
+    /// `HEARTBEAT` or other telemetry confirming that the armed state has changed.
     pub async fn arm(&self) -> Result<(), VehicleError> {
         self.send_command(|reply| Command::Arm {
             force: false,
@@ -199,11 +200,10 @@ impl Vehicle {
         .await
     }
 
-    /// Send the arm command and wait for acknowledgment (identical to [`arm`](Self::arm) today;
-    /// exists for API clarity and future no-wait semantics).
+    /// Alias for [`arm`](Self::arm) today.
     ///
-    /// In future versions this may return immediately after the ACK without waiting for telemetry
-    /// confirmation.
+    /// This currently sends the same command and returns after the command ACK or rejection. It
+    /// does not wait for armed-state telemetry.
     pub async fn arm_no_wait(&self) -> Result<(), VehicleError> {
         self.send_command(|reply| Command::Arm {
             force: false,
@@ -212,22 +212,28 @@ impl Vehicle {
         .await
     }
 
-    /// Send the arm command with `force=true` and wait for acknowledgment.
+    /// Send the arm command with `force=true` and wait for command acknowledgment.
     ///
-    /// Forces arming even when pre-arm checks fail. Use with care.
+    /// This returns after the vehicle ACKs or rejects the command. It does not wait for
+    /// armed-state telemetry. Forces arming even when pre-arm checks fail. Use with care.
     pub async fn force_arm(&self) -> Result<(), VehicleError> {
         self.send_command(|reply| Command::Arm { force: true, reply })
             .await
     }
 
-    /// Send the arm command with `force=true` and wait for acknowledgment (identical to
-    /// [`force_arm`](Self::force_arm) today; exists for API clarity and future no-wait semantics).
+    /// Alias for [`force_arm`](Self::force_arm) today.
+    ///
+    /// This currently sends the same command and returns after the command ACK or rejection. It
+    /// does not wait for armed-state telemetry.
     pub async fn force_arm_no_wait(&self) -> Result<(), VehicleError> {
         self.send_command(|reply| Command::Arm { force: true, reply })
             .await
     }
 
-    /// Send the disarm command and wait for acknowledgment.
+    /// Send the disarm command and wait for command acknowledgment.
+    ///
+    /// This returns after the vehicle ACKs or rejects the command. It does not wait for
+    /// `HEARTBEAT` or other telemetry confirming that the disarmed state has changed.
     pub async fn disarm(&self) -> Result<(), VehicleError> {
         self.send_command(|reply| Command::Disarm {
             force: false,
@@ -236,8 +242,10 @@ impl Vehicle {
         .await
     }
 
-    /// Send the disarm command and wait for acknowledgment (identical to
-    /// [`disarm`](Self::disarm) today; exists for API clarity and future no-wait semantics).
+    /// Alias for [`disarm`](Self::disarm) today.
+    ///
+    /// This currently sends the same command and returns after the command ACK or rejection. It
+    /// does not wait for disarmed-state telemetry.
     pub async fn disarm_no_wait(&self) -> Result<(), VehicleError> {
         self.send_command(|reply| Command::Disarm {
             force: false,
@@ -246,40 +254,43 @@ impl Vehicle {
         .await
     }
 
-    /// Send the disarm command with `force=true` and wait for acknowledgment.
+    /// Send the disarm command with `force=true` and wait for command acknowledgment.
     ///
-    /// Forces disarming even when the vehicle is in-flight. Use with care.
+    /// This returns after the vehicle ACKs or rejects the command. It does not wait for
+    /// disarmed-state telemetry. Forces disarming even when the vehicle is in-flight. Use with
+    /// care.
     pub async fn force_disarm(&self) -> Result<(), VehicleError> {
         self.send_command(|reply| Command::Disarm { force: true, reply })
             .await
     }
 
-    /// Send the disarm command with `force=true` and wait for acknowledgment (identical to
-    /// [`force_disarm`](Self::force_disarm) today; exists for API clarity and future no-wait
-    /// semantics).
+    /// Alias for [`force_disarm`](Self::force_disarm) today.
+    ///
+    /// This currently sends the same command and returns after the command ACK or rejection. It
+    /// does not wait for disarmed-state telemetry.
     pub async fn force_disarm_no_wait(&self) -> Result<(), VehicleError> {
         self.send_command(|reply| Command::Disarm { force: true, reply })
             .await
     }
 
-    /// Set the flight mode and wait for the mode change to be observed in telemetry.
+    /// Set the flight mode and wait for the command ACK plus a matching mode observation.
     pub async fn set_mode(&self, custom_mode: u32) -> Result<(), VehicleError> {
         self.inner.set_mode(custom_mode, true).await
     }
 
-    /// Set the flight mode and return immediately after the command ACK, without waiting for
-    /// telemetry confirmation.
+    /// Set the flight mode and return after the command ACK, without waiting for matching mode
+    /// telemetry.
     pub async fn set_mode_no_wait(&self, custom_mode: u32) -> Result<(), VehicleError> {
         self.inner.set_mode(custom_mode, false).await
     }
 
-    /// Set the flight mode by name and wait for the mode change to be observed in telemetry.
+    /// Set the flight mode by name and wait for the command ACK plus a matching mode observation.
     pub async fn set_mode_by_name(&self, name: &str) -> Result<(), VehicleError> {
         self.inner.set_mode_by_name(name, true).await
     }
 
-    /// Set the flight mode by name and return immediately after the command ACK, without waiting
-    /// for telemetry confirmation.
+    /// Set the flight mode by name and return after the command ACK, without waiting for matching
+    /// mode telemetry.
     pub async fn set_mode_by_name_no_wait(&self, name: &str) -> Result<(), VehicleError> {
         self.inner.set_mode_by_name(name, false).await
     }
@@ -287,8 +298,8 @@ impl Vehicle {
     /// Set the vehicle's home position to a specific global location.
     ///
     /// The position is validated and quantized to the MAVLink wire format (degE7 / mm) before
-    /// sending. Returns [`VehicleError::InvalidParameter`] if the coordinates are out of range or
-    /// non-finite.
+    /// sending. Returns after the command ACK. Returns [`VehicleError::InvalidParameter`] if the
+    /// coordinates are out of range or non-finite.
     pub async fn set_home(&self, position: GeoPoint3dMsl) -> Result<(), VehicleError> {
         let lat_e7 = try_latitude_e7(position.latitude_deg)?;
         let lon_e7 = try_longitude_e7(position.longitude_deg)?;
@@ -311,10 +322,12 @@ impl Vehicle {
 
     /// Set the vehicle's home position to its current GPS location.
     ///
-    /// Equivalent to sending `MAV_CMD_DO_SET_HOME` with `param1=1`. The deprecated suppression is
-    /// needed because the MAVLink crate marked this variant but the wire protocol still requires it.
-    // MAVLink crate deprecated this type/variant, but the wire protocol still requires it.
-    #[allow(deprecated)]
+    /// Equivalent to sending `MAV_CMD_DO_SET_HOME` with `param1=1` and returning after the
+    /// command ACK. This does not wait for a separate home-position observation.
+    #[allow(
+        deprecated,
+        reason = "the MAVLink crate deprecated this variant, but the MAVLink wire protocol still requires it"
+    )]
     pub async fn set_home_current(&self) -> Result<(), VehicleError> {
         self.send_command(|reply| Command::Long {
             command: dialect::MavCmd::MAV_CMD_DO_SET_HOME,
@@ -326,9 +339,10 @@ impl Vehicle {
 
     /// Set the GPS global origin used by the vehicle's local EKF frame.
     ///
-    /// Sends `SET_GPS_GLOBAL_ORIGIN` and waits for the vehicle to echo back the matching
-    /// `GPS_GLOBAL_ORIGIN` message as confirmation. Returns [`VehicleError::Timeout`] if the echo
-    /// does not arrive within `command_completion_timeout`.
+    /// Sends `SET_GPS_GLOBAL_ORIGIN` and waits for a matching `GPS_GLOBAL_ORIGIN` echo received
+    /// after the send as confirmation. Cached earlier samples do not satisfy this check. Returns
+    /// [`VehicleError::Timeout`] if the matching echo does not arrive within
+    /// `command_completion_timeout`.
     pub async fn set_origin(&self, origin: GeoPoint3dMsl) -> Result<(), VehicleError> {
         let normalized = WireNormalizedGeo::try_from(&origin)?;
         let origin_handle = self.telemetry().origin();
