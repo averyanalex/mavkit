@@ -56,6 +56,15 @@ mod tests {
     }
 
     #[test]
+    fn rc_and_actuator_namespaces_return_none_for_out_of_range_indexes() {
+        let (_writers, channels) = create_channels();
+        let telemetry = TelemetryHandle::new(&channels.telemetry_handles);
+
+        assert!(telemetry.rc().channel_pwm_us(18).is_none());
+        assert!(telemetry.actuators().servo_pwm_us(16).is_none());
+    }
+
+    #[test]
     fn global_position_converts_to_geo_point_variants() {
         let global = super::GlobalPosition {
             latitude_deg: 47.397742,
