@@ -39,6 +39,9 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+      - name: Rustdoc (mavkit package)
+        run: cargo doc -p mavkit --all-features --no-deps
+
       - name: Unit tests with coverage
         run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
 
@@ -68,6 +71,9 @@ jobs:
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v4
+
+      - name: Rustdoc (mavkit-python package)
+        run: cargo doc -p mavkit-python --no-deps
 
       - name: Install dependencies
         run: uv sync
